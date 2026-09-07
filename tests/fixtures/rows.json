@@ -1,0 +1,52 @@
+[
+  {
+    "source": "ap1",
+    "order_number": "7001234567",
+    "test_station_identifier": "SJ",
+    "sequence_number": "001",
+    "G0003": "PE100",
+    "product_mlfb": "6SL3210-1KE18-8UF1",
+    "inspection_date": "2026-08-26T12:26:34",
+    "is_last_measurement": true
+  },
+  {
+    "source": "ap2",
+    "order_number": "7001234567",
+    "test_station_identifier": "SD",
+    "sequence_number": "",
+    "G0003": null,
+    "product_mlfb": "6SL3210-1KE18-8UF1",
+    "inspection_date": "2026-08-19T08:00:00",
+    "is_last_measurement": false
+  },
+  {
+    "source": "ap2",
+    "order_number": "7009998888",
+    "test_station_identifier": "SJ",
+    "sequence_number": "002",
+    "G0003": "F165",
+    "product_mlfb": null,
+    "inspection_date": "2026-07-28T00:00:00.000001",
+    "is_last_measurement": true
+  },
+  {
+    "source": "ap1",
+    "order_number": "7007770001",
+    "test_station_identifier": "SD",
+    "sequence_number": null,
+    "G0003": "PE100",
+    "product_mlfb": "6ES7214-1AG40-0XB0",
+    "inspection_date": "2026-07-27T23:59:59.999999",
+    "is_last_measurement": true
+  },
+  {
+    "source": "ap2",
+    "order_number": "7001234567",
+    "test_station_identifier": "SJ",
+    "sequence_number": "003",
+    "G0003": null,
+    "product_mlfb": "6SL3210-1KE18-8UF1",
+    "inspection_date": "2026-08-26T23:59:59.999999",
+    "is_last_measurement": null
+  }
+]

@@ -1,0 +1,291 @@
+{
+  "canonical": {
+    "rowsFile": "tests/fixtures/rows.json",
+    "productsFile": "tests/fixtures/products.json",
+    "rowCount": 5,
+    "productRowCount": 3,
+    "columns": {
+      "source": "string",
+      "order_number": "string",
+      "test_station_identifier": "string",
+      "sequence_number": "string",
+      "G0003": "string",
+      "product_mlfb": "string",
+      "inspection_date": "timestamp",
+      "is_last_measurement": "boolean"
+    }
+  },
+  "defaultWindow": {
+    "anchor": {
+      "maxInspectionDate": "2026-08-26T23:59:59.999999",
+      "from": "2026-07-28",
+      "through": "2026-08-26",
+      "toExclusive": "2026-08-27",
+      "windowSizeDays": 30,
+      "rowIndicesInside": [0, 1, 2, 4],
+      "rowIndicesOutside": [3]
+    },
+    "metrics": {
+      "records": 4,
+      "distinctOrders": 2,
+      "distinctProducts": 1,
+      "activeStations": 2,
+      "g0003Present": 2,
+      "g0003PresentPct": 50.0,
+      "notLastMeasurement": 1,
+      "notLastMeasurementPct": 25.0
+    },
+    "bySource": { "ap1": 1, "ap2": 3 },
+    "byStation": { "SJ": 3, "SD": 1 },
+    "byDay": { "2026-07-28": 1, "2026-08-19": 1, "2026-08-26": 2 },
+    "byDayBySource": {
+      "2026-07-28": { "ap2": 1 },
+      "2026-08-19": { "ap2": 1 },
+      "2026-08-26": { "ap1": 1, "ap2": 1 }
+    },
+    "g0003Frequency": { "PE100": 1, "F165": 1 }
+  },
+  "allRows": {
+    "metrics": {
+      "records": 5,
+      "distinctOrders": 3,
+      "distinctProducts": 2,
+      "activeStations": 2,
+      "g0003Present": 3,
+      "g0003PresentPct": 60.0,
+      "notLastMeasurement": 1,
+      "notLastMeasurementPct": 20.0
+    },
+    "bySource": { "ap1": 2, "ap2": 3 }
+  },
+  "join": {
+    "key": "product_mlfb",
+    "fanOut": "none: the lookup key is unique, so each inspection row matches at most one product row",
+    "allRows": {
+      "matchedInspectionRows": 4,
+      "unmatchedInspectionRows": 1,
+      "unmatchedProductRows": 1,
+      "labels": {
+        "6SL3210-1KE18-8UF1": "SINAMICS G120 drive",
+        "6ES7214-1AG40-0XB0": "SIMATIC S7-1200 CPU"
+      }
+    },
+    "defaultWindow": {
+      "matchedInspectionRows": 3,
+      "unmatchedInspectionRows": 1,
+      "unmatchedProductRows": 2,
+      "labels": { "6SL3210-1KE18-8UF1": "SINAMICS G120 drive" }
+    }
+  },
+  "parity": {
+    "sourceId": "inspections",
+    "formats": ["csv", "json", "ndjson", "parquet"],
+    "rows": 5,
+    "csvLexical": {
+      "leadingZeroIdentifier": "001",
+      "quotedEmptyStringRowIndex": 1,
+      "unquotedNullRowIndex": 3,
+      "quotedEmptyStringColumn": "sequence_number",
+      "unquotedNullColumn": "sequence_number"
+    },
+    "microsecondTimestamps": [
+      "2026-07-28T00:00:00.000001",
+      "2026-07-27T23:59:59.999999",
+      "2026-08-26T23:59:59.999999"
+    ]
+  },
+  "boundaries": {
+    "rowOutsideWindow": {
+      "index": 3,
+      "inspectionDate": "2026-07-27T23:59:59.999999",
+      "distanceFromWindowStart": "1 microsecond before 2026-07-28T00:00:00"
+    },
+    "firstInstantInside": {
+      "index": 2,
+      "inspectionDate": "2026-07-28T00:00:00.000001"
+    },
+    "lastInstantInside": {
+      "index": 4,
+      "inspectionDate": "2026-08-26T23:59:59.999999"
+    },
+    "nullableBooleanNullRowIndex": 4,
+    "missingProductRowIndex": 2
+  },
+  "artifacts": {
+    "dir": ".artifacts/fixtures",
+    "manifest": "manifest.json"
+  },
+  "negative": [
+    {
+      "file": "neg-invalid-date.csv",
+      "schema": { "event_date": "date", "note": "string" },
+      "outcome": "reject",
+      "reason": "invalid-calendar-date",
+      "offending": "2026-02-30",
+      "dataRows": 3
+    },
+    {
+      "file": "neg-timestamp-offset.csv",
+      "schema": { "recorded_at": "timestamp", "note": "string" },
+      "outcome": "reject",
+      "reason": "offset-bearing-timestamp",
+      "offending": "2026-01-02T10:00:00+02:00",
+      "dataRows": 2
+    },
+    {
+      "file": "neg-unsafe-integer.csv",
+      "schema": { "value": "integer", "note": "string" },
+      "outcome": "reject",
+      "reason": "unsafe-integer",
+      "offending": "9007199254740993",
+      "dataRows": 3
+    },
+    {
+      "file": "neg-malformed-final-row.csv",
+      "schema": {
+        "order_number": "string",
+        "station": "string",
+        "is_last_measurement": "boolean"
+      },
+      "outcome": "reject",
+      "reason": "invalid-boolean-literal-on-final-row-beyond-initial-sample",
+      "offending": "MAYBE",
+      "dataRows": 502
+    },
+    {
+      "file": "neg-duplicate-headers.csv",
+      "schema": { "station": "string", "records": "integer" },
+      "outcome": "reject",
+      "reason": "duplicate-header",
+      "offending": "station",
+      "dataRows": 1
+    },
+    {
+      "file": "neg-case-colliding-headers.csv",
+      "schema": { "station": "string" },
+      "outcome": "reject",
+      "reason": "case-insensitive-header-collision",
+      "offending": ["Station", "station"],
+      "dataRows": 1
+    },
+    {
+      "file": "neg-nested-json.json",
+      "schema": { "order_number": "string", "payload": "string" },
+      "outcome": "reject",
+      "reason": "nested-value-in-declared-column",
+      "offending": { "nested": true },
+      "dataRows": 3
+    },
+    {
+      "file": "neg-missing-column.csv",
+      "schema": { "order_number": "string", "station": "string" },
+      "outcome": "reject",
+      "reason": "missing-required-column",
+      "offending": "order_number",
+      "dataRows": 1
+    },
+    {
+      "file": "neg-missing-key.ndjson",
+      "schema": { "order_number": "string", "station": "string" },
+      "outcome": "reject",
+      "reason": "missing-key-behaves-as-null-and-violates-non-null",
+      "offending": { "line": 3, "missingKey": "order_number" },
+      "dataRows": 3
+    }
+  ],
+  "boundaryFixtures": [
+    {
+      "file": "ok-timestamp-microseconds.csv",
+      "schema": { "recorded_at": "timestamp" },
+      "outcome": "accept",
+      "normalizedValue": "2026-01-01T12:34:56.123456",
+      "dataRows": 1
+    },
+    {
+      "file": "ok-safe-integers.csv",
+      "schema": { "value": "integer" },
+      "outcome": "accept",
+      "values": [-9007199254740991, 9007199254740991],
+      "dataRows": 2
+    },
+    {
+      "file": "ok-empty.csv",
+      "schema": {
+        "order_number": "string",
+        "station": "string",
+        "is_last_measurement": "boolean"
+      },
+      "outcome": "accept",
+      "dataRows": 0
+    },
+    {
+      "file": "ok-empty.json",
+      "schema": {
+        "order_number": "string",
+        "station": "string",
+        "is_last_measurement": "boolean"
+      },
+      "outcome": "accept",
+      "dataRows": 0
+    },
+    {
+      "file": "ok-empty.parquet",
+      "schema": {
+        "order_number": "string",
+        "station": "string",
+        "is_last_measurement": "boolean"
+      },
+      "outcome": "accept",
+      "dataRows": 0
+    },
+    {
+      "file": "chart-10001.csv",
+      "schema": { "day": "date", "records": "integer" },
+      "outcome": "chart-overrun-boundary",
+      "dataRows": 10001,
+      "firstDay": "2026-01-01",
+      "lastDay": "2053-05-19",
+      "firstValue": 0,
+      "lastValue": 10000,
+      "sum": 50005000,
+      "notes": "one row beyond the 10,000-row chart query limit; values equal their 0-based row index"
+    },
+    {
+      "file": "table-205.csv",
+      "schema": {
+        "rank": "integer",
+        "order_number": "string",
+        "station": "string",
+        "takt_seconds": "number",
+        "flag": "boolean"
+      },
+      "outcome": "paged-table-boundary",
+      "dataRows": 205,
+      "firstRank": 1,
+      "lastRank": 205,
+      "uniqueSortKey": "rank",
+      "taktFirst": 60.5,
+      "taktLast": 162.5,
+      "flagRule": "true when rank is odd",
+      "stationCycle": ["SD", "SA", "SJ"],
+      "notes": "uniquely ordered rows spanning three 100-row table pages"
+    }
+  ],
+  "emptyDatasets": {
+    "files": ["ok-empty.csv", "ok-empty.json", "ok-empty.parquet"],
+    "outcome": "accept",
+    "rows": 0
+  },
+  "configExpectations": {
+    "file": "tests/fixtures/runtime.config.json",
+    "sourceIds": ["inspections", "products"],
+    "inspectionsType": "parquet",
+    "inspectionsFile": "inspections.parquet",
+    "productsType": "parquet",
+    "productsFile": "products.parquet"
+  },
+  "privacy": {
+    "forbiddenReferences": ["ap_unified", "/Users/volker/data", "ewn"],
+    "rule": "no fixture may reference or contain bytes from the owner's private AP file"
+  }
+}

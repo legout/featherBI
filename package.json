@@ -1,0 +1,19 @@
+{
+  "name": "featherbi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contract-first serverless BI dashboards: runtime config contract validator",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "generate:contract": "node scripts/build-contract.mjs",
+    "fixtures": "uv run tests/fixtures/generate.py",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "check": "npm run generate:contract && npm run fixtures && npm run test:unit"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0"
+  }
+}

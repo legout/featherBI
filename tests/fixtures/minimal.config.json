@@ -1,0 +1,38 @@
+{
+  "contract": 1,
+  "app": "grid",
+  "title": "Inspection activity",
+  "data": {
+    "mode": "upload",
+    "sources": [{
+      "id": "inspections",
+      "type": "parquet",
+      "file": "inspections.parquet",
+      "schema": {
+        "station": {"type": "string", "nullable": false},
+        "order_number": {"type": "string", "nullable": false}
+      }
+    }]
+  },
+  "filters": [{
+    "id": "station",
+    "kind": "select",
+    "source": "inspections",
+    "column": "station",
+    "default": null
+  }],
+  "queries": {
+    "summary": {
+      "sql": "SELECT count(*) AS records FROM inspections WHERE ($station IS NULL OR station = $station)",
+      "params": ["station"]
+    },
+    "stations": {
+      "sql": "SELECT station, count(*) AS records FROM inspections WHERE ($station IS NULL OR station = $station) GROUP BY station ORDER BY records DESC, station",
+      "params": ["station"]
+    }
+  },
+  "layout": [
+    {"id": "records", "type": "kpi", "query": "summary", "field": "records", "label": "Inspection records"},
+    {"id": "by_station", "type": "bar", "query": "stations", "x": "station", "y": "records", "label": "Records by station"}
+  ]
+}

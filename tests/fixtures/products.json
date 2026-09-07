@@ -1,0 +1,14 @@
+[
+  {
+    "product_mlfb": "6SL3210-1KE18-8UF1",
+    "product_label": "SINAMICS G120 drive"
+  },
+  {
+    "product_mlfb": "6ES7214-1AG40-0XB0",
+    "product_label": "SIMATIC S7-1200 CPU"
+  },
+  {
+    "product_mlfb": "3RK1107-1BB40-0CA0",
+    "product_label": "SIMATIC ET 200pro interface"
+  }
+]

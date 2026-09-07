@@ -1,0 +1,25 @@
+{
+  "lifecycle": {
+    "effectiveLaunch": {
+      "browserLaunched": true,
+      "engine": "chrome",
+      "launchHash": 9467515241851480000
+    },
+    "launched": false,
+    "relaunchedBrowser": false,
+    "restartedBackground": false,
+    "restoreStatus": "not_configured",
+    "reused": true,
+    "saveStatus": "not_attempted"
+  },
+  "origin": "file:///tmp/featherbi-browser-probe.iXYfRW/unzipped/PROTOTYPE.html",
+  "result": {
+    "fullHistory": {
+      "orders": 1064008,
+      "products": 48448,
+      "records": 5384125,
+      "stations": 63
+    },
+    "queryMs": 464
+  }
+}

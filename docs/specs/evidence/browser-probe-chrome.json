@@ -1,0 +1,259 @@
+{
+  "lifecycle": {
+    "effectiveLaunch": {
+      "browserLaunched": true,
+      "engine": "chrome",
+      "launchHash": 9467515241851480000
+    },
+    "launched": false,
+    "relaunchedBrowser": false,
+    "restartedBackground": false,
+    "restoreStatus": "not_configured",
+    "reused": true,
+    "saveStatus": "not_attempted"
+  },
+  "origin": "file:///tmp/featherbi-browser-probe.iXYfRW/unzipped/PROTOTYPE.html",
+  "result": {
+    "environment": {
+      "bootMs": 299,
+      "bundle": "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/dist/duckdb-eh.wasm",
+      "crossOriginIsolated": false,
+      "deviceMemoryGiB": 16,
+      "engine": [
+        {
+          "codename": "Andium",
+          "library_version": "v1.4.3",
+          "source_id": "d1dc88f950"
+        }
+      ],
+      "hardwareConcurrency": 12,
+      "origin": "file://",
+      "url": "file:///tmp/featherbi-browser-probe.iXYfRW/unzipped/PROTOTYPE.html",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+    },
+    "results": [
+      {
+        "allRows": 5,
+        "bytes": 349,
+        "duckdbMemory": [
+          {
+            "tracked_bytes": "\"0\""
+          }
+        ],
+        "file": "small.csv",
+        "firstKpiMs": 21,
+        "mainThreadJSHeapBytes": 10600000,
+        "maxMainThreadBeatGapMs": 101,
+        "metrics": {
+          "code_present": 2,
+          "code_present_pct": 50,
+          "non_last": 1,
+          "non_last_pct": 25,
+          "orders": 3,
+          "products": 2,
+          "records": 4,
+          "stations": 2
+        },
+        "mode": "selected",
+        "passed": true,
+        "registerMs": 2,
+        "repeatKpiMs": 6,
+        "stationRows": [
+          {
+            "n": 3,
+            "station": "A"
+          },
+          {
+            "n": 1,
+            "station": "B"
+          }
+        ],
+        "totalMs": 93
+      },
+      {
+        "allRows": 5,
+        "bytes": 994,
+        "duckdbMemory": [
+          {
+            "tracked_bytes": "\"0\""
+          }
+        ],
+        "file": "small.json",
+        "firstKpiMs": 7,
+        "mainThreadJSHeapBytes": 10600000,
+        "maxMainThreadBeatGapMs": 100,
+        "metrics": {
+          "code_present": 2,
+          "code_present_pct": 50,
+          "non_last": 1,
+          "non_last_pct": 25,
+          "orders": 3,
+          "products": 2,
+          "records": 4,
+          "stations": 2
+        },
+        "mode": "selected",
+        "passed": true,
+        "registerMs": 2,
+        "repeatKpiMs": 6,
+        "stationRows": [
+          {
+            "n": 3,
+            "station": "A"
+          },
+          {
+            "n": 1,
+            "station": "B"
+          }
+        ],
+        "totalMs": 88
+      },
+      {
+        "allRows": 5,
+        "bytes": 1341,
+        "duckdbMemory": [
+          {
+            "tracked_bytes": "\"36864\""
+          }
+        ],
+        "file": "small.parquet",
+        "firstKpiMs": 12,
+        "mainThreadJSHeapBytes": 10600000,
+        "maxMainThreadBeatGapMs": 101,
+        "metrics": {
+          "code_present": 2,
+          "code_present_pct": 50,
+          "non_last": 1,
+          "non_last_pct": 25,
+          "orders": 3,
+          "products": 2,
+          "records": 4,
+          "stations": 2
+        },
+        "mode": "selected",
+        "passed": true,
+        "registerMs": 1,
+        "repeatKpiMs": 6,
+        "stationRows": [
+          {
+            "n": 3,
+            "station": "A"
+          },
+          {
+            "n": 1,
+            "station": "B"
+          }
+        ],
+        "totalMs": 99
+      },
+      {
+        "allRows": 5,
+        "bytes": 1341,
+        "duckdbMemory": [
+          {
+            "tracked_bytes": "\"73728\""
+          }
+        ],
+        "file": "small.parquet",
+        "firstKpiMs": 3,
+        "mainThreadJSHeapBytes": 10600000,
+        "maxMainThreadBeatGapMs": 0,
+        "metrics": {
+          "code_present": 2,
+          "code_present_pct": 50,
+          "non_last": 1,
+          "non_last_pct": 25,
+          "orders": 3,
+          "products": 2,
+          "records": 4,
+          "stations": 2
+        },
+        "mode": "embedded",
+        "passed": true,
+        "registerMs": 17,
+        "repeatKpiMs": 2,
+        "stationRows": [
+          {
+            "n": 3,
+            "station": "A"
+          },
+          {
+            "n": 1,
+            "station": "B"
+          }
+        ],
+        "totalMs": 50
+      },
+      {
+        "allRows": 5384125,
+        "bytes": 390798150,
+        "duckdbMemory": [
+          {
+            "tracked_bytes": "\"839680\""
+          }
+        ],
+        "file": "ap_unified.parquet",
+        "firstKpiMs": 223,
+        "mainThreadJSHeapBytes": 10600000,
+        "maxMainThreadBeatGapMs": 101,
+        "metrics": {
+          "code_present": 3105,
+          "code_present_pct": 8.98,
+          "non_last": 2120,
+          "non_last_pct": 6.13,
+          "orders": 11151,
+          "products": 4618,
+          "records": 34596,
+          "stations": 27
+        },
+        "mode": "selected",
+        "passed": true,
+        "registerMs": 1,
+        "repeatKpiMs": 192,
+        "stationRows": [
+          {
+            "n": 2585,
+            "station": "SJ"
+          },
+          {
+            "n": 2476,
+            "station": "SD"
+          },
+          {
+            "n": 2410,
+            "station": "SK"
+          },
+          {
+            "n": 2239,
+            "station": "SB"
+          },
+          {
+            "n": 1985,
+            "station": "SN"
+          },
+          {
+            "n": 1826,
+            "station": "S5"
+          },
+          {
+            "n": 1667,
+            "station": "S1"
+          },
+          {
+            "n": 1660,
+            "station": "S3"
+          },
+          {
+            "n": 1631,
+            "station": "SM"
+          },
+          {
+            "n": 1586,
+            "station": "SG"
+          }
+        ],
+        "totalMs": 644
+      }
+    ]
+  }
+}

@@ -1,6 +1,11 @@
 # Plan 05 — Packaging and agent skill
 
-Status: approved by the owner. Execution remains subject to Plan 01's baseline-commit gate and supervised candidate/integration approvals.
+Status: approved by the owner and pending integrated Plans 02–04 plus supervised candidate/integration approvals.
+
+- **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
+- **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-01/RC-06/RC-09/RC-10/RC-11 and AP-06 authoring, packaging, reopening, and skill-handoff scope described below.
+- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
 
 ## Goal, dependencies, and sources
 
@@ -29,7 +34,7 @@ node bin/featherbi.mjs build --config examples/ap-dashboard.config.json --source
 
 **Create:** `bin/featherbi.mjs`, `packager/preflight.mjs`, `packager/preflight-browser.mjs`, `tests/unit/cli.test.mjs`, `tests/browser/preflight.spec.mjs`. **Modify:** `package.json`, `package-lock.json`, `scripts/build.mjs`.
 
-**Interface:** `preflight(config, sourceMap)` → validated, bounded result summary or rejection; no output artifact on failure. The CLI shares `validateConfig` and launches the same engine/controller through a temporary authoring page. It does not maintain separate normalization or SQL-admission logic.
+**Consumed interfaces:** shared `validateConfig`, viewer/engine/controller runtime, source maps, and bounded result envelopes. **Produced interface:** `preflight(config, sourceMap)` → validated, bounded result summary or rejection; no output artifact on failure. The CLI launches the same engine/controller through a temporary authoring page. It does not maintain separate normalization or SQL-admission logic.
 
 - [ ] Add `playwright-core` 1.63.0 as the explicit authoring runtime dependency; it uses installed Chrome, not a downloaded fallback browser. Keep the existing test package on the same version.
 - [ ] RED: CLI option errors, source-ID mapping errors, structural config failure, invalid late data row, invalid authored SQL, wrong result binding, missing Chrome, denied network asset, and successful two-source preflight.
@@ -46,7 +51,7 @@ node bin/featherbi.mjs build --config examples/ap-dashboard.config.json --source
 
 **Create:** `packager/build.mjs`, `tests/unit/packager.test.mjs`. **Modify:** `bin/featherbi.mjs`, `package.json`, `package-lock.json`, `shells/grid.html` only at documented template insertion points.
 
-**Interface:** `buildArtifact({config, sourceMap, mode, outputPath, overwrite})` preflights first, then returns a receipt `{path, mode, bytes, contract, runtimeVersions}` only after final publication to the requested local path. It does not mutate the input config/files.
+**Consumed interfaces:** successful `preflight`, validated config/source maps, viewer build output, and the pinned runtime-asset manifest. **Produced interface:** `buildArtifact({config, sourceMap, mode, outputPath, overwrite})` preflights first, then returns a receipt `{path, mode, bytes, contract, runtimeVersions}` only after final publication to the requested local path. It does not mutate the input config/files.
 
 - [ ] Add pinned `fflate` 0.8.3 for ZIP construction; do not handwrite a ZIP implementation. Use Node's filesystem/streams for ordinary IO.
 - [ ] RED: both packaging modes, output already exists, source-basename collisions, missing data, malicious path hints, `</script>`/Unicode text in config, partial-write failure, and deterministic repeat output from identical synthetic inputs.
@@ -65,6 +70,8 @@ node bin/featherbi.mjs build --config examples/ap-dashboard.config.json --source
 
 **Create:** `tests/browser/artifacts.spec.mjs`. **Modify:** `tests/browser/ap-private.spec.mjs` for the optional full-file packaged checks under the existing explicit private gate.
 
+**Consumed interfaces:** the CLI, `buildArtifact`, viewer, synthetic fixtures, and optional private AP gate. **Produced evidence:** reopened embedded/ZIP parity, security, replacement, and boot-failure evidence for RC-09/AP-06; no new product interface.
+
 - [ ] RED: produce synthetic embedded HTML and ZIP through the actual CLI, extract ZIP to a fresh temp directory, and navigate each resulting HTML via file:// in an isolated Chrome context. Assign required files to source IDs through the visible picker controls.
 - [ ] Assert identical normalized aggregates, chart bindings, filter behavior, source-replacement rollback, and successful corrected replacement. Test malicious-looking labels/cells/embedded strings remain text and cannot execute script. Check requested URLs against the fixed runtime-asset manifest; no viewer data/telemetry request should appear.
 - [ ] Deny a required runtime asset in a fresh context and verify useful boot error/retry behavior, not an empty page or a warm-cache false pass. Verify published HTML has no test-harness/preflight host hooks.
@@ -79,6 +86,8 @@ node bin/featherbi.mjs build --config examples/ap-dashboard.config.json --source
 **Prerequisites:** P5.3. **Obligation:** `existing-check` — documentation/skill examples are validated by the implemented CLI and browser gates; no new framework or speculative agent evaluator.
 
 **Create:** `skill/featherbi/SKILL.md`, `skill/featherbi/catalog_schema.sql`, `skill/featherbi/examples/kpi-and-trend.config.json`, `skill/featherbi/examples/join-and-table.config.json`, `README.md`, `tests/unit/skill-examples.test.mjs`. **Modify:** `tests/browser/preflight.spec.mjs` to preflight the static examples against their declared synthetic source maps. Existing `check` already discovers the new unit test; no redundant package script is needed.
+
+**Consumed interfaces:** CLI `schema`/`validate`/`build`, the shared contract, synthetic fixtures, and reopened-artifact gates. **Produced interfaces:** the `featherbi` authoring skill, checked examples/catalog, and recipient/author README handoff.
 
 - [ ] Read the available skill-authoring guidance before writing `skill/featherbi/SKILL.md`. Use the name `featherbi`, matching its leaf directory. Reference bundled examples/DDL relative to the skill directory and obtain the live schema through the CLI's `schema` command. Use an available `featherbi` command or an explicitly supplied checkout's `node bin/featherbi.mjs`; if neither exists, request the tool path rather than inventing an absolute installation path.
 - [ ] Teach the agent to inspect schema/sample data, establish metric grain and units, emit contract JSON, run `validate`, and invoke deterministic `build`. Do not ask it to write custom HTML, invent failure/yield meanings, embed credentials, or treat `LIMIT 1` as full validation.

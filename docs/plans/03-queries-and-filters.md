@@ -1,6 +1,11 @@
 # Plan 03 — Queries and filters
 
-Status: approved by the owner. Execution remains subject to Plan 01's baseline-commit gate and supervised candidate/integration approvals.
+Status: approved by the owner and pending its prerequisites. Plan 01 is integrated; Plan 02 remains subject to supervised candidate/integration approval.
+
+- **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
+- **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-03 through RC-08 and AP-01/AP-04 query, filter, result, and coherent-publication scope described below.
+- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
 
 ## Goal, dependencies, and sources
 
@@ -28,6 +33,8 @@ One controller owns engine serialization. Source/filter/default/query functions 
 
 **Modify:** `runtime/sql.mjs`, `tests/browser/harness.mjs`. **Create:** `tests/unit/sql.test.mjs`, `tests/browser/sql.spec.mjs`.
 
+**Consumed interfaces:** Plan 02's generation-scoped connection and reviewed parser/parameter capability evidence. **Produced interface:** `admitQuery(connection, definition, config)` with canonical SQL, parameter order, declared source IDs, and ordering metadata.
+
 - [ ] RED: valid SELECT, SELECT CTE, joined declared sources, quoted identifiers, repeated/reordered named placeholders, comments/semicolons inside strings; invalid multiple statements, DDL/DML, table-function/file readers, undeclared or explicitly schema/catalog-qualified sources, and placeholder mismatches.
 - [ ] Parse using the pinned engine's `json_serialize_sql` with SQL passed as a bound value. Reject engine errors, statement counts other than one, unsupported statement/from-node forms, and unsupported source constructs before prepare/execution. Traverse CTE/subquery scopes correctly; an alias is not an undeclared physical source, and a CTE name must not authorize an unrelated external table.
 - [ ] Use actual engine `named_param_map` ordinals to bind named values. Compare declared names without allowing declaration order to silently change which value is bound. Runtime pagination parameters use the reserved internal `__fb_` namespace, which cannot collide with user filter IDs.
@@ -42,6 +49,8 @@ One controller owns engine serialization. Source/filter/default/query functions 
 **Prerequisites:** P3.1. **Obligation:** `new-test` — date bounds, null semantics, numeric precision, and pagination affect metric correctness.
 
 **Create:** `runtime/filters.mjs`, `runtime/queries.mjs`, `tests/unit/filters.test.mjs`, `tests/unit/results.test.mjs`, `tests/browser/queries.spec.mjs`. **Modify:** `tests/browser/harness.mjs`.
+
+**Consumed interfaces:** admitted queries, validated config, and a generation-scoped connection. **Produced interfaces:** `defaultFilters`, `bindFilters`, `fetchOptions`, and `runQueries` with the bounded result envelope defined above.
 
 - [ ] RED: latest-30-date defaults anchored to the source maximum, fixed/leap-date bounds, empty input, null versus empty-string selections, exact order lookup, SQL-looking filter text, and behavior independent of the browser's timezone.
 - [ ] Bind date-range boundaries as inclusive start/exclusive-next-day DATE values. Preserve AP timestamps as recorded; do not round-trip them through browser-local `Date` formatting. Option search uses a bounded parameterized source query, a stable ordering, and 100 + 1 rows; it is not an active wildcard filter.
@@ -58,6 +67,8 @@ One controller owns engine serialization. Source/filter/default/query functions 
 **Prerequisites:** P3.2 and P2.3. **Obligation:** `new-test` — out-of-order work must not publish mixed data/filter states.
 
 **Create:** `runtime/controller.mjs`, `tests/unit/controller.test.mjs`, `tests/browser/controller.spec.mjs`. **Modify:** `tests/browser/harness.mjs`.
+
+**Consumed interfaces:** Plan 02 engine/generation lifecycle plus P3.1/P3.2 admission, filter, and query functions. **Produced interface:** `createController({engine, config, onState})` and its coherent published-state envelope.
 
 - [ ] RED with controllable promises: request A, then B before A resolves; verify only B may become current. Inject failures during staging, defaults, query execution, result conversion, and binding validation. Assert the prior active snapshot remains available with its original filter labels.
 - [ ] Use a single serialized execution loop and one replaceable pending request. Filter/page changes increment the revision; coalesce obsolete pending work. Do not attempt to cancel execution by merely abandoning a Promise and concurrently mutating the same connection.

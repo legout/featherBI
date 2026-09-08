@@ -1,12 +1,18 @@
 # Plan 02 — Data loading and replacement
 
-Status: approved by the owner. Execution remains subject to Plan 01's baseline-commit gate and supervised candidate/integration approvals.
+Status: approved by the owner. Plan 01 is integrated. P2.1 passed fresh review at `4ebf1beb9d2c5c8cbdb4e307dccb8032d861ba3c` and awaits candidate assembly/integration approval; P2.2/P2.3 remain pending.
+
+- **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
+- **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-02/RC-03/RC-04 data loading, source-generation, and capability-gate scope described below.
+- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
+- **Execution evidence:** P2.1 review verdict PASS at reviewed head `4ebf1beb9d2c5c8cbdb4e307dccb8032d861ba3c`, tree `b626c0bf9b64baf33ab20e5672da782e8fcc3839`, with 14 browser tests and 103 unit tests passing. This evidence does not authorize candidate assembly or integration.
 
 ## Goal, dependencies, and sources
 
 Build strict local-data loading and a reversible source-generation seam without a dashboard UI or query scheduler.
 
-Prerequisite: [Plan 01](01-contract-and-fixtures.md), including its setup/ownership rules. Source: [runtime contract](../specs/runtime-contract-v1.md) §§4–5 and RC-02/RC-03/RC-04; [browser evidence](../research/browser-feasibility-report.md). Map: RC-02 → P2.2; RC-03 → P2.3 plus P3.3; RC-04 → P2.3 cleanup/staging plus P3.3 atomic publication. P2.1 is the required capability gate for P3.1, not proof supplied by native DuckDB.
+Prerequisite: integrated [Plan 01](01-contract-and-fixtures.md), including its setup/ownership rules. Source: [runtime contract](../specs/runtime-contract-v1.md) §§4–5 and RC-02/RC-03/RC-04; [browser evidence](../research/browser-feasibility-report.md). Map: RC-02 → P2.2; RC-03 → P2.3 plus P3.3; RC-04 → P2.3 cleanup/staging plus P3.3 atomic publication. P2.1 supplied the reviewed WASM capability evidence for P3.1; dependent implementation must retain its named-to-ordinal binding strategy unless an approved source change supersedes it.
 
 Use one DuckDB-WASM worker and schema-scoped generations. Selected Parquet remains File-backed; full declared-column validation is a scan, not permission to duplicate the file into JS or materialize every source as a table. No parallel writer for the shared package/build files.
 
@@ -27,6 +33,10 @@ These are ordinary functions/records, not a class hierarchy. The Plan 03 control
 
 **Create:** `runtime/bootstrap.mjs`, `scripts/build-test-harness.mjs`, `tests/browser/harness.mjs`, `tests/browser/helpers.mjs`, `tests/browser/bootstrap.spec.mjs`, `playwright.config.mjs`. **Modify:** `package.json`, `package-lock.json`.
 
+**Consumed interfaces:** Plan 01's generated contract, fixtures, package scripts, and the pinned browser seam. **Produced interfaces:** `createEngine({onStatus})` and reviewed WASM parser/parameter/canonical-SQL capability evidence for P2.2 and P3.1.
+
+**Execution status:** reviewed PASS at the head recorded above, but not present on `main`; the checklist remains open until candidate assembly and integration are approved and completed.
+
 - [ ] Add pinned DuckDB-WASM 1.32.0, esbuild 0.28.2, and test-only `@playwright/test` 1.63.0. Launch installed desktop Chrome (`channel: 'chrome'`), one worker, isolated test contexts; never add Edge or bypass browser policies.
 - [ ] The harness builder emits one `.artifacts/browser/harness.html` with bundled test hooks. It is separate from production output. Tests navigate via `pathToFileURL`, not a local web server. A test fails if it launches the wrong browser or falls back to a different origin.
 - [ ] Define `build:harness` = `npm run generate:contract && npm run fixtures && node scripts/build-test-harness.mjs`; `test:browser` = `npm run build:harness && playwright test --project=chrome --grep-invert @private`. Add a focused runner configuration with bounded timeouts and failure screenshots under `.artifacts/`.
@@ -43,7 +53,7 @@ These are ordinary functions/records, not a class hierarchy. The Plan 03 control
 
 **Create:** `runtime/normalize.mjs`, `runtime/sql.mjs`, `tests/unit/normalize.test.mjs`, `tests/browser/normalize.spec.mjs`. **Modify:** `tests/browser/harness.mjs`.
 
-**Produced interface:** `validateInput` above. `runtime/sql.mjs` initially exports only identifier quoting and runtime-owned SQL construction needed here; Plan 03 adds engine-backed authored-query admission to that same file.
+**Consumed interfaces:** `createEngine`, validated source declarations, and Plan 01's parity/boundary fixtures. **Produced interface:** `validateInput` above. `runtime/sql.mjs` initially exports only identifier quoting and runtime-owned SQL construction needed here; Plan 03 adds engine-backed authored-query admission to that same file.
 
 - [ ] RED: load each parity/negative fixture through the actual worker and assert expected normalized values and failures. Pure unit checks cover identifier/path escaping and validation-plan construction; they cannot replace real reader tests.
 - [ ] CSV: use the engine's CSV reader with explicit comma/header/UTF-8 policy and lexical string reading. Inspect original header values without relying on the reader's auto-renamed names. Explicitly configure quoted-empty versus unquoted-null behavior and validate complete input, not sample inference.
@@ -60,6 +70,8 @@ These are ordinary functions/records, not a class hierarchy. The Plan 03 control
 **Prerequisites:** P2.2. **Obligation:** `new-test` — partial replacement and stale file state can silently corrupt results.
 
 **Create:** `runtime/sources.mjs`, `tests/browser/sources.spec.mjs`. **Modify:** `tests/browser/harness.mjs`.
+
+**Consumed interfaces:** `createEngine` and `validateInput`. **Produced interfaces:** `stageSources`, generation records, `withGeneration`, and `releaseGeneration` as defined above.
 
 - [ ] RED: stage two named sources, query a known join, reject a missing/unknown assignment, then stage two replacements with one invalid. Assert active views/results remain readable and no incomplete generation is published.
 - [ ] Register every candidate input under a fresh physical name and create typed views in its own internal schema. Keep active generation inputs available until explicit retirement. A source ID remains a logical table name, never a filesystem path.
@@ -79,6 +91,6 @@ npm run check
 npm run test:browser
 ```
 
-These are required future task gates, not tests already run during planning. Browser infrastructure failure is reported as blocked, never a skipped green check. Use the native browser tool for additional manual inspection, screenshots, and OS-level user-flow evidence; it does not replace the reproducible suite.
+P2.1 has passed these applicable checks on its reviewed head. Rerun the full commands for candidate assembly/integration and after P2.2/P2.3; browser infrastructure failure is reported as blocked, never a skipped green check. Use the native browser tool for additional manual inspection, screenshots, and OS-level user-flow evidence; it does not replace the reproducible suite.
 
 Hand engine, generation, normalization, and disposal interfaces to [Plan 03](03-queries-and-filters.md). Immediate review is required for P2.1's capability evidence and P2.3's rollback/resource ownership. Residual risks: heavy full validation, mid-query source loss, browser memory pressure, SQL admission, and UI publication remain explicit.

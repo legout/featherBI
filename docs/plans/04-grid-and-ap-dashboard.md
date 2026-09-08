@@ -1,6 +1,11 @@
 # Plan 04 — Grid and AP dashboard
 
-Status: approved by the owner. Execution remains subject to Plan 01's baseline-commit gate and supervised candidate/integration approvals.
+Status: approved by the owner and pending integrated Plans 02–03 plus supervised candidate/integration approvals.
+
+- **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
+- **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-07/RC-08/RC-10 and AP-01 through AP-05/AP-07 generic-grid and AP-dashboard scope described below. AP-06 remains Plan 05 scope.
+- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
 
 ## Goal, dependencies, and sources
 
@@ -16,7 +21,7 @@ Use fixed Siemens iX components/theme plus ECharts, native CSS grid, and semanti
 
 **Create:** `shells/grid.html`, `runtime/grid.mjs`, `runtime/viewer.mjs`, `runtime/viewer.css`, `scripts/build.mjs`, `tests/browser/grid.spec.mjs`. **Modify:** `package.json`, `package-lock.json`, `tests/browser/harness.mjs`, `scripts/build-test-harness.mjs`.
 
-**Interfaces:** `mountGrid(root, config, controller)` wires user actions and returns `{render(state), dispose()}`. `startViewer(root, rawConfig)` validates config, starts the engine/controller, mounts the grid, connects `onState` to `grid.render`, and reports boot failures. Test hooks stay in the test harness, never the production viewer.
+**Consumed interfaces:** validated config plus Plan 03's controller/state/result envelopes. **Produced interfaces:** `mountGrid(root, config, controller)` wires user actions and returns `{render(state), dispose()}`. `startViewer(root, rawConfig)` validates config, starts the engine/controller, mounts the grid, connects `onState` to `grid.render`, and reports boot failures. Test hooks stay in the test harness, never the production viewer.
 
 - [ ] Add exact ECharts 6.1.0, Siemens iX 5.2.1, and iX icons 3.5.0 pins; verify peer compatibility and actual asset entry points before installation. If these published pins conflict, report the dependency gate rather than silently selecting another version.
 - [ ] RED: config-driven KPI/bar/line/heatmap/table, wrong binding, zero/null/empty cases, source controls, shared filters, independent table paging, and a pending/failed revision retaining clearly labeled prior results. Include the rejected table-query-sharing config from P1.2.
@@ -53,6 +58,8 @@ Use fixed Siemens iX components/theme plus ECharts, native CSS grid, and semanti
 **Prerequisites:** P4.2. **Obligation:** `new-test` — the actual dataset must exercise the implemented loader/validator/controller, not the discarded prototype.
 
 **Create:** `tests/browser/ap-private.spec.mjs`, `scripts/test-ap.mjs`. **Modify:** `package.json`.
+
+**Consumed interfaces:** the generic viewer, AP example config, private-path gate, and Plan 03 controller/result envelopes. **Produced evidence:** bounded private full-file acceptance results for AP-02/AP-03/AP-07 and RC-10; no new product interface.
 
 - [ ] Implement an explicit private-test entry point. `npm run test:ap` builds the viewer/harness and runs `node scripts/test-ap.mjs`; the script requires `FEATHERBI_AP_PATH`, checks that the file exists, and runs only Playwright tests tagged `@private`. Missing private input is a nonzero blocked result for this command, never a green skip or a synthetic fallback.
 - [ ] The normal `test:browser` script excludes `@private`; retain that exclusion explicitly in reports. The private file and any full data export stay outside Git and public CI.

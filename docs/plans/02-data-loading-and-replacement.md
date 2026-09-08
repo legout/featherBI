@@ -1,12 +1,12 @@
 # Plan 02 — Data loading and replacement
 
-Status: approved by the owner. Plan 01 is integrated. P2.1 passed fresh review at `4ebf1beb9d2c5c8cbdb4e307dccb8032d861ba3c` and awaits candidate assembly/integration approval; P2.2/P2.3 remain pending.
+Status: approved by the owner. Plan 01 and P2.1 are integrated; P2.2/P2.3 remain pending.
 
 - **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
 - **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-02/RC-03/RC-04 data loading, source-generation, and capability-gate scope described below.
 - **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
 - **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
-- **Execution evidence:** P2.1 review verdict PASS at reviewed head `4ebf1beb9d2c5c8cbdb4e307dccb8032d861ba3c`, tree `b626c0bf9b64baf33ab20e5672da782e8fcc3839`, with 14 browser tests and 103 unit tests passing. This evidence does not authorize candidate assembly or integration.
+- **Execution evidence:** P2.1 review verdict PASS at reviewed head `4ebf1beb9d2c5c8cbdb4e307dccb8032d861ba3c`, tree `b626c0bf9b64baf33ab20e5672da782e8fcc3839`; candidate review PASS at `6f32003e7079b0a0ec2eee67787b77e7f0cc8705`; locally integrated into `main` at `844680298070b2f9e0e68e742f113e50f295e26a`. Integration checks passed with 103 unit tests and 14 browser tests, none failed or skipped. Nothing was pushed or published.
 
 ## Goal, dependencies, and sources
 
@@ -35,15 +35,15 @@ These are ordinary functions/records, not a class hierarchy. The Plan 03 control
 
 **Consumed interfaces:** Plan 01's generated contract, fixtures, package scripts, and the pinned browser seam. **Produced interfaces:** `createEngine({onStatus})` and reviewed WASM parser/parameter/canonical-SQL capability evidence for P2.2 and P3.1.
 
-**Execution status:** reviewed PASS at the head recorded above, but not present on `main`; the checklist remains open until candidate assembly and integration are approved and completed.
+**Execution status:** completed, fresh-reviewed, and integrated into `main` at the commit recorded above.
 
-- [ ] Add pinned DuckDB-WASM 1.32.0, esbuild 0.28.2, and test-only `@playwright/test` 1.63.0. Launch installed desktop Chrome (`channel: 'chrome'`), one worker, isolated test contexts; never add Edge or bypass browser policies.
-- [ ] The harness builder emits one `.artifacts/browser/harness.html` with bundled test hooks. It is separate from production output. Tests navigate via `pathToFileURL`, not a local web server. A test fails if it launches the wrong browser or falls back to a different origin.
-- [ ] Define `build:harness` = `npm run generate:contract && npm run fixtures && node scripts/build-test-harness.mjs`; `test:browser` = `npm run build:harness && playwright test --project=chrome --grep-invert @private`. Add a focused runner configuration with bounded timeouts and failure screenshots under `.artifacts/`.
-- [ ] RED: test runtime readiness, an actual `SELECT 1`, worker failure, unavailable module/WASM assets, and disposal before implementing `createEngine`. Use the proven Blob/importScripts bootstrap and pinned URLs. No normal-browser profile or permissive file/security flags.
-- [ ] Capability gate in the actual pinned WASM engine: prepare and execute `SELECT json_serialize_sql(?)` on a SELECT with a named parameter, CTE/join, table-function read, multiple SELECTs, and DDL; inspect statement count, base-table/function nodes, CTE scopes, modifiers, and `named_param_map`. Test `json_deserialize_sql` using the original serialized JSON string and verify parameter binding order with repeated/reordered named placeholders.
-- [ ] Native DuckDB 1.5.5 exposes these AST APIs, but the browser probe did not verify them. If the pinned WASM engine cannot expose the required metadata/canonical SQL, stop with exact evidence before P2.2/P3.1. Do not substitute a regex, custom parser, newer dependency, or native-only validation without a reviewed design change.
-- [ ] GREEN: `npm run build:harness && npx --no-install playwright test tests/browser/bootstrap.spec.mjs --project=chrome`; then `npm run check && npm run test:browser`.
+- [x] Add pinned DuckDB-WASM 1.32.0, esbuild 0.28.2, and test-only `@playwright/test` 1.63.0. Launch installed desktop Chrome (`channel: 'chrome'`), one worker, isolated test contexts; never add Edge or bypass browser policies.
+- [x] The harness builder emits one `.artifacts/browser/harness.html` with bundled test hooks. It is separate from production output. Tests navigate via `pathToFileURL`, not a local web server. A test fails if it launches the wrong browser or falls back to a different origin.
+- [x] Define `build:harness` = `npm run generate:contract && npm run fixtures && node scripts/build-test-harness.mjs`; `test:browser` = `npm run build:harness && playwright test --project=chrome --grep-invert @private`. Add a focused runner configuration with bounded timeouts and failure screenshots under `.artifacts/`.
+- [x] RED: test runtime readiness, an actual `SELECT 1`, worker failure, unavailable module/WASM assets, and disposal before implementing `createEngine`. Use the proven Blob/importScripts bootstrap and pinned URLs. No normal-browser profile or permissive file/security flags.
+- [x] Capability gate in the actual pinned WASM engine: prepare and execute `SELECT json_serialize_sql(?)` on a SELECT with a named parameter, CTE/join, table-function read, multiple SELECTs, and DDL; inspect statement count, base-table/function nodes, CTE scopes, modifiers, and `named_param_map`. Test `json_deserialize_sql` using the original serialized JSON string and verify parameter binding order with repeated/reordered named placeholders.
+- [x] Native DuckDB 1.5.5 exposes these AST APIs, but the browser probe did not verify them. If the pinned WASM engine cannot expose the required metadata/canonical SQL, stop with exact evidence before P2.2/P3.1. Do not substitute a regex, custom parser, newer dependency, or native-only validation without a reviewed design change.
+- [x] GREEN: `npm run build:harness && npx --no-install playwright test tests/browser/bootstrap.spec.mjs --project=chrome`; then `npm run check && npm run test:browser`.
 
 **Completion evidence:** file:// boot, real worker query and error UI work; engine version is recorded; AST/parameter/round-trip cases pass in WASM; disposal terminates the owned worker. No query-sandbox claim is made.
 
@@ -91,6 +91,6 @@ npm run check
 npm run test:browser
 ```
 
-P2.1 has passed these applicable checks on its reviewed head. Rerun the full commands for candidate assembly/integration and after P2.2/P2.3; browser infrastructure failure is reported as blocked, never a skipped green check. Use the native browser tool for additional manual inspection, screenshots, and OS-level user-flow evidence; it does not replace the reproducible suite.
+P2.1 passed these applicable checks on its reviewed candidate and integration merge. Rerun the full commands after P2.2/P2.3; browser infrastructure failure is reported as blocked, never a skipped green check. Use the native browser tool for additional manual inspection, screenshots, and OS-level user-flow evidence; it does not replace the reproducible suite.
 
 Hand engine, generation, normalization, and disposal interfaces to [Plan 03](03-queries-and-filters.md). Immediate review is required for P2.1's capability evidence and P2.3's rollback/resource ownership. Residual risks: heavy full validation, mid-query source loss, browser memory pressure, SQL admission, and UI publication remain explicit.

@@ -8,10 +8,12 @@ Sources:
 
 - [Original brainstorm](../../brainstorm_serverless_ai_dashboards.md): contract-first authoring, shared client runtime, Siemens iX and ECharts, portable artifacts.
 - [Approved AP dashboard](ap-inspection-dashboard.md): the reference user-visible behavior and metric definitions.
-- [Chrome feasibility report](browser-feasibility-report.md): verified browser seam and file-replacement failure.
+- [Chrome feasibility report](../research/browser-feasibility-report.md): verified browser seam and file-replacement failure.
 - Subsequent owner decisions: Chrome-only validation; multiple named local sources and joins; recipients may replace compatible data; no recipient SQL/layout editor. The owner approved the contract boundary covering explicit schemas, typed SQL parameters, declarative presentation, atomic replacement, and two packaging modes.
 
 First release: agent-authored `grid` dashboards, local CSV/Parquet/JSON, client-side queries, filtering, and sharing. No backend, remote-data connector, authentication flow, DuckLake, XLSX, lab, doc, chat, scheduler, or live file watcher. Online runtime dependencies are allowed; offline operation is not promised. Scope changes from the brainstorm are intentional, not incomplete implementations of its later phases.
+
+Vocabulary is defined in [CONTEXT.md](../../CONTEXT.md). The existing approved architectural choices are recorded in [portable delivery](../adr/0001-portable-browser-delivery.md), [declarative config and fixed viewer](../adr/0002-declarative-config-and-fixed-viewer.md), [source generations](../adr/0003-single-worker-source-generations.md), and [engine-backed admission](../adr/0004-engine-backed-query-admission.md). These records capture rationale; this specification continues to own behavior and acceptance.
 
 ## 2. Architecture and ownership
 
@@ -186,6 +188,8 @@ In-browser data replacement changes the session, not the original saved HTML/ZIP
 - **RC-11 — Authoring handoff:** the skill produces config accepted by the shared validator and invokes deterministic packaging for both modes. A human recipient can select inputs, filter, inspect, and replace compatible data without an agent or local server.
 
 ## 10. Planning handoff
+
+Documentation capture checkpoint (planning-contract v1; installed catalog revision unknown): confirmed vocabulary is captured in [CONTEXT.md](../../CONTEXT.md), and the four ADRs linked in §1 record existing approved choices, not new behavior. Browser evidence now lives under `docs/research/`; historical run manifests retain their original revision-specific paths. This documentation capture does not clear outstanding implementation reviews or the P2.1 capability/binding gate.
 
 The owner approved five dependency-ordered implementation plans under `docs/plans/`: contract/fixtures; data normalization and source lifecycle; query/filter execution; grid/AP dashboard; packaging/skill. Each plan links RC/AP criteria rather than redefining behavior, specifies exact files and commands, and identifies one writer for shared interfaces. Source/query lifecycle changes require immediate review because they define dependent behavior.
 

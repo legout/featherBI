@@ -70,7 +70,7 @@ Shared filters: date range, source, station, searchable product, and order looku
 - **AP-04 — Population consistency:** source/station/product count groupings, including missing-value groups where present, reconcile to the selected record count. Selecting a filter updates every view; distinct-order and product KPIs use the filtered rows directly.
 - **AP-05 — Honest semantics:** cards and legends distinguish records from units; no yield, scrap, retest, downtime, or physical-measurement claim is inferred from undocumented fields.
 - **AP-06 — Sharing:** embedded HTML and an extracted HTML-plus-data bundle reproduce equivalent results for the same logical rows. The bundle allows explicit data selection/drop without requiring a local server. Browser validation targets desktop Chrome. Edge checks were removed by the owner's subsequent scope decision.
-- **AP-07 — Scale evidence:** the full 372.69 MiB reference file is exercised separately from a small functional fixture. Record browser versions, device characteristics, load/query times, and available memory evidence or explicit failures. The [browser probe](browser-feasibility-report.md) establishes feasibility for the tested Chrome workload, not a general file-size guarantee or latency promise.
+- **AP-07 — Scale evidence:** the full 372.69 MiB reference file is exercised separately from a small functional fixture. Record browser versions, device characteristics, load/query times, and available memory evidence or explicit failures. The [browser probe](../research/browser-feasibility-report.md) establishes feasibility for the tested Chrome workload, not a general file-size guarantee or latency promise.
 
 ### Reference SQL for AP-02
 
@@ -104,7 +104,7 @@ FROM selected;
 
 - Unique-unit identity and pass/fail semantics require authoritative definitions. `(order_number, sequence_number)` can span sources/stations and contain multiple rows flagged as last; it is not an approved unit key.
 - The M*/E* fields have no verified business names or units here. Do not invent cycle-time, yield, or engineering charts from their numeric types.
-- The [browser probe](browser-feasibility-report.md) provides positive Chrome evidence for `file://` startup, remote runtime assets, file selection, query/render, and small-fixture embedded/bundle parity. Production packaging, peak memory, OS-level drag/drop, and cold-network behavior still need implementation-specific checks.
+- The [browser probe](../research/browser-feasibility-report.md) provides positive Chrome evidence for `file://` startup, remote runtime assets, file selection, query/render, and small-fixture embedded/bundle parity. Production packaging, peak memory, OS-level drag/drop, and cold-network behavior still need implementation-specific checks.
 - The cross-format CSV/JSON normalization contract, timestamp/timezone policy, null/error presentation, exact filter matching rules, query/result limits, and dependency distribution belong to the next design section. This scenario does not settle them.
 - DuckLake, authenticated connectors, hub, lab, doc, and chat are outside this first-dashboard scope.
 

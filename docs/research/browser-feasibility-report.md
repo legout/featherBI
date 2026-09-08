@@ -2,7 +2,7 @@
 
 Verdict: **feasible for the tested workload**. This is experiment evidence, not a production implementation or a general performance guarantee.
 
-Source: [approved AP dashboard scenario](ap-inspection-dashboard.md), particularly AP-02, AP-03, AP-06, and AP-07. The owner approved the disposable probe, then explicitly removed Edge browser work from scope and requested removal of the prototype.
+Source: [approved AP dashboard scenario](../specs/ap-inspection-dashboard.md), particularly AP-02, AP-03, AP-06, and AP-07. The owner approved the disposable probe, then explicitly removed Edge browser work from scope and requested removal of the prototype.
 
 ## Question
 

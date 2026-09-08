@@ -8,7 +8,7 @@ Create the shared config validator and reproducible synthetic data that subseque
 
 - [Runtime contract](../specs/runtime-contract-v1.md): §§3–4, §§6–9; RC-01, RC-02, RC-06, RC-09.
 - [AP scenario](../specs/ap-inspection-dashboard.md): metric semantics and baseline.
-- [Browser evidence](../specs/browser-feasibility-report.md): selected-file identity and the limits of existing proof.
+- [Browser evidence](../research/browser-feasibility-report.md): selected-file identity and the limits of existing proof.
 
 Requirement map: RC-01 → P1.1/P1.2; RC-02 → P1.3 and Plan 02; RC-06 → P1.2 structural references and Plan 03 engine admission; RC-09 → P1.1/P1.2 structural safety and Plan 05 packaging tests. This plan does not claim to implement SQL admission, data conversion, or HTML safety by validating JSON alone.
 

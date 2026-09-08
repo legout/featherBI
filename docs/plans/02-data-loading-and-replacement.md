@@ -6,7 +6,7 @@ Status: approved by the owner. Execution remains subject to Plan 01's baseline-c
 
 Build strict local-data loading and a reversible source-generation seam without a dashboard UI or query scheduler.
 
-Prerequisite: [Plan 01](01-contract-and-fixtures.md), including its setup/ownership rules. Source: [runtime contract](../specs/runtime-contract-v1.md) §§4–5 and RC-02/RC-03/RC-04; [browser evidence](../specs/browser-feasibility-report.md). Map: RC-02 → P2.2; RC-03 → P2.3 plus P3.3; RC-04 → P2.3 cleanup/staging plus P3.3 atomic publication. P2.1 is the required capability gate for P3.1, not proof supplied by native DuckDB.
+Prerequisite: [Plan 01](01-contract-and-fixtures.md), including its setup/ownership rules. Source: [runtime contract](../specs/runtime-contract-v1.md) §§4–5 and RC-02/RC-03/RC-04; [browser evidence](../research/browser-feasibility-report.md). Map: RC-02 → P2.2; RC-03 → P2.3 plus P3.3; RC-04 → P2.3 cleanup/staging plus P3.3 atomic publication. P2.1 is the required capability gate for P3.1, not proof supplied by native DuckDB.
 
 Use one DuckDB-WASM worker and schema-scoped generations. Selected Parquet remains File-backed; full declared-column validation is a scan, not permission to duplicate the file into JS or materialize every source as a table. No parallel writer for the shared package/build files.
 

@@ -16,6 +16,7 @@ import {
  DUCKDB_WASM_VERSION,
  createEngine,
 } from "../../runtime/bootstrap.mjs";
+import { registerSources as loadSources } from "../../runtime/sources.mjs";
 
 /** @typedef {{phase: string, detail?: object}} EngineStatusEvent */
 
@@ -78,6 +79,23 @@ window.__featherbiHarness = {
   const id = `engine-${nextEngineId++}`;
   engines.set(id, { engine, events, disposed: false });
   return { id, info: engine.info };
+ },
+
+ /**
+  * Register explicit source declarations with selected or embedded inputs.
+  * Errors are copied to the visible harness status before being rethrown.
+  */
+ async registerSources(id, files) {
+  const { engine } = requireEngine(id);
+  try {
+   const result = await loadSources(engine, files);
+   markState("ready", "sources ready");
+   return result;
+  } catch (error) {
+   const message = error instanceof Error ? error.message : String(error);
+   markState("error", message);
+   throw error;
+  }
  },
 
  /**

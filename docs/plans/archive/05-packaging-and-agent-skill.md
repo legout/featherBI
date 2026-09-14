@@ -1,17 +1,19 @@
 # Plan 05 — Packaging and agent skill
 
+> **Archived:** superseded by [`../mvp.md`](../mvp.md). Keep for historical evidence only; do not execute this decomposition.
+
 Status: approved by the owner and pending integrated Plans 02–04 plus supervised candidate/integration approvals.
 
 - **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
 - **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-01/RC-06/RC-09/RC-10/RC-11 and AP-06 authoring, packaging, reopening, and skill-handoff scope described below.
-- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Capture checkpoint:** [runtime contract §10](../../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
 - **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
 
 ## Goal, dependencies, and sources
 
 Deliver the complete agent → dashboard → share flow using one deterministic packager and the same browser runtime for authoring preflight and recipients.
 
-Prerequisites: [Plan 04](04-grid-and-ap-dashboard.md), plus shared validator/controller interfaces from Plans 01–03. Sources: [runtime contract](../specs/runtime-contract-v1.md) §8 and RC-09/RC-11; [AP scenario](../specs/ap-inspection-dashboard.md), especially AP-06. Map: RC-01/RC-06 authoring parity → P5.1; RC-09/AP-06 → P5.2/P5.3; RC-11 → P5.4; RC-10 final reopened-artifact integration → P5.3.
+Prerequisites: [Plan 04](04-grid-and-ap-dashboard.md), plus shared validator/controller interfaces from Plans 01–03. Sources: [runtime contract](../../specs/runtime-contract-v1.md) §8 and RC-09/RC-11; [AP scenario](../../specs/ap-inspection-dashboard.md), especially AP-06. Map: RC-01/RC-06 authoring parity → P5.1; RC-09/AP-06 → P5.2/P5.3; RC-11 → P5.4; RC-10 final reopened-artifact integration → P5.3.
 
 No upload/deployment endpoint, viewer-side editor/re-export, registry publication, release, or skill installation is included. Recipients need only desktop Chrome; authors need Node/npm and installed Chrome for browser-backed validation. This reuses the proven WASM path rather than adding a second native DuckDB implementation with potentially different import semantics.
 

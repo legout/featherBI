@@ -1,41 +1,36 @@
 # featherBI MVP plan
 
-**Goal:** open a config → see a dashboard → filter → replace data → share a single HTML file. Working end to end beats complete.
+**Status:** approved. Owner approved the plan and its migration to GitHub Issues in the current planning-doc conversation. Tracker migration preserves the approved scope and changes only its decomposition location.
 
-**Sources:** behavior = [runtime contract v1](../specs/runtime-contract-v1.md); constraints = ADRs 0001–0004; deferred hardening = [deferred.md](deferred.md). Supersedes the per-phase plans in [archive/](archive/) (Plans 01/02 P2.1 remain merged and valid).
+**Goal:** open a config, load local data, see and filter a dashboard, replace data safely, and share it as HTML or a ZIP bundle.
 
-**Execution:** one step at a time, in the working tree. After each step: `npm run check` (+ `npm run test:browser` for S1–S4), one commit, owner reviews the diff.
+**Sources:** behavior = [runtime contract v1](../specs/runtime-contract-v1.md) and [AP dashboard](../specs/ap-inspection-dashboard.md); constraints = [ADRs 0001–0004](../adr/); vocabulary = [CONTEXT.md](../../CONTEXT.md); optional hardening = [deferred.md](deferred.md).
 
-**Test rule:** a step adds at most 1–2 browser tests and only touches unit tests when it adds hand-written logic. Do not test libraries.
+**Capture checkpoint:** no vocabulary changed, no new consequential architecture choice was introduced, and no material decision is unresolved. Planning-contract v1 provenance: `planning-contract` `671e9bf…c271`, `write-implementation-plan` `bd0ba5b…7032`, `orchestrate-implementation` `dd3b66f…0973` (full hashes in `skills-lock.json`).
 
----
+## Execution
 
-## S1 — Load and normalize inputs
+This is the thin overview. Linked GitHub issues own the canonical task bodies; do not copy their editable details back into this plan.
 
-`runtime/sources.mjs` + harness wiring. Register File/embedded bytes in the worker, register Parquet/CSV/JSON/NDJSON, create typed views for the declared schema. Reject with a visible, actionable error: duplicate or case-colliding headers, missing declared columns, unreadable file. Keep it simple: load, cast declared columns, surface errors — no generation staging machinery yet (single active generation; full replacement = re-register, see S2 note).
+- Execute tickets in order through `orchestrate-implementation`'s supervised mode with one sequential writer.
+- Use one obligation per validation unit and the smallest check for its named failure mode. Run `npm run check` for every code change and `npm run test:browser` when browser/runtime behavior changed.
+- Use parent inspection for low-risk work, one candidate review for normal-risk work, and immediate plus candidate review only for source/query lifecycle or other dependency-defining high-risk work.
+- Commit accepted tickets separately. Integration, push, publication, and release retain separate approval gates.
 
-**Test:** one browser test loading the synthetic `inspections` fixtures through the real engine (row count = `expected.json.canonical.rowCount`, join with `products` matches `expected.join.allRows`) and one rejection case (missing declared column).
+## Foundation
 
-## S2 — Queries, filters, replacement
+Completed and integrated: shared config validator, compact synthetic fixtures, file:// Chrome harness, DuckDB-WASM boot/capability evidence, and initial CSV/JSON/NDJSON/Parquet source registration.
 
-`runtime/queries.mjs`: bind named params as typed values, run named SELECT queries. Admission = reject multi-statement / non-SELECT (statement count + top node via `json_serialize_sql`, already proven in P2.1). Bounded results: `LIMIT n+1` on chart/table queries, reject oversize visibly. Replacement: register candidate under fresh physical names, swap on success, drop on failure — no 20-cycle ceremony, one test proves a failed replacement keeps the old data.
+This foundation is reusable infrastructure, not release acceptance. Remaining validation and rollback behavior belongs to T1 rather than the archived horizontal plans.
 
-**Test:** one browser test — run the join query with a quoted/station param from `expected.json` values, verify counts; replace with an invalid file, assert old results still served and a clear error is shown.
+## GitHub issues
 
-## S3 — Grid dashboard UI
-
-`viewer/` (single bundle): renders config layout as KPI cards, bar/line charts (ECharts via CDN), paged table (100/page), filter controls (select, text, date-range) bound to query params. Plain CSS or Siemens iX via CDN — whichever is fewer lines. Errors and boot status visible in-page. A static `examples/ap-dashboard.config.json` drives it from the synthetic fixtures.
-
-**Test:** one e2e — build viewer + example config, open over `file://`, assert the KPI number from `expected.json` and one chart label render.
-
-## S4 — Package and authoring skill
-
-`scripts/build-dashboard.mjs` (the CLI): validates config via `contract/config.mjs`, then emits **embedded mode** (config + data base64-inlined, single HTML) and **zip mode** (HTML + data files side-by-side). Reopen check: the build script's `--verify` reopens the artifact in headless Chrome and asserts the KPI renders. Authoring skill: `skills/featherbi-authoring/SKILL.md` — instructs an agent to write config JSON + run the CLI; never hand-generate dashboard HTML.
-
-**Test:** extend the e2e to open the produced embedded artifact and assert the same KPI. One `</script>`-in-data case inlined as text.
-
----
+1. [#1 — First usable filtered dashboard](https://github.com/legout/featherBI/issues/1) — ready; RC-01–RC-06.
+2. [#2 — Complete AP inspection dashboard](https://github.com/legout/featherBI/issues/2) — blocked by #1; RC-07/RC-08/RC-10 and AP-01–AP-05/AP-07.
+3. [#3 — Shareable artifacts and authoring skill](https://github.com/legout/featherBI/issues/3) — blocked by #2; RC-09/RC-11 and AP-06.
 
 ## Definition of done
 
-Owner runs `node scripts/build-dashboard.mjs --config examples/ap-dashboard.config.json --data /path/to/ap.parquet` on the real private file and the dashboard works in Chrome by double-click. Deferred items stay in `deferred.md`.
+- `npm run check` and `npm run test:browser` pass from a clean checkout.
+- The owner builds against `/Users/volker/data/ewn/ap_unified.parquet`, opens the result in desktop Chrome, and confirms the AP baseline from the specification.
+- Evidence maps to RC-01–RC-11 and AP-01–AP-07 without claiming deferred stress matrices, Edge/offline support, publication, or a performance SLA.

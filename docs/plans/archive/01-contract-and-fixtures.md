@@ -1,10 +1,12 @@
 # Plan 01 — Contract and fixtures
 
+> **Archived:** superseded by [`../mvp.md`](../mvp.md). Keep for historical evidence only; do not execute this decomposition.
+
 Status: completed and integrated into `main` at `0820b3176bbce61723ea463d96131aa58de0fd74`. Later plans remain subject to their supervised candidate/integration approvals.
 
 - **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
 - **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; this plan's RC-01/RC-02/RC-06/RC-09 contract-and-fixture scope and linked AP metric baseline.
-- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Capture checkpoint:** [runtime contract §10](../../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
 - **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
 - **Execution evidence:** integration commit `0820b3176bbce61723ea463d96131aa58de0fd74`; P1.1–P1.3 passed review with 103 tests passing and none failed or skipped.
 
@@ -12,9 +14,9 @@ Status: completed and integrated into `main` at `0820b3176bbce61723ea463d96131aa
 
 Create the shared config validator and reproducible synthetic data that subsequent plans consume.
 
-- [Runtime contract](../specs/runtime-contract-v1.md): §§3–4, §§6–9; RC-01, RC-02, RC-06, RC-09.
-- [AP scenario](../specs/ap-inspection-dashboard.md): metric semantics and baseline.
-- [Browser evidence](../research/browser-feasibility-report.md): selected-file identity and the limits of existing proof.
+- [Runtime contract](../../specs/runtime-contract-v1.md): §§3–4, §§6–9; RC-01, RC-02, RC-06, RC-09.
+- [AP scenario](../../specs/ap-inspection-dashboard.md): metric semantics and baseline.
+- [Browser evidence](../../research/browser-feasibility-report.md): selected-file identity and the limits of existing proof.
 
 Requirement map: RC-01 → P1.1/P1.2; RC-02 → P1.3 and Plan 02; RC-06 → P1.2 structural references and Plan 03 engine admission; RC-09 → P1.1/P1.2 structural safety and Plan 05 packaging tests. This plan does not claim to implement SQL admission, data conversion, or HTML safety by validating JSON alone.
 

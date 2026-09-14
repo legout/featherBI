@@ -1,17 +1,19 @@
 # Plan 04 — Grid and AP dashboard
 
+> **Archived:** superseded by [`../mvp.md`](../mvp.md). Keep for historical evidence only; do not execute this decomposition.
+
 Status: approved by the owner and pending integrated Plans 02–03 plus supervised candidate/integration approvals.
 
 - **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
 - **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-07/RC-08/RC-10 and AP-01 through AP-05/AP-07 generic-grid and AP-dashboard scope described below. AP-06 remains Plan 05 scope.
-- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Capture checkpoint:** [runtime contract §10](../../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
 - **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
 
 ## Goal, dependencies, and sources
 
 Render the approved reference dashboard from config and controller state, not handwritten AP-specific application logic.
 
-Prerequisites: [Plan 03](03-queries-and-filters.md), including reviewed source/query lifecycle interfaces. Sources: [runtime contract](../specs/runtime-contract-v1.md) §§6–7; [AP scenario](../specs/ap-inspection-dashboard.md) in full. Map: RC-07/RC-08 → P4.1; RC-10 and AP-01 through AP-05 → P4.2/P4.3; AP-06/RC-09 are completed by Plan 05 packaging, not claimed by this plan's harness.
+Prerequisites: [Plan 03](03-queries-and-filters.md), including reviewed source/query lifecycle interfaces. Sources: [runtime contract](../../specs/runtime-contract-v1.md) §§6–7; [AP scenario](../../specs/ap-inspection-dashboard.md) in full. Map: RC-07/RC-08 → P4.1; RC-10 and AP-01 through AP-05 → P4.2/P4.3; AP-06/RC-09 are completed by Plan 05 packaging, not claimed by this plan's harness.
 
 Use fixed Siemens iX components/theme plus ECharts, native CSS grid, and semantic HTML where iX has no suitable primitive. No React/Vue framework, arbitrary chart-option passthrough, layout editor, or new table library is needed for a 100-row page. Resolve actual installed iX exports/assets; do not assume brainstorm tags such as `ix-kpi` exist.
 

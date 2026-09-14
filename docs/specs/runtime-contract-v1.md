@@ -1,6 +1,6 @@
 # featherBI runtime and config contract v1
 
-Status: written specification, concrete defaults, and all five implementation plans under `docs/plans/` approved by the owner. Execution remains subject to Plan 01's explicit baseline-commit gate and supervised candidate/integration approvals.
+Status: approved behavioral specification. The active execution map is [`docs/plans/mvp.md`](../plans/mvp.md); archived phase plans preserve history only. Execution uses proportional assurance and retains supervised candidate, integration, and publication gates.
 
 ## 1. Authority and scope
 
@@ -175,6 +175,8 @@ In-browser data replacement changes the session, not the original saved HTML/ZIP
 
 ## 9. Observable acceptance criteria
 
+These criteria define outcomes, not one test per bullet. The implementation plan assigns the smallest distinct evidence set at stable public seams; one end-to-end flow may cover several criteria, and extra edge matrices require a named material risk.
+
 - **RC-01 — Config boundary:** browser and authoring validation agree on a valid example and reject unknown versions/properties, duplicate IDs, missing references, unsafe file hints, and invalid bindings before rendering data.
 - **RC-02 — Format parity:** equivalent synthetic CSV, Parquet, JSON array, and NDJSON produce identical normalized rows and aggregates, including `001`, null/empty string, booleans, a date boundary, and an empty dataset. Malformed/conversion failures are not silently dropped.
 - **RC-03 — Multiple sources:** an inspections source joined to a product-label source produces known expected counts and labels. Missing/ambiguous file assignments cannot activate an incomplete initial dataset.
@@ -189,8 +191,10 @@ In-browser data replacement changes the session, not the original saved HTML/ZIP
 
 ## 10. Planning handoff
 
-Documentation capture checkpoint (planning-contract v1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`): confirmed vocabulary is captured in [CONTEXT.md](../../CONTEXT.md), and the four ADRs linked in §1 record existing approved choices, not new behavior. Browser evidence lives under `docs/research/`; historical run manifests retain their original revision-specific paths. Plan 01 is integrated at `0820b3176bbce61723ea463d96131aa58de0fd74`. P2.1 passed fresh review and was locally integrated into `main` at `844680298070b2f9e0e68e742f113e50f295e26a`; P2.2/P2.3 remain pending.
+Capture checkpoint (planning-contract v1): confirmed vocabulary is in [CONTEXT.md](../../CONTEXT.md); ADRs 0001–0004 record the accepted architectural choices; browser evidence remains under `docs/research/`; no material vocabulary or design decision is unresolved. Installed provenance is recorded in `skills-lock.json` rather than copied into this specification.
 
-The owner approved five dependency-ordered implementation plans under `docs/plans/`: contract/fixtures; data normalization and source lifecycle; query/filter execution; grid/AP dashboard; packaging/skill. Each plan links RC/AP criteria rather than redefining behavior, specifies exact files and commands, and identifies one writer for shared interfaces. Source/query lifecycle changes require immediate review because they define dependent behavior.
+The active [MVP plan](../plans/mvp.md) replaces the archived horizontal phase decomposition with three dependency-ordered GitHub issues. Contract/fixture, browser-engine, and initial source-loading work is already integrated as the foundation. Each ticket delivers an observable end-to-end increment and owns validation units rather than assigning a test to every task checkbox.
 
-The browser probe validates only a subset of this design. New-test tasks must establish focused red → green checks for their own behavior; a fast recent-window query is not evidence for full-column validation, atomic multi-source staging, or cleanup under repeated replacement. Execution follows the approved plans and their explicit baseline, candidate, integration, and publication gates; no change of execution protocol is authorized.
+Use lean assurance: one focused test or existing check per distinct reachable failure mode, no tests of Ajv or DuckDB-WASM internals, and no duplicate unit/browser matrices for the same behavior. Source/query lifecycle remains high risk and receives immediate plus candidate review; ordinary UI and packaging slices receive one candidate review; documentation-only changes use focused inspection. The [deferred backlog](../plans/deferred.md) contains optional stress and breadth work only and does not override this specification.
+
+The Chrome probe validates a subset of the behavior. It is not evidence for full-input validation, atomic replacement, produced-artifact reopening, private-file acceptance, or general performance claims. Integration, push, publication, and release remain separately authorized actions.

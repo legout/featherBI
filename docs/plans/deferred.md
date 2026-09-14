@@ -1,17 +1,13 @@
 # Deferred hardening backlog
 
-Pulled out of the archived per-phase plans. One line each. Do not implement unless the owner pulls an item back.
+Optional work outside the MVP acceptance path. These items do not relax behavior required by the active specifications; pull one back only for a concrete failure, measured risk, or expanded support claim.
 
-- CSV/JSON edge matrices: timestamp microseconds/offsets, unsafe integers, nested JSON values, malformed final rows beyond the reader sample.
-- Case-colliding / duplicate header *repair* strategies (rejection is enough for MVP).
-- JSON Schema Base64 padding grammar for embedded content (validator currently accepts some malformed Base64 that `atob` rejects).
-- Prototype-pollution / `__proto__` / quoted-unicode column-name hardening tests.
-- Full-file column-by-column validation scan (MVP validates structure and casts declared columns only).
-- Generation staging with concurrent candidate schemas + resource-release cycle-count regression (P2.3's 20-cycle requirement).
-- Query admission depth: CTE-scope, modifier sets, `named_param_map` reorder matrices (statement-count + SELECT-node check is the MVP gate).
-- Option-search paging (100/page) and selected-off-page-value display.
-- Chart top-N + "Other" reconciliation edge tests; heatmap component.
-- Source-transition annotation (2023-11-22) and snapshot-end label machinery.
-- Private 5.4M-row AP acceptance harness (`test:ap`, memory/timing accounting, screenshots).
-- Packaging: hostile-string matrix beyond the single `</script>` case; credential/File-handle leak scan automation.
-- Accessibility pass beyond labels/keyboard basics.
+- Broader CSV/JSON conversion matrices beyond the focused representative and late-row failures used by MVP acceptance.
+- Automatic repair of duplicate or case-colliding headers; MVP rejects them.
+- Additional malformed-Base64, prototype-key, quoted-Unicode, and hostile-string fuzz cases beyond boundary validation and the focused packaging regression.
+- Repeated replacement/resource-release stress runs and browser memory accounting beyond one rollback/corrected-replacement acceptance flow.
+- Additional SQL AST/admission combinations beyond the supported SELECT/CTE/join, parameter, undeclared-source, file-reader, and multi-statement boundaries.
+- More option-search/page and chart top-N reconciliation cases beyond the AP end-to-end flow.
+- Automated private 5.4M-row AP regression harness, screenshots, and timing history; MVP uses an explicit owner-run acceptance check without committing private data.
+- Accessibility audit beyond semantic labels, keyboard operation, visible focus, and non-color-only status/error basics.
+- Edge, offline assets, remote connectors, viewer-side editing/re-export, deployment, and publication.

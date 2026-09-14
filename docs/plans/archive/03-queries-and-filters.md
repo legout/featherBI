@@ -1,17 +1,19 @@
 # Plan 03 — Queries and filters
 
+> **Archived:** superseded by [`../mvp.md`](../mvp.md). Keep for historical evidence only; do not execute this decomposition.
+
 Status: approved by the owner and pending its prerequisites. Plan 01 is integrated; Plan 02 remains subject to supervised candidate/integration approval.
 
 - **Approval reference:** owner message on 2026-09-07: “plans look good. approved”.
 - **Approved revision and scope:** `742330bb95b1a19c9ab26a33029b9a75ac470633`; RC-03 through RC-08 and AP-01/AP-04 query, filter, result, and coherent-publication scope described below.
-- **Capture checkpoint:** [runtime contract §10](../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
+- **Capture checkpoint:** [runtime contract §10](../../specs/runtime-contract-v1.md#10-planning-handoff), reconciled at `0d166f322ed6724ce14437fee278a542d506206b`; vocabulary is in [`CONTEXT.md`](../../../CONTEXT.md), architectural constraints are in ADR-0001 through ADR-0004, and no material capture decision remains unresolved.
 - **Planning contract/provenance:** contract version 1; installed `write-implementation-plan` hash `fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609`; installed `planning-contract` hash `671e9bf465ecf63e4030882f5e848c33aa028d271949a89a2ce776af0c89c271`.
 
 ## Goal, dependencies, and sources
 
 Turn a validated config and staged source generation into a coherent, bounded result snapshot. No grid implementation or packaging in this plan.
 
-Prerequisites: [Plan 01](01-contract-and-fixtures.md) and [Plan 02](02-data-loading-and-replacement.md), particularly the actual WASM AST/binding gate. Source: [runtime contract](../specs/runtime-contract-v1.md) §§5–7. Map: RC-06 → P3.1; RC-05 → P3.2/P3.3; RC-07/RC-08 → P3.2; RC-03/RC-04 → P3.3; AP-01/AP-04 → P3.2/P3.3, completed visibly in Plan 04.
+Prerequisites: [Plan 01](01-contract-and-fixtures.md) and [Plan 02](02-data-loading-and-replacement.md), particularly the actual WASM AST/binding gate. Source: [runtime contract](../../specs/runtime-contract-v1.md) §§5–7. Map: RC-06 → P3.1; RC-05 → P3.2/P3.3; RC-07/RC-08 → P3.2; RC-03/RC-04 → P3.3; AP-01/AP-04 → P3.2/P3.3, completed visibly in Plan 04.
 
 Owner clarification: every paged table has an exclusive query ID, enforced in P1.2. Compatible KPI/chart components can share a query; identical SQL under different IDs is allowed. Do not quietly broaden or weaken that rule while implementing pagination.
 

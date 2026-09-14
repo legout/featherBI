@@ -1,6 +1,6 @@
 # AP Inspection Activity & Data Quality
 
-Status: written specification and disposable browser-feasibility probe approved by the owner. The owner subsequently approved the five implementation plans; execution follows their supervised gates.
+Status: approved behavioral specification. The disposable browser-feasibility probe is approved evidence; execution follows the active [MVP plan](../plans/mvp.md) and its proportional supervised gates.
 
 ## Sources and scope
 
@@ -108,4 +108,4 @@ FROM selected;
 - The cross-format CSV/JSON normalization contract, timestamp/timezone policy, null/error presentation, exact filter matching rules, query/result limits, and dependency distribution belong to the next design section. This scenario does not settle them.
 - DuckLake, authenticated connectors, hub, lab, doc, and chat are outside this first-dashboard scope.
 
-The owner approved this written scenario, the disposable browser probe, and subsequently the five implementation plans under `docs/plans/`. Production work follows those plans and their supervised baseline, review, integration, and publication gates; the probe alone is not production acceptance evidence.
+The owner approved this written scenario and the disposable browser probe. Production work follows the active [MVP plan](../plans/mvp.md); archived phase plans are historical only. The probe alone is not production acceptance evidence, and acceptance examples should be covered by the smallest end-to-end evidence set rather than duplicated across test layers.

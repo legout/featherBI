@@ -23,8 +23,8 @@ Goal: a simple, fully functional featherBI MVP. Optimize for working user-visibl
 
 - Read `docs/agents/artifacts.md` for the project artifact mapping and load the `planning-contract` skill for artifact classification and planning handoffs; read `docs/agents/issue-tracker.md` and `docs/agents/domain.md` when their scope applies. Preserve established project conventions.
 - Use `shape-design` for unresolved behavior/design choices, `write-implementation-plan` for approved multi-step work, and `orchestrate-implementation` to execute approved work. Do not turn a trivial edit into a planning exercise.
-- Default orchestrated execution to `supervised`: the `implementer` may implement and validate, but candidate assembly, integration, and publication retain explicit approval gates.
-- Route implementation to the preconfigured `implementer` agent and, when required by the selected policy, independent review to a fresh read-only `code-reviewer`; if either is unavailable, stop and ask the owner before using builtin `worker`/`reviewer`, and record the approved resolved names in the run manifest.
+- Default orchestrated execution to `supervised`: builtin `worker` may implement and validate, but candidate assembly, integration, and publication retain explicit approval gates.
+- Route implementation to builtin `worker` and, when required by the selected policy, independent review to a fresh read-only builtin `reviewer`; confirm both are executable before dispatch and record the resolved names in the run manifest.
 - Keep one writer per worktree. Use `pi-subagents` for spawned-child lifecycle; named persistent `pi-intercom` peers are read-only advisors, not implementation or review agents.
 - Use `systematic-debugging` for unexpected failures and `verification-before-completion` before success claims; match evidence to the exact change and report skipped checks.
 - Use `merge-worktree` for target integration and `make-release` for releases. Local integration does not authorize pushing; opening a PR does not authorize merging; release or publication requires its own approved plan.

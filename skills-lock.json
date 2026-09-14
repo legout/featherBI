@@ -29,7 +29,7 @@
       "source": "legout/skills",
       "sourceType": "github",
       "skillPath": "skills/workflow/orchestrate-implementation/SKILL.md",
-      "computedHash": "3afe90a192a2c3d4967f914b11193f6795ffd3104e738c534559e741b951e508"
+      "computedHash": "dd3b66f62b6a712473e822fafb333e0d4b05c6afa52b0a4fb75b9829710973ed"
     },
     "planning-contract": {
       "source": "legout/skills",
@@ -71,7 +71,7 @@
       "source": "legout/skills",
       "sourceType": "github",
       "skillPath": "skills/workflow/write-implementation-plan/SKILL.md",
-      "computedHash": "fbad63d3b33b854f78d5d93b91bc0b756448a819f877010649fe453455689609"
+      "computedHash": "bd0ba5b686d550035b6ef6285ab0a5edd15ad01a96935aff365672865f0c7032"
     }
   }
 }

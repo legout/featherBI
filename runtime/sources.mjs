@@ -76,10 +76,7 @@ export async function registerSources(engine, files) {
     engine.connection,
     `CREATE OR REPLACE VIEW ${identifier(id)} AS ${view}`,
    );
-   await runSql(
-    engine.connection,
-    `SELECT count(*) FROM ${identifier(id)}`,
-   );
+   await runSql(engine.connection, `SELECT count(*) FROM ${identifier(id)}`);
    sources[id] = { physicalName };
   } catch (error) {
    if (error?.sourceId) throw error;
@@ -202,11 +199,20 @@ function headersFor(type, text, id) {
   return headers;
  }
  if (type === "json" || type === "ndjson") return jsonHeaders(type, input, id);
- throw sourceError(id, `unsupported input type ${JSON.stringify(type)}`, "sources.unsupported-type");
+ throw sourceError(
+  id,
+  `unsupported input type ${JSON.stringify(type)}`,
+  "sources.unsupported-type",
+ );
 }
 
 function csvHeader(text, id) {
- if (text === "") throw sourceError(id, "unreadable file: CSV has no header row", "sources.unreadable-file");
+ if (text === "")
+  throw sourceError(
+   id,
+   "unreadable file: CSV has no header row",
+   "sources.unreadable-file",
+  );
  const headers = [];
  let field = "";
  let quoted = false;
@@ -237,17 +243,29 @@ function csvHeader(text, id) {
  }
  if (!ended) headers.push(field);
  if (quoted) {
-  throw sourceError(id, "unreadable file: CSV header has an unterminated quote", "sources.unreadable-file");
+  throw sourceError(
+   id,
+   "unreadable file: CSV header has an unterminated quote",
+   "sources.unreadable-file",
+  );
  }
  if (!headers.length || headers.some((header) => header === "")) {
-  throw sourceError(id, "unreadable file: CSV header contains an empty column name", "sources.unreadable-file");
+  throw sourceError(
+   id,
+   "unreadable file: CSV header contains an empty column name",
+   "sources.unreadable-file",
+  );
  }
  return headers;
 }
 
 function jsonHeaders(type, text, id) {
  if (text.trim() === "") {
-  throw sourceError(id, "unreadable file: JSON input is empty", "sources.unreadable-file");
+  throw sourceError(
+   id,
+   "unreadable file: JSON input is empty",
+   "sources.unreadable-file",
+  );
  }
  const headers = new Set();
  try {
@@ -256,7 +274,8 @@ function jsonHeaders(type, text, id) {
    for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const value = JSON.parse(line);
-    if (!plainObject(value)) throw new Error("NDJSON rows must be flat objects");
+    if (!plainObject(value))
+     throw new Error("NDJSON rows must be flat objects");
     const keys = objectKeys(line);
     uniqueColumns(id, keys, "JSON");
     keys.forEach((key) => headers.add(key));
@@ -265,7 +284,8 @@ function jsonHeaders(type, text, id) {
    if (!rows) throw new Error("NDJSON input has no data rows");
   } else {
    const value = JSON.parse(text);
-   if (!Array.isArray(value)) throw new Error("JSON input must be an array of flat objects");
+   if (!Array.isArray(value))
+    throw new Error("JSON input must be an array of flat objects");
    let offset = skipWhitespace(text, 1);
    for (const row of value) {
     if (!plainObject(row)) throw new Error("JSON rows must be flat objects");
@@ -343,7 +363,8 @@ function readString(text, start) {
  let index = start + 1;
  while (index < text.length) {
   if (text[index] === "\\") index += 2;
-  else if (text[index] === '"') return [text.slice(start, index + 1), index + 1];
+  else if (text[index] === '"')
+   return [text.slice(start, index + 1), index + 1];
   else index += 1;
  }
  throw new Error("unterminated JSON string");
@@ -355,7 +376,11 @@ function uniqueColumns(id, columns, kind) {
   const prior = seen.get(column.toLowerCase());
   if (prior === undefined) seen.set(column.toLowerCase(), column);
   else if (prior === column) {
-   throw sourceError(id, `duplicate ${kind} header ${JSON.stringify(column)}`, "sources.duplicate-header");
+   throw sourceError(
+    id,
+    `duplicate ${kind} header ${JSON.stringify(column)}`,
+    "sources.duplicate-header",
+   );
   } else {
    throw sourceError(
     id,
@@ -383,9 +408,13 @@ function missingColumns(id, schema, columns) {
 function readerSql(type, name, payload) {
  const path = stringLiteral(name);
  if (type === "parquet") return `read_parquet(${path})`;
- if (type === "csv") return `read_csv_auto(${path}, HEADER = TRUE, ALL_VARCHAR = TRUE)`;
- if (type === "ndjson") return `read_json_auto(${path}, FORMAT = 'newline_delimited')`;
- return payload.headers.length ? `read_json_auto(${path}, FORMAT = 'array')` : null;
+ if (type === "csv")
+  return `read_csv_auto(${path}, HEADER = TRUE, ALL_VARCHAR = TRUE)`;
+ if (type === "ndjson")
+  return `read_json_auto(${path}, FORMAT = 'newline_delimited')`;
+ return payload.headers.length
+  ? `read_json_auto(${path}, FORMAT = 'array')`
+  : null;
 }
 
 function runSql(connection, sql) {
@@ -397,16 +426,29 @@ function plainObject(value) {
 }
 
 function isFile(value) {
- return value !== null && typeof value === "object" && typeof value.text === "function" && typeof value.name === "string";
+ return (
+  value !== null &&
+  typeof value === "object" &&
+  typeof value.text === "function" &&
+  typeof value.name === "string"
+ );
 }
 
 function toBytes(value) {
  if (value instanceof Uint8Array) return value;
  if (value instanceof ArrayBuffer) return new Uint8Array(value);
- if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+ if (ArrayBuffer.isView(value))
+  return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
  if (typeof value === "string") return base64(value);
- if (plainObject(value) && value.encoding === "base64" && typeof value.value === "string") return base64(value.value);
- throw new TypeError("embedded bytes must be Uint8Array, ArrayBuffer, or base64 content");
+ if (
+  plainObject(value) &&
+  value.encoding === "base64" &&
+  typeof value.value === "string"
+ )
+  return base64(value.value);
+ throw new TypeError(
+  "embedded bytes must be Uint8Array, ArrayBuffer, or base64 content",
+ );
 }
 
 function base64(value) {
@@ -414,7 +456,8 @@ function base64(value) {
   const binary = globalThis.atob(value);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
  }
- if (globalThis["Buffer"] !== undefined) return new Uint8Array(globalThis["Buffer"].from(value, "base64"));
+ if (globalThis["Buffer"] !== undefined)
+  return new Uint8Array(globalThis["Buffer"].from(value, "base64"));
  throw new Error("base64 decoding is unavailable");
 }
 

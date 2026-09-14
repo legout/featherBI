@@ -19,7 +19,10 @@ async function harnessCall(page, method, ...args) {
 
 async function fixtureInputs() {
  const config = JSON.parse(
-  await readFile(path.join(rootDir, "tests/fixtures/runtime.config.json"), "utf8"),
+  await readFile(
+   path.join(rootDir, "tests/fixtures/runtime.config.json"),
+   "utf8",
+  ),
  );
  const inputs = [];
  for (const source of config.data.sources) {
@@ -57,9 +60,7 @@ test("loads fixture sources and joins their typed logical views", async ({
     id,
     "SELECT CAST(count(*) AS INTEGER) AS row_count FROM inspections",
    );
-   expect(count).toEqual([
-    { row_count: expected.canonical.rowCount },
-   ]);
+   expect(count).toEqual([{ row_count: expected.canonical.rowCount }]);
 
    const joinCounts = await harnessCall(
     page,
@@ -91,9 +92,11 @@ test("loads fixture sources and joins their typed logical views", async ({
      JOIN products p ON i.product_mlfb = p.product_mlfb
      ORDER BY i.product_mlfb`,
    );
-   expect(Object.fromEntries(labels.map((row) => [row.product_mlfb, row.product_label]))).toEqual(
-    expected.join.allRows.labels,
-   );
+   expect(
+    Object.fromEntries(
+     labels.map((row) => [row.product_mlfb, row.product_label]),
+    ),
+   ).toEqual(expected.join.allRows.labels);
 
    const schema = await harnessCall(
     page,
@@ -101,7 +104,10 @@ test("loads fixture sources and joins their typed logical views", async ({
     id,
     "SELECT typeof(inspection_date) AS inspection_type, typeof(is_last_measurement) AS flag_type FROM inspections LIMIT 1",
    );
-   expect(schema[0]).toEqual({ inspection_type: "TIMESTAMP", flag_type: "BOOLEAN" });
+   expect(schema[0]).toEqual({
+    inspection_type: "TIMESTAMP",
+    flag_type: "BOOLEAN",
+   });
    expect(config.data.sources.map((source) => source.id)).toEqual([
     "inspections",
     "products",
@@ -114,7 +120,9 @@ test("loads fixture sources and joins their typed logical views", async ({
  }
 });
 
-test("shows a visible error for a missing declared column", async ({ browser }) => {
+test("shows a visible error for a missing declared column", async ({
+ browser,
+}) => {
  const { page, context } = await openHarness(browser);
  try {
   const { id } = await harnessCall(page, "createEngine");
@@ -129,15 +137,15 @@ test("shows a visible error for a missing declared column", async ({ browser }) 
     },
    };
    await expect(
-    harnessCall(
-     page,
-     "registerSources",
-     id,
-     [{
+    harnessCall(page, "registerSources", id, [
+     {
       source,
-      bytes: { encoding: "base64", value: Buffer.from("present\nok\n").toString("base64") },
-     }],
-    ),
+      bytes: {
+       encoding: "base64",
+       value: Buffer.from("present\nok\n").toString("base64"),
+      },
+     },
+    ]),
    ).rejects.toThrow('missing declared column "required"');
    await expect(page.locator("#harness-status")).toHaveAttribute(
     "data-state",

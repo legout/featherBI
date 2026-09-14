@@ -11,10 +11,18 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { validateConfig } from "../../contract/config.mjs";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const rootDir = path.resolve(
+ path.dirname(fileURLToPath(import.meta.url)),
+ "../..",
+);
 
 async function base() {
- return JSON.parse(await readFile(path.join(rootDir, "tests/fixtures/minimal.config.json"), "utf8"));
+ return JSON.parse(
+  await readFile(
+   path.join(rootDir, "tests/fixtures/minimal.config.json"),
+   "utf8",
+  ),
+ );
 }
 
 test("layout referencing an unknown query is rejected", async () => {

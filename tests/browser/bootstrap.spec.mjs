@@ -24,11 +24,15 @@ test.describe("engine boot and query smoke", () => {
   requireInstalledDesktopChrome(browser);
  });
 
- test("harness opens over file:// in desktop Chrome and reports ready", async ({ browser }) => {
+ test("harness opens over file:// in desktop Chrome and reports ready", async ({
+  browser,
+ }) => {
   const { page, context } = await openHarness(browser);
   try {
    assertFileOrigin(page.url());
-   expect(await page.getAttribute("#harness-status", "data-state")).toBe("ready");
+   expect(await page.getAttribute("#harness-status", "data-state")).toBe(
+    "ready",
+   );
    const userAgent = await page.evaluate(() => navigator.userAgent);
    expect(userAgent).toMatch(/Chrome\//);
    expect(userAgent).not.toMatch(/Chromium\//);
@@ -37,13 +41,17 @@ test.describe("engine boot and query smoke", () => {
   }
  });
 
- test("engine boots and executes SELECT 1 through the real worker", async ({ browser }) => {
+ test("engine boots and executes SELECT 1 through the real worker", async ({
+  browser,
+ }) => {
   const { page, context } = await openHarness(browser);
   try {
    const { id, info } = await harnessEval(page, "createEngine()");
    try {
     expect(info.version).toMatch(/^v\d+\.\d+\.\d+/);
-    expect(await harnessEval(page, `query('${id}', 'SELECT 1 AS one')`)).toEqual([{ one: 1 }]);
+    expect(
+     await harnessEval(page, `query('${id}', 'SELECT 1 AS one')`),
+    ).toEqual([{ one: 1 }]);
    } finally {
     await harnessEval(page, `dispose('${id}')`);
    }
@@ -57,7 +65,9 @@ test.describe("engine boot and query smoke", () => {
   try {
    const { id } = await harnessEval(page, "createEngine()");
    try {
-    await expect(harnessEval(page, `query('${id}', 'SELECT * FROM no_such_table')`)).rejects.toThrow();
+    await expect(
+     harnessEval(page, `query('${id}', 'SELECT * FROM no_such_table')`),
+    ).rejects.toThrow();
    } finally {
     await harnessEval(page, `dispose('${id}')`);
    }
@@ -72,13 +82,17 @@ test.describe("engine boot and query smoke", () => {
    const { id } = await harnessEval(page, "createEngine()");
    await harnessEval(page, `dispose('${id}')`);
    await harnessEval(page, `dispose('${id}')`);
-   expect((await harnessEval(page, `engineState('${id}')`)).disposed).toBe(true);
+   expect((await harnessEval(page, `engineState('${id}')`)).disposed).toBe(
+    true,
+   );
   } finally {
    await closeHarness(context);
   }
  });
 
- test("json_serialize_sql capability works with a bound parameter", async ({ browser }) => {
+ test("json_serialize_sql capability works with a bound parameter", async ({
+  browser,
+ }) => {
   const { page, context } = await openHarness(browser);
   try {
    const { id } = await harnessEval(page, "createEngine()");

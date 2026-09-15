@@ -12,7 +12,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import * as esbuild from "esbuild";
@@ -28,6 +28,7 @@ const rootDir = path.resolve(
 const entryPoint = path.join(rootDir, "tests", "browser", "harness.mjs");
 const outDir = path.join(rootDir, ".artifacts", "browser");
 const outPath = path.join(outDir, "harness.html");
+const dashboardPath = path.join(outDir, "dashboard.html");
 
 const bundle = await esbuild.build({
  entryPoints: [entryPoint],
@@ -78,7 +79,58 @@ ${code}
 await mkdir(outDir, { recursive: true });
 await writeFile(outPath, html, "utf8");
 
+const config = JSON.parse(
+ await readFile(path.join(rootDir, "tests/fixtures/runtime.config.json"), "utf8"),
+);
+const embeddedInputs = await Promise.all(
+ config.data.sources.map(async (source) => ({
+  id: source.id,
+  value: (
+   await readFile(path.join(rootDir, ".artifacts/fixtures", source.file))
+  ).toString("base64"),
+ })),
+);
+const dashboardBundle = await esbuild.build({
+ stdin: {
+  contents: `
+   import { mountDashboard } from "./runtime/viewer.mjs";
+   const config = ${scriptJson(config)};
+   const embedded = ${scriptJson(embeddedInputs)};
+   const inputs = embedded.map(({ id, value }) => ({
+    source: config.data.sources.find((source) => source.id === id),
+    bytes: { encoding: "base64", value },
+   }));
+   window.__featherbiDashboardReady = mountDashboard({ config, inputs });
+   window.__featherbiDashboardReady.catch(() => {});
+  `,
+  resolveDir: rootDir,
+  sourcefile: "featherbi-dashboard-entry.mjs",
+ },
+ bundle: true,
+ format: "iife",
+ platform: "browser",
+ target: "chrome130",
+ minify: false,
+ write: false,
+ legalComments: "none",
+ logLevel: "warning",
+});
+const shell = await readFile(path.join(rootDir, "shells/grid.html"), "utf8");
+await writeFile(
+ dashboardPath,
+ shell.replace(
+  "<!-- FEATHERBI_SCRIPT -->",
+  `<script>\n${dashboardBundle.outputFiles[0].text}\n</script>`,
+ ),
+ "utf8",
+);
+
 console.log(`wrote ${outPath}`);
+console.log(`wrote ${dashboardPath}`);
 console.log(
  `bundle sha256=${codeSha256} duckdb-wasm=${DUCKDB_WASM_VERSION} (pinned remote assets)`,
 );
+
+function scriptJson(value) {
+ return JSON.stringify(value).replaceAll("<", "\\u003c");
+}

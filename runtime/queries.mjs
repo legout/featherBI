@@ -58,6 +58,7 @@ export async function admitQuery(connection, query, declaredSources) {
   );
  }
  return {
+  ordered: nodes.some((node) => node.type === "ORDER_MODIFIER"),
   parameterOrder,
   sql: await positionalSql(connection, serialized, parameterOrder),
  };
@@ -70,23 +71,45 @@ export async function admitQuery(connection, query, declaredSources) {
  * @param {{sql: string, params: string[]}} query
  * @param {Record<string, unknown>} values
  * @param {string[] | Set<string>} declaredSources
+ * @param {{limit?: number, offset?: number, requireOrder?: boolean}} [options]
  */
-export async function runQuery(connection, query, values, declaredSources) {
- const { parameterOrder, sql } = await admitQuery(
+export async function runQuery(
+ connection,
+ query,
+ values,
+ declaredSources,
+ options = {},
+) {
+ const { ordered, parameterOrder, sql } = await admitQuery(
   connection,
   query,
   declaredSources,
  );
+ if (options.requireOrder && !ordered) {
+  throw rejected("paged table queries require ORDER BY");
+ }
  const bound = parameterOrder.map((name) => {
   if (!Object.hasOwn(values, name)) {
    throw rejected(`missing value for parameter ${JSON.stringify(name)}`);
   }
   return values[name];
  });
- const statement = await connection.prepare(sql);
+ const limit = boundedInteger(options.limit, "limit", 1);
+ const offset = boundedInteger(options.offset, "offset", 0) ?? 0;
+ // pi-lens-ignore: ast-grep:no-sql-in-code-js
+ const executable = limit
+  ? `SELECT * FROM (${sql}) AS __featherbi_result LIMIT ${limit} OFFSET ${offset}`
+  : sql;
+ const statement = await connection.prepare(executable);
  try {
   const table = await statement.query(...bound);
-  return table.toArray().map((row) => ({ ...row }));
+  const names = table.schema.fields.map(({ name }) => name);
+  if (new Set(names).size !== names.length) {
+   throw rejected("query result has duplicate column names");
+  }
+  const rows = table.toArray().map((row) => ({ ...row }));
+  Object.defineProperty(rows, "fields", { value: names });
+  return rows;
  } finally {
   await statement.close();
  }
@@ -134,6 +157,14 @@ function walk(root) {
  };
  visit(root);
  return result;
+}
+
+function boundedInteger(value, name, minimum) {
+ if (value === undefined) return undefined;
+ if (!Number.isSafeInteger(value) || value < minimum) {
+  throw new TypeError(`${name} must be a safe integer >= ${minimum}`);
+ }
+ return value;
 }
 
 function rejected(message) {

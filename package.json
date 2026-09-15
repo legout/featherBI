@@ -10,6 +10,7 @@
   "scripts": {
     "generate:contract": "node scripts/build-contract.mjs",
     "fixtures": "uv run tests/fixtures/generate.py",
+    "build": "npm run generate:contract && node scripts/build.mjs",
     "build:harness": "npm run generate:contract && npm run fixtures && node scripts/build-test-harness.mjs",
     "test:unit": "node --test tests/unit/*.test.mjs",
     "test:browser": "npm run build:harness && playwright test --project=chrome --grep-invert @private",
@@ -19,6 +20,7 @@
     "@duckdb/duckdb-wasm": "1.32.0",
     "@playwright/test": "1.63.0",
     "ajv": "8.20.0",
+    "echarts": "6.1.0",
     "esbuild": "0.28.2"
   }
 }

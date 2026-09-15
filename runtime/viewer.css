@@ -1,0 +1,38 @@
+:root {
+ color-scheme: light;
+ font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+ color: #18212b;
+ background: #f5f7fa;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1600px; margin: auto; padding: 1.5rem; }
+h1 { margin-block: 0 .5rem; }
+#dashboard-status { font-weight: 650; }
+#dashboard-filters, #dashboard-sources { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; margin-block: 1rem; }
+fieldset { display: flex; align-items: center; gap: .4rem; min-width: 12rem; padding: .5rem; border: 1px solid #aeb9c6; border-radius: .35rem; }
+legend { font-weight: 650; }
+label { display: flex; align-items: center; gap: .4rem; }
+input, select, button { min-height: 2.25rem; font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 3px solid #006b99; outline-offset: 2px; }
+#snapshot-note { padding: .6rem; border-left: .3rem solid #d98200; background: #fff7e8; }
+#dashboard-layout { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; }
+section { grid-column: span 3; min-width: 0; padding: 1rem; border: 1px solid #d1d7df; border-radius: .45rem; background: white; box-shadow: 0 1px 2px #0001; }
+section[data-component-type="line"], section[data-component-type="heatmap"], section[data-component-type="table"] { grid-column: span 12; }
+section[data-component-type="bar"] { grid-column: span 6; }
+h2 { margin-top: 0; font-size: 1rem; }
+output { font-size: 2rem; font-weight: 750; }
+.chart { width: 100%; height: 22rem; }
+[data-chart-summary] { max-height: 5rem; overflow: auto; font-size: .8rem; color: #465463; }
+table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+th, td { padding: .5rem; border-bottom: 1px solid #e3e7eb; text-align: left; }
+th { background: #f0f3f6; }
+nav { display: flex; justify-content: flex-end; align-items: center; gap: .75rem; margin-top: .75rem; }
+[data-state="error"] { color: #a01515; }
+@media (max-width: 900px) {
+ section, section[data-component-type="bar"] { grid-column: span 6; }
+ section[data-component-type="line"], section[data-component-type="heatmap"], section[data-component-type="table"] { grid-column: span 12; }
+}
+@media (max-width: 560px) { section, section[data-component-type] { grid-column: span 12; } }

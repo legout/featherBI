@@ -17,7 +17,7 @@
       "source": "legout/skills",
       "sourceType": "github",
       "skillPath": "skills/workflow/make-release/SKILL.md",
-      "computedHash": "49d258d5881fc3f3596a07e656025812bbaad9324036440def44ba5479adbe11"
+      "computedHash": "4ee7be3856ef1f008e04fbd6f82c1ebbf8b49563eb8f3e562aa097d45a37c0a6"
     },
     "merge-worktree": {
       "source": "legout/skills",
@@ -29,7 +29,7 @@
       "source": "legout/skills",
       "sourceType": "github",
       "skillPath": "skills/workflow/orchestrate-implementation/SKILL.md",
-      "computedHash": "dd3b66f62b6a712473e822fafb333e0d4b05c6afa52b0a4fb75b9829710973ed"
+      "computedHash": "752f1f8243f99ce768e9ef8770fbf02720330f0483148a6bd1e02e48364652df"
     },
     "planning-contract": {
       "source": "legout/skills",
@@ -65,13 +65,13 @@
       "source": "legout/skills",
       "sourceType": "github",
       "skillPath": "skills/workflow/verification-before-completion/SKILL.md",
-      "computedHash": "acb67aad9f3c105c2d960efcd093d8bda5458369615050a308567e59c9138ffe"
+      "computedHash": "e5a5d53bf1df8c07ceb83a95cb1ba9793a0c35a6ca85ca05e75bdb60fe9769a7"
     },
     "write-implementation-plan": {
       "source": "legout/skills",
       "sourceType": "github",
       "skillPath": "skills/workflow/write-implementation-plan/SKILL.md",
-      "computedHash": "bd0ba5b686d550035b6ef6285ab0a5edd15ad01a96935aff365672865f0c7032"
+      "computedHash": "b88bcc065378e107e5272dda5cc36ebb3f457ac2f55a254547232a18e59713e8"
     }
   }
 }

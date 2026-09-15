@@ -5,13 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>featherBI</title>
 <style>
-body { font: 16px system-ui, sans-serif; margin: 2rem; }
-form, #dashboard-sources { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1rem; }
-label { display: flex; align-items: center; gap: .4rem; }
-#dashboard-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; }
-section { border: 1px solid #ccc; border-radius: .4rem; padding: 1rem; }
-output { font-size: 2rem; font-weight: 700; }
-[data-state="error"] { color: #a00; }
+<!-- FEATHERBI_STYLE -->
 </style>
 </head>
 <body>
@@ -19,9 +13,10 @@ output { font-size: 2rem; font-weight: 700; }
 <h1 id="dashboard-title">featherBI</h1>
 <p id="dashboard-status" data-state="loading" role="status">Loading dashboard…</p>
 <p id="active-filter-state" aria-label="Active filter state"></p>
+<p id="snapshot-note"></p>
 <form id="dashboard-filters" onsubmit="return false"></form>
-<section aria-label="Replace data files">
-<h2>Replace data files</h2>
+<section aria-label="Data files">
+<h2>Data files</h2>
 <div id="dashboard-sources"></div>
 </section>
 <div id="dashboard-layout"></div>

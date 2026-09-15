@@ -89,10 +89,12 @@ export function assertSafeZipMembers(names) {
   ) {
    throw new Error(`unsafe ZIP member ${JSON.stringify(name)}`);
   }
-  if (seen.has(name)) {
+  // ponytail: ASCII toLowerCase, matching schema validation; Unicode-only case pairs on case-insensitive filesystems are out of scope.
+  const key = name.toLowerCase();
+  if (seen.has(key)) {
    throw new Error(`duplicate ZIP member ${JSON.stringify(name)}`);
   }
-  seen.add(name);
+  seen.add(key);
  }
 }
 

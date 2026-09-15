@@ -48,6 +48,7 @@ test("packaging keeps members, scripts, and output publication safe", async () =
  assert.throws(() => assertSafeZipMembers(["dashboard.html", "/escape.json"]));
  assert.throws(() => assertSafeZipMembers(["dashboard.html", "data\\escape.json"]));
  assert.throws(() => assertSafeZipMembers(["dashboard.html", "dashboard.html"]));
+ assert.throws(() => assertSafeZipMembers(["ap.json", "AP.json"]));
 
  const embedded = path.join(dir, "dashboard.html");
  const embeddedCopy = path.join(dir, "dashboard-copy.html");

@@ -1,8 +1,11 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0005-external-data-only-delivery.md
 ---
 
 # Deliver portable dashboards without a local server
+
+> Superseded by [ADR 0005](0005-external-data-only-delivery.md), which retains the no-server ZIP flow but removes embedded data.
 
 The approved first-release sharing model uses embedded HTML or an extracted HTML-plus-data ZIP, opened through `file://` in desktop Chrome, rather than requiring recipients to run a server or install an authoring environment. Runtime dependencies may load online at pinned versions: portability does not promise offline operation, and separate ZIP data files require explicit selection rather than automatic sibling-file access.
 

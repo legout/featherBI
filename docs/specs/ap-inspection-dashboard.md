@@ -5,7 +5,7 @@ Status: approved behavioral specification. The disposable browser-feasibility pr
 ## Sources and scope
 
 - Originating concept: [featherBI brainstorm](../../brainstorm_serverless_ai_dashboards.md), especially §§3–7 and §12.
-- Owner decisions in the planning conversation: agent → dashboard → share first; local CSV, Parquet, and JSON; desktop Chrome; internet-dependent runtime allowed; embedded HTML and ZIP bundles with separate data files; recipients may select/drop files after opening HTML and may see every shared row.
+- Owner decisions in the planning conversation: agent → dashboard → share first; local CSV, Parquet, and JSON; desktop Chrome; internet-dependent runtime allowed; ZIP bundles with data kept outside HTML; recipients explicitly select/drop files after opening HTML and may see every shared row.
 - Latest owner decision after the probe: skip Edge browser work and proceed without it. Chrome is the current validation target; Edge support is not claimed.
 - Owner approved the proposed AP dashboard and profiling findings with “looks good”. This specification records that scenario, not the complete featherBI runtime architecture.
 - [Tracker convention](../agents/issue-tracker.md): local Markdown tickets when execution planning requires them.
@@ -14,11 +14,11 @@ The first dashboard answers: how much inspection activity is recorded, where and
 
 ## Reference dataset
 
-Local owner-provided file: `/Users/volker/data/ewn/ap_unified.parquet`.
+Local owner-provided file: `/Users/volker/data/ewn/unified_ap.parquet`.
 
 Inspection baseline (native DuckDB 1.5.5):
 
-- 390,798,150 bytes (372.69 MiB), 5,384,125 rows, 70 columns.
+- 390,548,300 bytes (372.46 MiB), 5,384,125 rows, 70 columns.
 - Timestamp range: 2017-01-02 05:04:43 through 2026-08-26 12:26:34.
 - 1,064,008 distinct order numbers; 48,448 distinct non-null product MLFBs; 63 stations.
 - `ap1` ends at 2023-11-22 18:29:42; `ap2` starts at 2023-11-22 18:29:46.
@@ -69,7 +69,7 @@ Shared filters: date range, source, station, searchable product, and order looku
 - **AP-03 — Chart baseline:** default-window station counts include SJ = 2,585 and SD = 2,476. Code counts include PE100 = 1,547, PE101 = 467, and F165 = 365. Neither chart calls these failure or utilization measurements.
 - **AP-04 — Population consistency:** source/station/product count groupings, including missing-value groups where present, reconcile to the selected record count. Selecting a filter updates every view; distinct-order and product KPIs use the filtered rows directly.
 - **AP-05 — Honest semantics:** cards and legends distinguish records from units; no yield, scrap, retest, downtime, or physical-measurement claim is inferred from undocumented fields.
-- **AP-06 — Sharing:** embedded HTML and an extracted HTML-plus-data bundle reproduce equivalent results for the same logical rows. The bundle allows explicit data selection/drop without requiring a local server. Browser validation targets desktop Chrome. Edge checks were removed by the owner's subsequent scope decision.
+- **AP-06 — Sharing:** an extracted HTML-plus-data bundle reproduces the expected results after explicit local data selection/drop without requiring a local server. Dataset bytes are absent from the HTML. Browser validation targets desktop Chrome. Edge checks were removed by the owner's subsequent scope decision.
 - **AP-07 — Scale evidence:** the full 372.69 MiB reference file is exercised separately from a small functional fixture. Record browser versions, device characteristics, load/query times, and available memory evidence or explicit failures. The [browser probe](../research/browser-feasibility-report.md) establishes feasibility for the tested Chrome workload, not a general file-size guarantee or latency promise.
 
 ### Reference SQL for AP-02
@@ -104,7 +104,7 @@ FROM selected;
 
 - Unique-unit identity and pass/fail semantics require authoritative definitions. `(order_number, sequence_number)` can span sources/stations and contain multiple rows flagged as last; it is not an approved unit key.
 - The M*/E* fields have no verified business names or units here. Do not invent cycle-time, yield, or engineering charts from their numeric types.
-- The [browser probe](../research/browser-feasibility-report.md) provides positive Chrome evidence for `file://` startup, remote runtime assets, file selection, query/render, and small-fixture embedded/bundle parity. Production packaging, peak memory, OS-level drag/drop, and cold-network behavior still need implementation-specific checks.
+- The [browser probe](../research/browser-feasibility-report.md) provides positive Chrome evidence for `file://` startup, remote runtime assets, file selection, query/render, and the extracted-bundle flow. Its historical embedded-data evidence no longer defines supported behavior. Production packaging, peak memory, OS-level drag/drop, and cold-network behavior still need implementation-specific checks.
 - The cross-format CSV/JSON normalization contract, timestamp/timezone policy, null/error presentation, exact filter matching rules, query/result limits, and dependency distribution belong to the next design section. This scenario does not settle them.
 - DuckLake, authenticated connectors, hub, lab, doc, and chat are outside this first-dashboard scope.
 

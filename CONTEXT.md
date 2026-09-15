@@ -15,9 +15,7 @@ _Avoid_: Generated application code.
 
 **Recipient**: A person opening a shared dashboard to inspect, filter, or replace its data, rather than edit its queries or layout.
 
-**Artifact**: The distributable dashboard, delivered as embedded HTML or a ZIP bundle.
-
-**Embedded HTML**: An artifact containing the dashboard definition, viewer, and data in one HTML file.
+**Artifact**: The distributable dashboard, delivered as a ZIP bundle.
 
 **ZIP bundle**: An artifact containing an HTML viewer and separate data files that the recipient extracts and explicitly selects.
 

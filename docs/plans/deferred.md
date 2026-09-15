@@ -10,4 +10,4 @@ Optional work outside the MVP acceptance path. These items do not relax behavior
 - More option-search/page and chart top-N reconciliation cases beyond the AP end-to-end flow.
 - Automated private 5.4M-row AP regression harness, screenshots, and timing history; MVP uses an explicit owner-run acceptance check without committing private data.
 - Accessibility audit beyond semantic labels, keyboard operation, visible focus, and non-color-only status/error basics.
-- Edge, offline assets, remote connectors, viewer-side editing/re-export, deployment, and publication.
+- Edge, offline assets, remote connectors (including public CORS-enabled S3/GitHub URLs), viewer-side editing/re-export, deployment, and publication.

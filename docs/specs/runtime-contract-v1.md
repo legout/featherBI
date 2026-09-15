@@ -1,6 +1,6 @@
 # featherBI runtime and config contract v1
 
-Status: approved behavioral specification. The active execution map is [`docs/plans/mvp.md`](../plans/mvp.md); archived phase plans preserve history only. Execution uses proportional assurance and retains supervised candidate, integration, and publication gates.
+Status: approved behavioral specification, revised by the owner's 2026-09-15 external-data-only decision. The active execution map is [`docs/plans/mvp.md`](../plans/mvp.md); archived phase plans preserve history only. Execution uses proportional assurance and retains supervised candidate, integration, and publication gates.
 
 ## 1. Authority and scope
 
@@ -9,16 +9,16 @@ Sources:
 - [Original brainstorm](../../brainstorm_serverless_ai_dashboards.md): contract-first authoring, shared client runtime, Siemens iX and ECharts, portable artifacts.
 - [Approved AP dashboard](ap-inspection-dashboard.md): the reference user-visible behavior and metric definitions.
 - [Chrome feasibility report](../research/browser-feasibility-report.md): verified browser seam and file-replacement failure.
-- Subsequent owner decisions: Chrome-only validation; multiple named local sources and joins; recipients may replace compatible data; no recipient SQL/layout editor. The owner approved the contract boundary covering explicit schemas, typed SQL parameters, declarative presentation, atomic replacement, and two packaging modes.
+- Subsequent owner decisions: Chrome-only validation; multiple named local sources and joins; recipients may replace compatible data; no recipient SQL/layout editor; dataset bytes remain outside HTML. The owner approved the contract boundary covering explicit schemas, typed SQL parameters, declarative presentation, atomic replacement, and ZIP-only external-data packaging.
 
 First release: agent-authored `grid` dashboards, local CSV/Parquet/JSON, client-side queries, filtering, and sharing. No backend, remote-data connector, authentication flow, DuckLake, XLSX, lab, doc, chat, scheduler, or live file watcher. Online runtime dependencies are allowed; offline operation is not promised. Scope changes from the brainstorm are intentional, not incomplete implementations of its later phases.
 
-Vocabulary is defined in [CONTEXT.md](../../CONTEXT.md). The existing approved architectural choices are recorded in [portable delivery](../adr/0001-portable-browser-delivery.md), [declarative config and fixed viewer](../adr/0002-declarative-config-and-fixed-viewer.md), [source generations](../adr/0003-single-worker-source-generations.md), and [engine-backed admission](../adr/0004-engine-backed-query-admission.md). These records capture rationale; this specification continues to own behavior and acceptance.
+Vocabulary is defined in [CONTEXT.md](../../CONTEXT.md). The existing approved architectural choices are recorded in [external-data-only delivery](../adr/0005-external-data-only-delivery.md), [declarative config and fixed viewer](../adr/0002-declarative-config-and-fixed-viewer.md), [source generations](../adr/0003-single-worker-source-generations.md), and [engine-backed admission](../adr/0004-engine-backed-query-admission.md). These records capture rationale; this specification continues to own behavior and acceptance.
 
 ## 2. Architecture and ownership
 
 - **Contract validator:** validates config structure and cross-references before loading data. The authoring tool and browser use the same versioned schema and semantic rules.
-- **Local-data runtime:** owns the DuckDB-WASM worker, File/embedded-byte registration, normalized source views, source generations, and cleanup.
+- **Local-data runtime:** owns the DuckDB-WASM worker, selected-File registration, normalized source views, source generations, and cleanup.
 - **Query runtime:** binds typed parameters, runs named SELECT queries, validates results, and prevents stale results from becoming visible.
 - **Grid renderer:** renders filter controls and declarative KPI/chart/table components using Siemens iX and ECharts. It does not own source loading or generate SQL.
 - **Packager and skill:** the agent creates config; deterministic tooling validates and packages config, viewer code, and data. The skill never hand-generates executable dashboard HTML.
@@ -29,10 +29,10 @@ These are responsibilities, not a requirement for five classes, services, or pac
 
 A JSON object has `contract: 1`, `app: "grid"`, a plain-text `title`, `data`, `filters`, `queries`, and `layout`. Reject unsupported contract/app versions, unknown properties, duplicate IDs, and unresolved references. Do not silently migrate incompatible configs.
 
-- `data.mode` is `upload` or `embedded`. `upload` includes the extracted-HTML-plus-data bundle use case; it does not mean sending data to a server.
+- `data.mode` is `upload`. It means explicit local browser file selection, not sending data to a server.
 - `data.sources` is a non-empty array. Each source has `id`, `type` (`csv`, `parquet`, or `json`), `file` (a suggested basename), and `schema`.
 - `schema` maps required column names to `{type, nullable}`. Types are `string`, `boolean`, `integer`, `number`, `date`, and `timestamp`; `nullable` is explicit.
-- Embedded sources additionally contain `content: {encoding: "base64", value: "..."}`. Upload sources cannot contain `content`. V1 uses one delivery mode for the artifact, not mixed embedded/upload sources.
+- Sources cannot contain dataset content, local paths, or remote URLs. V1 accepts selected local files only; remote storage is deferred.
 - Source, filter, query, and component IDs match `[a-z][a-z0-9_]*`. Quote SQL identifiers when generating runtime-owned SQL; IDs are not permission to concatenate unquoted SQL.
 - Source schemas reject case-insensitively duplicate names because SQL column resolution can otherwise be ambiguous. Input files with duplicate header/column names are rejected, not silently renamed.
 - Config contains no File handles, absolute local paths, tokens, or arbitrary script/HTML fields. `file` is a non-empty basename: reject slash, backslash, colon, NUL/control characters, and `.`/`..`. It is a hint, never authority to access a sibling file automatically.
@@ -100,7 +100,7 @@ The validator reports source ID, column, expected type, and an error category. C
 
 Recipients explicitly assign a selected/dropped file to each source ID. A matching basename can suggest an assignment; never guess between ambiguous candidates or treat an extension as proof of format. The format and schema must match the source declaration. One File may be deliberately assigned to more than one logical source; mapping is explicit.
 
-Use browser-selected File handles for upload sources. Do not eagerly copy a large selected Parquet through `arrayBuffer()`. Embedded data necessarily requires decoding bytes. Each physical registration receives a fresh generation-specific name; named logical source views remain stable.
+Use browser-selected File handles for upload sources. Do not eagerly copy a large selected Parquet through `arrayBuffer()`. Each physical registration receives a fresh generation-specific name; named logical source views remain stable.
 
 Initial state has no active dataset until all sources pass validation. Replacement uses this sequence:
 
@@ -160,16 +160,13 @@ Approved operational defaults:
 
 ## 8. Packaging and trust
 
-The deterministic authoring path consumes config plus an explicit source-ID-to-local-file mapping, validates them, and produces one of:
+The deterministic authoring path consumes config plus an explicit source-ID-to-local-file mapping, validates them, and produces one **ZIP bundle** containing the HTML viewer and separate data files. ZIP members are safe relative names with no traversal or absolute paths; names cannot collide. The user extracts the bundle, opens the HTML through `file://`, and explicitly selects the accompanying data files. Browser security prevents automatic sibling-file access without a user grant.
 
-- **Embedded HTML:** config, fixed viewer code, and Base64 data in one file.
-- **ZIP bundle:** one HTML file containing config/viewer code and accompanying data files. ZIP members are safe relative names with no traversal or absolute paths; names cannot collide. The user extracts the bundle, opens HTML, and selects the data files.
+Runtime asset versions are pinned and visible in build metadata; no unversioned `latest` URLs. Runtime dependencies may be fetched online; the artifact must show a useful boot error/retry affordance when they are unavailable, rather than a blank page.
 
-Both modes render the same config and logical rows. Runtime asset versions are pinned and visible in build metadata; no unversioned `latest` URLs. Runtime dependencies may be fetched online; the artifact must show a useful boot error/retry affordance when they are unavailable, rather than a blank page.
+Safely serialize config into HTML so content such as `</script>` cannot become executable markup. Dataset bytes must not be serialized into HTML. The packager must not publish partially written output as success; validate and build a temporary result before replacing the chosen output. CLI overwrite policy and exact command flags belong to implementation planning. No deploy, upload, commit, or publication is implicit in packaging.
 
-Safely serialize embedded JSON/data into HTML so content such as `</script>` cannot become executable markup. The packager must not publish partially written output as success; validate and build a temporary result before replacing the chosen output. CLI overwrite policy and exact command flags belong to implementation planning. No deploy, upload, commit, or publication is implicit in packaging.
-
-Viewer operation has no application data-upload or telemetry endpoint. Dependencies execute within the viewer's trust context and must be reviewed/pinned; “client-side” is not a guarantee against malicious dependencies or authored SQL. The entire artifact and its data are shared with authorized recipients; source-system ACLs do not follow embedded/exported rows.
+Viewer operation has no application data-upload or telemetry endpoint. Dependencies execute within the viewer's trust context and must be reviewed/pinned; “client-side” is not a guarantee against malicious dependencies or authored SQL. The ZIP and its data files are shared with authorized recipients; source-system ACLs do not follow exported rows.
 
 In-browser data replacement changes the session, not the original saved HTML/ZIP. Producing an updated distributable remains an authoring/packaging action; viewer-side authoring and re-export are not required in this first release.
 
@@ -180,18 +177,18 @@ These criteria define outcomes, not one test per bullet. The implementation plan
 - **RC-01 — Config boundary:** browser and authoring validation agree on a valid example and reject unknown versions/properties, duplicate IDs, missing references, unsafe file hints, and invalid bindings before rendering data.
 - **RC-02 — Format parity:** equivalent synthetic CSV, Parquet, JSON array, and NDJSON produce identical normalized rows and aggregates, including `001`, null/empty string, booleans, a date boundary, and an empty dataset. Malformed/conversion failures are not silently dropped.
 - **RC-03 — Multiple sources:** an inspections source joined to a product-label source produces known expected counts and labels. Missing/ambiguous file assignments cannot activate an incomplete initial dataset.
-- **RC-04 — Replacement rollback:** stage two replacements, make one invalid, and verify the original data/filter/results remain active. A corrected batch commits together and resets defaults. Repeated selected/embedded/replacement loads use fresh physical names and reproduce results without retained-file growth after cleanup.
+- **RC-04 — Replacement rollback:** stage two replacements, make one invalid, and verify the original data/filter/results remain active. A corrected batch commits together and resets defaults. Repeated selected/replacement loads use fresh physical names and reproduce results without retained-file growth after cleanup.
 - **RC-05 — Filter safety/coherence:** exact values with quotes, empty strings, and SQL-looking text are bound as data. Two rapid revisions never render mixed or obsolete results; failed revisions retain and label the prior active state.
 - **RC-06 — Query contract:** reject multi-statement/non-SELECT queries, unresolved placeholders, incorrect typed values, undeclared source references, and unsupported query constructs. Positive tests include a SELECT CTE and a two-source join; this is supported-language validation, not proof of a hostile-code sandbox.
 - **RC-07 — Result semantics:** shared queries execute once per revision; null/zero/empty and unsafe numeric values retain their defined meanings. Wrong result types, duplicate field names, multiple-row KPIs, and chart overflows show useful errors. Config validation rejects a table query ID referenced by another component.
 - **RC-08 — Bounded UI:** table/option paging and chart limits are enforced before JS materialization. A null product is distinguishable from real product labels; charts never invent utilization, failure, or physical units.
-- **RC-09 — Packaging parity:** reopen embedded HTML and an extracted ZIP in desktop Chrome through file:// and compare aggregates. Missing network assets show a boot error. Embedded `</script>` and hostile-looking cell/label strings remain text. Output contains no credentials, File handles, or absolute input paths.
+- **RC-09 — External-data packaging:** extract the ZIP, open its HTML in desktop Chrome through file://, explicitly select the accompanying data file, and reproduce the expected aggregates. Missing network assets show a boot error. A `</script>` sequence in config and hostile-looking cell/label strings remain text. HTML contains no dataset bytes, credentials, File handles, or absolute input paths.
 - **RC-10 — AP scenario:** satisfy AP-01 through AP-07 against synthetic fixtures and the private local AP file, with the agreed Chrome-only scope and explicit observed performance/memory limitations.
-- **RC-11 — Authoring handoff:** the skill produces config accepted by the shared validator and invokes deterministic packaging for both modes. A human recipient can select inputs, filter, inspect, and replace compatible data without an agent or local server.
+- **RC-11 — Authoring handoff:** the skill produces config accepted by the shared validator and invokes deterministic ZIP packaging. A human recipient can select inputs, filter, inspect, and replace compatible data without an agent or local server.
 
 ## 10. Planning handoff
 
-Capture checkpoint (planning-contract v1): confirmed vocabulary is in [CONTEXT.md](../../CONTEXT.md); ADRs 0001–0004 record the accepted architectural choices; browser evidence remains under `docs/research/`; no material vocabulary or design decision is unresolved. Installed provenance is recorded in `skills-lock.json` rather than copied into this specification.
+Capture checkpoint (planning-contract v1): confirmed vocabulary is in [CONTEXT.md](../../CONTEXT.md); ADR 0005 supersedes ADR 0001's embedded option, while ADRs 0002–0004 remain accepted; browser evidence remains under `docs/research/`; remote URLs are explicitly deferred and no material MVP decision is unresolved. Installed provenance is recorded in `skills-lock.json` rather than copied into this specification.
 
 The active [MVP plan](../plans/mvp.md) replaces the archived horizontal phase decomposition with three dependency-ordered GitHub issues. Contract/fixture, browser-engine, and initial source-loading work is already integrated as the foundation. Each ticket delivers an observable end-to-end increment and owns validation units rather than assigning a test to every task checkbox.
 

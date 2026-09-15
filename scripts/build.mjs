@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { validateConfig } from "../contract/config.mjs";
 import { DUCKDB_WASM_VERSION } from "../runtime/bootstrap.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Build the fixed viewer with a safely embedded config and optional test inputs. */
-export async function buildDashboard({ config, outPath, inputs = null }) {
+/** Render the fixed viewer with a safely embedded config and optional test inputs. */
+export async function renderDashboard({ config, inputs = null }) {
  const validation = validateConfig(config);
  if (!validation.ok) {
   throw new Error(
@@ -55,14 +55,20 @@ export async function buildDashboard({ config, outPath, inputs = null }) {
  const html = shell
   .replace("<!-- FEATHERBI_STYLE -->", css)
   .replace("<!-- FEATHERBI_SCRIPT -->", `<script>\n${safeCode}\n</script>`);
- await mkdir(path.dirname(outPath), { recursive: true });
- await writeFile(outPath, html, "utf8");
  return {
-  outPath,
+  html,
   bundleSha256: createHash("sha256").update(safeCode).digest("hex"),
   duckdbWasm: DUCKDB_WASM_VERSION,
   echarts,
  };
+}
+
+/** Build the fixed viewer to a path. Packager publication wraps this renderer atomically. */
+export async function buildDashboard({ config, outPath, inputs = null }) {
+ const { html, ...metadata } = await renderDashboard({ config, inputs });
+ await mkdir(path.dirname(outPath), { recursive: true });
+ await writeFile(outPath, html, "utf8");
+ return { outPath, ...metadata };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

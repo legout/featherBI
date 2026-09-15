@@ -18,8 +18,9 @@ let nextGeneration = 1;
  *
  * @param {{db: object, connection: object}} engine
  * @param {Array<object> | {sources: Array<object>}} files
+ * @param {{schema?: string}} [options]
  */
-export async function registerSources(engine, files) {
+export async function registerSources(engine, files, options = {}) {
  const inputs = Array.isArray(files) ? files : files?.sources;
  if (!engine?.db || !engine?.connection) {
   throw new TypeError("registerSources requires an engine from createEngine()");
@@ -31,6 +32,14 @@ export async function registerSources(engine, files) {
  const seen = new Set();
  const sources = {};
  const generation = nextGeneration++;
+ const generationSchema = options.schema ?? null;
+ const registeredPhysicalNames = [];
+ if (generationSchema) {
+  await runSql(
+   engine.connection,
+   `CREATE SCHEMA ${identifier(generationSchema)}`,
+  );
+ }
  for (const [index, input] of inputs.entries()) {
   const source = input.source ?? input;
   const id = source.id ?? input.id;
@@ -49,6 +58,7 @@ export async function registerSources(engine, files) {
   try {
    const payload = await payloadFor(source, input, id, type);
    await registerPayload(engine.db, physicalName, payload);
+   registeredPhysicalNames.push(physicalName);
    const columns =
     type === "parquet"
      ? await describe(engine.connection, physicalName)
@@ -72,13 +82,32 @@ export async function registerSources(engine, files) {
          `CAST(NULL AS ${sqlTypes[column]}) AS ${identifier(column)}`,
        )
        .join(", ")} WHERE FALSE`;
+   const logicalName = generationSchema
+    ? `${identifier(generationSchema)}.${identifier(id)}`
+    : identifier(id);
    await runSql(
     engine.connection,
-    `CREATE OR REPLACE VIEW ${identifier(id)} AS ${view}`,
+    `CREATE OR REPLACE VIEW ${logicalName} AS ${view}`,
    );
-   await runSql(engine.connection, `SELECT count(*) FROM ${identifier(id)}`);
-   sources[id] = { physicalName };
+   const typedColumns = Object.keys(schema).map(identifier).join(", ");
+   await runSql(
+    engine.connection,
+    `SELECT count(hash(${typedColumns})) FROM ${logicalName}`,
+   );
+   await validateNullability(engine.connection, id, logicalName, schema);
+   sources[id] = {
+    physicalName,
+    view: logicalName,
+    schema: generationSchema,
+   };
   } catch (error) {
+   if (generationSchema) {
+    await discardGeneration(
+     engine,
+     generationSchema,
+     registeredPhysicalNames,
+    );
+   }
    if (error?.sourceId) throw error;
    throw sourceError(
     id,
@@ -88,6 +117,44 @@ export async function registerSources(engine, files) {
   }
  }
  return { sources };
+}
+
+async function validateNullability(connection, id, logicalName, schema) {
+ const required = Object.entries(schema)
+  .filter(([, declaration]) => declaration?.nullable === false)
+  .map(([column]) => column);
+ if (!required.length) return;
+ const rows = await runSql(
+  connection,
+  `SELECT * FROM ${logicalName} WHERE ${required
+   .map((column) => `${identifier(column)} IS NULL`)
+   .join(" OR ")} LIMIT 1`,
+ );
+ if (rows.numRows > 0) {
+  throw sourceError(
+   id,
+   "null value in a non-nullable declared column",
+   "sources.nullability",
+  );
+ }
+}
+
+async function discardGeneration(engine, schema, physicalNames) {
+ try {
+  await runSql(
+   engine.connection,
+   `DROP SCHEMA IF EXISTS ${identifier(schema)} CASCADE`,
+  );
+ } catch {
+  // Preserve the actionable source error below; disposal is best effort.
+ }
+ for (const name of physicalNames) {
+  try {
+   await engine.db.dropFile(name);
+  } catch {
+   // A failed registration may not have left a removable file behind.
+  }
+ }
 }
 
 function inputType(source, input) {

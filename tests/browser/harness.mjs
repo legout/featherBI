@@ -17,6 +17,7 @@ import {
  createEngine,
 } from "../../runtime/bootstrap.mjs";
 import { registerSources as loadSources } from "../../runtime/sources.mjs";
+import { runQuery as executeAuthoredQuery } from "../../runtime/queries.mjs";
 
 /** @typedef {{phase: string, detail?: object}} EngineStatusEvent */
 
@@ -122,6 +123,25 @@ window.__featherbiHarness = {
   } finally {
    await statement.close();
   }
+ },
+
+ /** Admit and execute authored SQL through the production query boundary. */
+ async runAuthoredQuery(id, query, values, sourceIds) {
+  const { engine } = requireEngine(id);
+  const rows = await executeAuthoredQuery(
+   engine.connection,
+   query,
+   values,
+   sourceIds,
+  );
+  return rows.map((row) =>
+   Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+     key,
+     typeof value === "bigint" ? value.toString() : value,
+    ]),
+   ),
+  );
  },
 
  /** Recorded lifecycle/status events for one engine. */

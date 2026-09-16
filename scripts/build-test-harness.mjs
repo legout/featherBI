@@ -10,7 +10,10 @@ import {
 } from "../runtime/bootstrap.mjs";
 import { buildDashboard } from "./build.mjs";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(
+ path.dirname(fileURLToPath(import.meta.url)),
+ "..",
+);
 const outDir = path.join(rootDir, ".artifacts", "browser");
 const outPath = path.join(outDir, "harness.html");
 
@@ -45,7 +48,10 @@ await mkdir(outDir, { recursive: true });
 await writeFile(outPath, html, "utf8");
 
 const fixtureConfig = parseJson(
- await readFile(path.join(rootDir, "tests/fixtures/runtime.config.json"), "utf8"),
+ await readFile(
+  path.join(rootDir, "tests/fixtures/runtime.config.json"),
+  "utf8",
+ ),
  "runtime fixture config",
 );
 const fixtureInputs = await Promise.all(
@@ -67,7 +73,10 @@ await buildDashboard({
 });
 
 const apConfig = parseJson(
- await readFile(path.join(rootDir, "examples/ap-dashboard.config.json"), "utf8"),
+ await readFile(
+  path.join(rootDir, "examples/ap-dashboard.config.json"),
+  "utf8",
+ ),
  "AP dashboard config",
 );
 await buildDashboard({
@@ -81,19 +90,19 @@ const rows = Array.from({ length: 120 }, (_, index) => ({
  sequence_number: index % 11 === 0 ? "" : String(index),
  G0003: index < 40 ? "PE100" : null,
  product_mlfb: ["P1", "P2", "", null][index % 4],
- inspection_date: new Date(Date.UTC(2026, 7, 26, 8, index)).toISOString().slice(0, 19),
+ inspection_date: new Date(Date.UTC(2026, 7, 26, 8, index))
+  .toISOString()
+  .slice(0, 19),
  is_last_measurement: index < 24 ? false : true,
 }));
 const syntheticConfig = structuredClone(apConfig);
-syntheticConfig.data.mode = "embedded";
 syntheticConfig.data.sources[0].type = "json";
 syntheticConfig.data.sources[0].file = "ap.json";
-syntheticConfig.data.sources[0].content = {
- encoding: "base64",
- value: Buffer.from(JSON.stringify(rows)).toString("base64"),
-};
 await buildDashboard({
  config: syntheticConfig,
+ inputs: [
+  { id: "ap", value: Buffer.from(JSON.stringify(rows)).toString("base64") },
+ ],
  outPath: path.join(outDir, "ap-dashboard.html"),
 });
 
@@ -109,7 +118,9 @@ function parseJson(text, label) {
  try {
   return JSON.parse(text);
  } catch (error) {
-  throw new Error(`invalid JSON in ${label}: ${error.message}`, { cause: error });
+  throw new Error(`invalid JSON in ${label}: ${error.message}`, {
+   cause: error,
+  });
  }
 }
 

@@ -10,7 +10,7 @@
  * `npm run generate:contract`); no schema compilation happens at runtime.
  * On top of the schema this module enforces the cross-field rules a JSON
  * Schema alone cannot express:
- *   - delivery-mode/content consistency, reserved and empty file/schema names,
+ *   - reserved and empty file/schema names,
  *   - case-insensitive column-name uniqueness,
  *   - filter/source/column reference resolution and kind/type combinations,
  *     including calendar-valid date and timezone-naive timestamp defaults,
@@ -128,7 +128,6 @@ function structuralMessage(error) {
  */
 function collectSemanticIssues(config, issues) {
   const issue = (path, code, message) => issues.push({ path, code, message });
-  const embedded = config.data.mode === "embedded";
 
   const sources = new Map();
   for (const [index, source] of config.data.sources.entries()) {
@@ -149,18 +148,11 @@ function collectSemanticIssues(config, issues) {
         `file must not be "." or ".."`,
       );
     }
-    if (embedded && !Object.hasOwn(source, "content")) {
-      issue(
-        basePath,
-        "source.content-required",
-        "embedded mode requires content on every source",
-      );
-    }
-    if (!embedded && Object.hasOwn(source, "content")) {
+    if (Object.hasOwn(source, "content")) {
       issue(
         `${basePath}.content`,
         "source.content-not-allowed",
-        "upload sources cannot contain content",
+        "sources cannot contain content",
       );
     }
     const lowerToOriginal = new Map();

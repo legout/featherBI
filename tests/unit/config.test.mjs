@@ -56,6 +56,29 @@ test("unsafe source basename is rejected", async () => {
  assert.equal(result.ok, false);
 });
 
+test("embedded delivery mode is rejected", async () => {
+ const config = await loadMinimalConfig();
+ config.data.mode = "embedded";
+ const result = validateConfig(config);
+ assert.equal(result.ok, false);
+ assert.ok(result.issues.some((issue) => issue.path === "data.mode"));
+});
+
+test("embedded source content is rejected", async () => {
+ const config = await loadMinimalConfig();
+ config.data.sources[0].content = {
+  encoding: "base64",
+  value: Buffer.from("station\nSJ").toString("base64"),
+ };
+ const result = validateConfig(config);
+ assert.equal(result.ok, false);
+ assert.ok(
+  result.issues.some((issue) =>
+   `${issue.path} ${issue.message}`.includes("content"),
+  ),
+ );
+});
+
 test("unknown source type is rejected", async () => {
  const config = await loadMinimalConfig();
  config.data.sources[0].type = "xlsx";

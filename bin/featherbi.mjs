@@ -4,7 +4,10 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(
+ path.dirname(fileURLToPath(import.meta.url)),
+ "..",
+);
 
 try {
  const [command, ...args] = process.argv.slice(2);
@@ -23,15 +26,16 @@ try {
   const result = await buildArtifact({
    configPath: required(options.config, "--config"),
    sources: options.sources,
-   mode: required(options.mode, "--mode"),
    outPath: required(options.output, "--output"),
    overwrite: options.overwrite,
   });
   console.log(
-   `wrote ${result.outPath} (${result.mode}, ${result.bytes} bytes, sha256 ${result.artifactSha256})`,
+   `wrote ${result.outPath} (${result.bytes} bytes, sha256 ${result.artifactSha256})`,
   );
  } else {
-  throw new Error(`unknown command ${JSON.stringify(command)}; run featherbi --help`);
+  throw new Error(
+   `unknown command ${JSON.stringify(command)}; run featherbi --help`,
+  );
  }
 } catch (error) {
  console.error(error instanceof Error ? error.message : String(error));
@@ -50,7 +54,9 @@ function parseArgs(args, { sources, build }) {
    const assignment = nextValue(args, ++index, flag);
    const split = assignment.indexOf("=");
    if (split < 1 || split === assignment.length - 1) {
-    throw new Error(`--source must be SOURCE_ID=LOCAL_FILE, found ${JSON.stringify(assignment)}`);
+    throw new Error(
+     `--source must be SOURCE_ID=LOCAL_FILE, found ${JSON.stringify(assignment)}`,
+    );
    }
    const id = assignment.slice(0, split);
    if (Object.hasOwn(options.sources, id)) {
@@ -59,9 +65,7 @@ function parseArgs(args, { sources, build }) {
    options.sources[id] = assignment.slice(split + 1);
    continue;
   }
-  const key = { "--config": "config", "--mode": "mode", "--output": "output" }[
-   flag
-  ];
+  const key = { "--config": "config", "--output": "output" }[flag];
   if (!key || (!build && key !== "config")) {
    throw new Error(`unknown option ${JSON.stringify(flag)}`);
   }
@@ -91,7 +95,7 @@ async function ensureValidator() {
 
 function printHelp() {
  console.log(`featherbi validate --config CONFIG
-featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --mode embedded|zip --output FILE [--overwrite]
+featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]
 
 Builds local artifacts only. It never publishes or uploads dashboard data.`);
 }

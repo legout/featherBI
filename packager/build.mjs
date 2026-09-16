@@ -7,17 +7,13 @@ import { preflightBuild } from "./preflight.mjs";
 
 const ZIP_MTIME = new Date("1980-01-01T00:00:00.000Z");
 
-/** Build and atomically publish one embedded HTML or ZIP artifact. */
+/** Build and atomically publish one ZIP artifact with external data members. */
 export async function buildArtifact({
  configPath,
  sources,
- mode,
  outPath,
  overwrite = false,
 }) {
- if (mode !== "embedded" && mode !== "zip") {
-  throw new Error(`unsupported artifact mode ${JSON.stringify(mode)}`);
- }
  const { config, inputs } = await preflightBuild({ configPath, sources });
  const resolvedOut = path.resolve(outPath);
  if (
@@ -32,44 +28,29 @@ export async function buildArtifact({
   bytesBySource.set(input.source.id, await readFile(input.path));
  }
 
- let artifact;
- let metadata;
- if (mode === "embedded") {
-  const embedded = structuredClone(config);
-  embedded.data.mode = "embedded";
-  for (const source of embedded.data.sources) {
-   source.content = {
-    encoding: "base64",
-    value: bytesBySource.get(source.id).toString("base64"),
-   };
-  }
-  const rendered = await renderDashboard({ config: embedded });
-  artifact = Buffer.from(rendered.html, "utf8");
-  metadata = rendered;
- } else {
-  const rendered = await renderDashboard({ config });
-  const members = ["dashboard.html", ...config.data.sources.map(({ file }) => file)];
-  assertSafeZipMembers(members);
-  const entries = [
-   { name: "dashboard.html", input: rendered.html, lastModified: ZIP_MTIME },
-   ...config.data.sources.map((source) => ({
-    name: source.file,
-    input: bytesBySource.get(source.id),
-    lastModified: ZIP_MTIME,
-   })),
-  ];
-  artifact = Buffer.from(await downloadZip(entries).arrayBuffer());
-  metadata = rendered;
- }
+ const rendered = await renderDashboard({ config });
+ const members = [
+  "dashboard.html",
+  ...config.data.sources.map(({ file }) => file),
+ ];
+ assertSafeZipMembers(members);
+ const entries = [
+  { name: "dashboard.html", input: rendered.html, lastModified: ZIP_MTIME },
+  ...config.data.sources.map((source) => ({
+   name: source.file,
+   input: bytesBySource.get(source.id),
+   lastModified: ZIP_MTIME,
+  })),
+ ];
+ const artifact = Buffer.from(await downloadZip(entries).arrayBuffer());
 
  await publishFile(resolvedOut, artifact, overwrite);
  return {
-  mode,
   outPath: resolvedOut,
   artifactSha256: createHash("sha256").update(artifact).digest("hex"),
   bytes: artifact.length,
-  duckdbWasm: metadata.duckdbWasm,
-  echarts: metadata.echarts,
+  duckdbWasm: rendered.duckdbWasm,
+  echarts: rendered.echarts,
  };
 }
 
@@ -120,7 +101,9 @@ async function publishFile(outPath, contents, overwrite) {
     await link(tempPath, outPath);
    } catch (error) {
     if (error.code === "EEXIST") {
-     throw new Error(`output exists; pass --overwrite to replace ${JSON.stringify(outPath)}`);
+     throw new Error(
+      `output exists; pass --overwrite to replace ${JSON.stringify(outPath)}`,
+     );
     }
     throw error;
    }

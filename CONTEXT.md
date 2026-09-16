@@ -21,6 +21,24 @@ _Avoid_: Generated application code.
 
 **Upload mode**: The delivery mode in which the recipient selects local files for the dashboard. “Upload” does not mean transferring those files to a server.
 
+### Authoring
+
+**Dashboard project**: The source-controlled YAML, SQL, and optional style files from which deterministic tooling produces a dashboard artifact.
+_Avoid_: Generated runtime files as authoring source.
+
+**Dashboard draft**: The current generated preview used by an author and agent during the feedback loop; it is not the approved distributable until verification succeeds.
+
+**Data profile**: A bounded description of source structure and data characteristics used to inform dashboard design without copying the complete dataset into agent context.
+
+**Metric**: A named aggregation with an agreed analytical meaning and display format.
+_Avoid_: Any numeric field or chart value.
+
+**Dimension**: A named field or derived category by which metrics may be filtered or grouped.
+
+**Renderer preset**: A coherent default presentation mode, such as standard featherBI components or Perspective-first exploration, independent of the selected visual theme.
+
+**SQL playground**: An ephemeral recipient workspace for bounded read-only queries; its contents do not modify the dashboard project.
+
 ### Data and coherent results
 
 **Source**: A named logical input with a declared format and column schema; its identity is independent of any particular selected file.

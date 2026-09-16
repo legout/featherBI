@@ -34,3 +34,7 @@ This foundation is reusable infrastructure, not release acceptance. Remaining va
 - `npm run check` and `npm run test:browser` pass from a clean checkout.
 - The owner builds against `/Users/volker/data/ewn/unified_ap.parquet`, extracts the ZIP, opens `dashboard.html` in desktop Chrome, selects the accompanying Parquet file, and confirms the AP baseline from the specification.
 - Evidence maps to RC-01–RC-11 and AP-01–AP-07 without claiming deferred stress matrices, Edge/offline support, publication, or a performance SLA.
+
+## Successor
+
+The owner confirmed the locally integrated MVP in desktop Chrome. GitHub issue closure and push remain separate actions. The approved post-MVP execution map is [Dashboard project and runtime v2](dashboard-project-v2.md), whose canonical tasks are issues #4–#8.

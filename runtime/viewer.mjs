@@ -100,9 +100,6 @@ export async function mountDashboard({ config, inputs, root = document }) {
  window.addEventListener("pagehide", () => controller?.dispose(), { once: true });
 
  if (inputs?.length) return start(inputs);
- if (config.data.mode === "embedded") {
-  return start(config.data.sources.map((source) => ({ source })));
- }
  render({ status: "waiting", error: null });
  return null;
 }

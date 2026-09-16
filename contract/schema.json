@@ -50,19 +50,6 @@
       "type": "string",
       "pattern": "^[^/\\\\:\\u0000-\\u001f\\u007f-\\u009f]+$"
     },
-    "embeddedContent": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["encoding", "value"],
-      "properties": {
-        "encoding": { "const": "base64" },
-        "value": {
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$"
-        }
-      }
-    },
     "sourceSchema": {
       "type": "object",
       "minProperties": 1,
@@ -84,8 +71,7 @@
         "id": { "$ref": "#/definitions/id" },
         "type": { "enum": ["csv", "parquet", "json"] },
         "file": { "$ref": "#/definitions/file" },
-        "schema": { "$ref": "#/definitions/sourceSchema" },
-        "content": { "$ref": "#/definitions/embeddedContent" }
+        "schema": { "$ref": "#/definitions/sourceSchema" }
       }
     },
     "data": {
@@ -93,7 +79,7 @@
       "additionalProperties": false,
       "required": ["mode", "sources"],
       "properties": {
-        "mode": { "enum": ["upload", "embedded"] },
+        "mode": { "const": "upload" },
         "sources": {
           "type": "array",
           "minItems": 1,

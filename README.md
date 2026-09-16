@@ -19,22 +19,16 @@ Build one artifact with an explicit local file for every source ID:
 node bin/featherbi.mjs build \
   --config skill/featherbi/examples/ap.config.json \
   --source ap=path/to/ap.json \
-  --mode embedded \
-  --output dashboard.html
-
-node bin/featherbi.mjs build \
-  --config skill/featherbi/examples/ap.config.json \
-  --source ap=path/to/ap.json \
-  --mode zip \
   --output dashboard.zip
 ```
+
+The result is one ZIP bundle containing `dashboard.html` plus each data file; dataset bytes never become part of the HTML.
 
 An existing output is preserved unless `--overwrite` is supplied. Packaging writes local artifacts only; it does not publish, deploy, or upload data. Agents should follow [`skill/featherbi/SKILL.md`](skill/featherbi/SKILL.md): author config, validate it, then invoke the packager rather than generating HTML.
 
 ## Recipient use
 
-- **Embedded HTML:** open the `.html` file through `file://` in desktop Chrome. Its mapped data is included.
-- **ZIP bundle:** extract the archive, open `dashboard.html` through `file://`, then explicitly select each accompanying data file under **Data files**. “Upload” in the UI means local browser selection; featherBI has no application data-upload or telemetry endpoint.
+Extract the ZIP bundle, open `dashboard.html` through `file://` in desktop Chrome, then explicitly select each accompanying data file under **Data files**. DuckDB-WASM reads the selected local files directly. “Upload” in the UI means local browser selection; featherBI has no application data-upload or telemetry endpoint.
 
 Chrome is the supported browser for this release. Edge and offline operation are not claimed. If pinned online runtime assets cannot load, the dashboard reports a visible boot error rather than working offline.
 

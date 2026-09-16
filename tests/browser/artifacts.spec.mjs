@@ -4,16 +4,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { test } from "@playwright/test";
-import {
- expect,
- requireInstalledDesktopChrome,
- rootDir,
-} from "./helpers.mjs";
+import { expect, requireInstalledDesktopChrome, rootDir } from "./helpers.mjs";
 
 const execFileAsync = promisify(execFile);
 const deliveryDir = path.join(rootDir, ".artifacts", "browser", "delivery");
 const sourcePath = path.join(deliveryDir, "ap.json");
-const embeddedPath = path.join(deliveryDir, "embedded.html");
 const zipPath = path.join(deliveryDir, "bundle.zip");
 const extractedDir = path.join(deliveryDir, "bundle");
 const configPath = path.join(
@@ -37,23 +32,16 @@ test.beforeAll(async ({ browser }) => {
    { station: "SD" },
   ]),
  );
- for (const [mode, output] of [
-  ["embedded", embeddedPath],
-  ["zip", zipPath],
- ]) {
-  await execFileAsync(process.execPath, [
-   path.join(rootDir, "bin", "featherbi.mjs"),
-   "build",
-   "--config",
-   configPath,
-   "--source",
-   `ap=${sourcePath}`,
-   "--mode",
-   mode,
-   "--output",
-   output,
-  ]);
- }
+ await execFileAsync(process.execPath, [
+  path.join(rootDir, "bin", "featherbi.mjs"),
+  "build",
+  "--config",
+  configPath,
+  "--source",
+  `ap=${sourcePath}`,
+  "--output",
+  zipPath,
+ ]);
  await mkdir(extractedDir, { recursive: true });
  await execFileAsync("uv", [
   "run",
@@ -66,27 +54,25 @@ test.beforeAll(async ({ browser }) => {
  ]);
 });
 
-test("embedded HTML and extracted ZIP reopen with the same KPI", async ({
+test("extracted ZIP reopens after explicit data selection", async ({
  browser,
 }) => {
  const context = await browser.newContext();
  const page = await context.newPage();
  try {
-  await page.goto(pathToFileURL(embeddedPath).href, { waitUntil: "load" });
-  await expect(page.locator("#dashboard-status")).toHaveAttribute(
-   "data-state",
-   "ready",
+  await page.goto(
+   pathToFileURL(path.join(extractedDir, "dashboard.html")).href,
+   {
+    waitUntil: "load",
+   },
   );
-  await expect(page.locator("#component-records [data-value]")).toHaveText("4");
-
-  await page.goto(pathToFileURL(path.join(extractedDir, "dashboard.html")).href, {
-   waitUntil: "load",
-  });
   await expect(page.locator("#dashboard-status")).toHaveAttribute(
    "data-state",
    "waiting",
   );
-  await page.locator("#source-ap").setInputFiles(path.join(extractedDir, "ap.json"));
+  await page
+   .locator("#source-ap")
+   .setInputFiles(path.join(extractedDir, "ap.json"));
   await page.locator("#replace-files").click();
   await expect(page.locator("#dashboard-status")).toHaveAttribute(
    "data-state",

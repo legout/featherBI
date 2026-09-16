@@ -25,23 +25,20 @@ Stop if either command fails. Do not substitute a hand-written HTML page.
    node bin/featherbi.mjs validate --config path/to/dashboard.config.json
    ```
 
-3. Build with one explicit `--source ID=LOCAL_FILE` for every declared source:
+3. Build one ZIP bundle with one explicit `--source ID=LOCAL_FILE` for every declared source:
 
    ```sh
    node bin/featherbi.mjs build --config path/to/dashboard.config.json \
-     --source ap=path/to/ap.json --mode embedded --output dashboard.html
-
-   node bin/featherbi.mjs build --config path/to/dashboard.config.json \
-     --source ap=path/to/ap.json --mode zip --output dashboard.zip
+     --source ap=path/to/ap.json --output dashboard.zip
    ```
 
-4. Open the HTML through `file://` in desktop Chrome. For ZIP delivery, extract it first, open `dashboard.html`, and explicitly select each extracted data file.
+4. Share the ZIP. The recipient extracts it, opens `dashboard.html` through `file://` in desktop Chrome, and explicitly selects each accompanying data file.
 5. If validation, build, or opening fails, preserve the error, correct the config or source assignment, and repeat validation before rebuilding.
 
 ## Safety and output
 
 - Existing outputs are never replaced unless the author adds `--overwrite` explicitly.
 - Packaging creates local files only; it does not upload, publish, deploy, commit, or grant recipient access.
-- Embedded artifacts contain all mapped rows. ZIP recipients receive all extracted data members. Share only with authorized recipients.
+- ZIP members carry the mapped rows next to `dashboard.html`; dataset bytes never become part of the HTML. Share only with authorized recipients.
 - Runtime dependencies load online at pinned versions. Offline and Edge support are not claimed.
-- A successful run prints the output path, mode, byte count, and SHA-256 digest. Report those values and the Chrome reopening result; do not claim success from config validation alone.
+- A successful run prints the output path, byte count, and SHA-256 digest. Report those values and the Chrome reopening result; do not claim success from config validation alone.

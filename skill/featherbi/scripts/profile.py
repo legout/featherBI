@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["duckdb==1.4.3"]
+# dependencies = ["duckdb==1.5.5"]
 # ///
 """Emit a bounded DuckDB profile without paths or raw values by default."""
 

@@ -24,7 +24,7 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
 
 /** Pinned DuckDB-WASM package version for all remote browser assets. */
-export const DUCKDB_WASM_VERSION = "1.32.0";
+export const DUCKDB_WASM_VERSION = "1.33.1-dev64.0";
 
 const jsDelivrBase = `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${DUCKDB_WASM_VERSION}/dist/`;
 

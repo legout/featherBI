@@ -48,7 +48,7 @@ test.describe("engine boot and query smoke", () => {
   try {
    const { id, info } = await harnessEval(page, "createEngine()");
    try {
-    expect(info.version).toMatch(/^v\d+\.\d+\.\d+/);
+    expect(info.version).toBe("v1.5.5");
     expect(
      await harnessEval(page, `query('${id}', 'SELECT 1 AS one')`),
     ).toEqual([{ one: 1 }]);

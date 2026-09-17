@@ -8,7 +8,7 @@
 
 **Constraints:** [ADR 0005](../adr/0005-external-data-only-delivery.md) keeps data outside HTML; [ADR 0006](../adr/0006-compile-dashboard-projects-into-typed-viewers.md) owns the compiled project/fixed-viewer boundary; [CONTEXT.md](../../CONTEXT.md) owns vocabulary; [research evidence](../research/dashboard-authoring-and-ui-landscape.md) informs but does not authorize behavior.
 
-**Capture checkpoint (planning-contract v1):** dashboard project, dashboard draft, data profile, metric, dimension, renderer preset, and SQL playground are defined in the glossary. ADR 0006 records the consequential compiler/query-engine/viewer decision and supersedes ADR 0002 for the target runtime. The v2 specification owns behavior and acceptance. Remote sources/cubes and the other named non-goals remain explicitly deferred. No material design decision is unresolved. Installed skill provenance is recorded in `skills-lock.json`.
+**Capture checkpoint (planning-contract v1):** dashboard project, dashboard draft, data profile, metric, dimension, renderer preset, and SQL playground are defined in the glossary. ADR 0006 records the consequential compiler/query-engine/viewer decision and supersedes ADR 0002 for the target runtime. The v2 specification owns behavior and acceptance. Read-only remote sources are accepted scope owned by the remote sources specification and ADR 0007; cubes and the other named non-goals remain explicitly deferred. No material design decision is unresolved. Installed skill provenance is recorded in `skills-lock.json`.
 
 ## Execution
 
@@ -22,6 +22,9 @@ Execute sequentially through `orchestrate-implementation` in supervised mode. Ea
 4. [#7 — Add AG Grid, Perspective, and bounded SQL exploration](https://github.com/legout/featherBI/issues/7) — blocked by #6; V2-06/V2-08/V2-09 exploration boundary.
 5. [#9 — Preserve unmappable charts in Perspective-first preset](https://github.com/legout/featherBI/issues/9) — blocking correctness follow-up on the reviewed #7 candidate; lossless heatmap/sankey/boxplot fallback mappings.
 6. [#8 — Complete the authoring skill and migrate off runtime v1](https://github.com/legout/featherBI/issues/8) — blocked by #7 and #9; V2-02–V2-04/V2-10–V2-12 and final v1 removal.
+7. [#11 — Add remote sources to authoring and packaged delivery](https://github.com/legout/featherBI/issues/11) — blocked by #5; remote declaration, credential resolution, httpfs profiling, packaged materialization.
+8. [#12 — Add live remote reads and recipient credential form](https://github.com/legout/featherBI/issues/12) — blocked by #11; RS-03–RS-06 live path.
+9. [#13 — Add featherbi setup checks and duckdb-skills prompt](https://github.com/legout/featherBI/issues/13) — independent bounded CLI slice.
 
 ## Requirement map
 
@@ -31,6 +34,7 @@ Execute sequentially through `orchestrate-implementation` in supervised mode. Ea
 - AG Grid, Perspective, playground, capability-built viewer: #7; complete Perspective-first typed-chart coverage: #9.
 - Full progressive skill loop, AP migration, private acceptance, v1 removal, skill quality: #8.
 - External-data ZIP and path/data secrecy: retained in every browser/package slice, final private proof in #8.
+- Remote sources, delivery modes, and the credential boundary: #11 packaged path; #12 live path and credential form; setup tooling in #13.
 
 ## Assurance and gates
 
@@ -40,6 +44,9 @@ Execute sequentially through `orchestrate-implementation` in supervised mode. Ea
 - #7 uses one playground-admission regression plus one exploration/capability browser flow.
 - #9 uses focused mapping assertions for the three affected chart families plus one representative Perspective-first Chrome assertion.
 - #8 uses skill evaluations, existing repository gates, stale-v1 search, and one private AP `no-new-test` acceptance.
+- #11 uses one localhost `httpfs` integration check plus focused declaration-compile units; no external-network tests.
+- #12 uses one public-remote browser flow against a served fixture plus one credential-form unit check; the private bucket acceptance is owner-run.
+- #13 is bounded CLI work with focused unit checks.
 
 Public contract, SQL admission, shared revision, and final v1-removal changes receive immediate review plus candidate review. Ordinary visual/skill work receives one candidate review. One fix pass and one delta recheck remain the limit.
 

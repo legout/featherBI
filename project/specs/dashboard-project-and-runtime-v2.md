@@ -21,6 +21,8 @@ Sources and rationale:
 - [Dashboard authoring and UI landscape](../research/dashboard-authoring-and-ui-landscape.md)
 - [ADR 0005: external-data-only delivery](../adr/0005-external-data-only-delivery.md)
 - [ADR 0006: compiled dashboard projects and typed viewers](../adr/0006-compile-dashboard-projects-into-typed-viewers.md)
+- [ADR 0007: remote sources and recipient credentials](../adr/0007-remote-sources-and-recipient-credentials.md)
+- [Remote sources specification](remote-sources-v1.md), which supersedes the prior remote non-goal
 - [AP inspection dashboard](ap-inspection-dashboard.md), which remains the reference large local-data scenario
 - [CONTEXT.md](../../CONTEXT.md), which owns vocabulary
 
@@ -287,7 +289,7 @@ The final state rejects v1 rather than silently upgrading it. Archived plans rem
 
 ## 15. Non-goals
 
-- remote S3/R2/GitHub sources, signed URLs, precomputed Hyparquet cubes, or server-hosted embedding;
+- remote writes, presigned-URL issuing infrastructure, non-S3/HTTPS connectors, precomputed Hyparquet cubes, or server-hosted embedding; read-only S3-compatible/HTTPS sources are owned by the [remote sources specification](remote-sources-v1.md);
 - offline assets or browsers other than the explicitly supported Chrome target;
 - AG Grid Enterprise;
 - arbitrary/custom component plugins;

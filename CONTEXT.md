@@ -44,6 +44,13 @@ _Avoid_: Any numeric field or chart value.
 **Source**: A named logical input with a declared format and column schema; its identity is independent of any particular selected file.
 _Avoid_: Filename as a synonym for source identity.
 
+**Remote source**: A source declared by a read-only `s3://` (S3-compatible) or `https://` URI rather than a local file; its identity remains the logical source ID.
+_Avoid_: Treating the URI or bucket name as the source identity.
+
+**Source delivery mode**: Whether a source ships materialized in the ZIP bundle (`packaged`) or is read live from its URI at open time (`live`).
+
+**Authoring credential source**: Where authoring obtains remote credentials — the AWS credential chain or a gitignored `.env` created from `.env.example`; never project files or artifacts.
+
 **Compatible data**: Input matching a source's declared format and schema, including its types and nullability rules.
 
 **Dataset**: The combined source assignments used by a dashboard, including unchanged sources during partial replacement.

@@ -47,6 +47,16 @@
       "items": {
         "$ref": "#/definitions/component"
       }
+    },
+    "theme": {
+      "enum": [
+        "neutral",
+        "daisyui",
+        "siemens-ix"
+      ]
+    },
+    "themeCss": {
+      "type": "string"
     }
   },
   "definitions": {
@@ -166,8 +176,13 @@
         "kind": {
           "enum": [
             "select",
+            "single-select",
+            "multi-select",
             "text",
-            "date-range"
+            "date-range",
+            "numeric-range",
+            "boolean",
+            "option-search"
           ]
         },
         "source": {
@@ -176,7 +191,16 @@
         "column": {
           "$ref": "#/definitions/columnName"
         },
-        "default": {}
+        "dimension": {
+          "$ref": "#/definitions/id"
+        },
+        "label": {
+          "$ref": "#/definitions/plainText"
+        },
+        "default": {},
+        "search": {
+          "type": "boolean"
+        }
       }
     },
     "query": {
@@ -202,11 +226,15 @@
     },
     "component": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "id",
         "type",
-        "query",
-        "label"
+        "label",
+        "x",
+        "y",
+        "width",
+        "height"
       ],
       "properties": {
         "id": {
@@ -214,21 +242,246 @@
         },
         "type": {
           "enum": [
+            "heading",
+            "markdown",
+            "text",
+            "divider",
+            "tabs",
+            "section",
             "kpi",
+            "metric-group",
             "bar",
             "line",
+            "area",
+            "scatter",
+            "pie",
+            "donut",
             "heatmap",
+            "treemap",
+            "sankey",
+            "gauge",
+            "boxplot",
             "table"
           ]
+        },
+        "label": {
+          "$ref": "#/definitions/plainText"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
         },
         "query": {
           "$ref": "#/definitions/id"
         },
-        "label": {
-          "$ref": "#/definitions/plainText"
+        "field": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/bindingField"
+          }
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "content": {
+          "type": "string"
+        },
+        "tabs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/definitions/id"
+              },
+              "label": {
+                "$ref": "#/definitions/plainText"
+              },
+              "components": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/id"
+                }
+              }
+            }
+          }
+        },
+        "xField": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "yField": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "value": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "name": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "series": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "source": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "target": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "min": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "max": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "q1": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "median": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "q3": {
+          "$ref": "#/definitions/bindingField"
+        },
+        "orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "stacked": {
+          "type": "boolean"
+        },
+        "smooth": {
+          "type": "boolean"
+        },
+        "legend": {
+          "type": "boolean"
+        },
+        "interactionDimension": {
+          "$ref": "#/definitions/id"
+        },
+        "brushDimension": {
+          "$ref": "#/definitions/id"
+        },
+        "action": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "openTab": {
+              "$ref": "#/definitions/id"
+            },
+            "drilldown": {
+              "$ref": "#/definitions/id"
+            }
+          },
+          "minProperties": 1
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "label"
+            ],
+            "properties": {
+              "field": {
+                "$ref": "#/definitions/bindingField"
+              },
+              "label": {
+                "$ref": "#/definitions/plainText"
+              },
+              "dimension": {
+                "$ref": "#/definitions/id"
+              },
+              "action": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "openTab": {
+                    "$ref": "#/definitions/id"
+                  },
+                  "drilldown": {
+                    "$ref": "#/definitions/id"
+                  }
+                },
+                "minProperties": 1
+              }
+            }
+          }
+        },
+        "annotations": {
+          "$ref": "#/definitions/annotations"
+        },
+        "empty": {
+          "enum": [
+            "message",
+            "hide",
+            "zero"
+          ]
         }
       },
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "kpi",
+                  "metric-group",
+                  "bar",
+                  "line",
+                  "area",
+                  "scatter",
+                  "pie",
+                  "donut",
+                  "heatmap",
+                  "treemap",
+                  "sankey",
+                  "gauge",
+                  "boxplot",
+                  "table"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "query"
+            ]
+          }
+        },
         {
           "if": {
             "properties": {
@@ -241,14 +494,16 @@
             ]
           },
           "then": {
-            "$ref": "#/definitions/kpiComponent"
+            "required": [
+              "field"
+            ]
           }
         },
         {
           "if": {
             "properties": {
               "type": {
-                "const": "bar"
+                "const": "metric-group"
               }
             },
             "required": [
@@ -256,14 +511,21 @@
             ]
           },
           "then": {
-            "$ref": "#/definitions/barComponent"
+            "required": [
+              "fields"
+            ]
           }
         },
         {
           "if": {
             "properties": {
               "type": {
-                "const": "line"
+                "enum": [
+                  "bar",
+                  "line",
+                  "area",
+                  "scatter"
+                ]
               }
             },
             "required": [
@@ -271,7 +533,32 @@
             ]
           },
           "then": {
-            "$ref": "#/definitions/lineComponent"
+            "required": [
+              "xField",
+              "yField"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "pie",
+                  "donut",
+                  "treemap"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "name",
+              "value"
+            ]
           }
         },
         {
@@ -286,7 +573,69 @@
             ]
           },
           "then": {
-            "$ref": "#/definitions/heatmapComponent"
+            "required": [
+              "xField",
+              "yField",
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "sankey"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "source",
+              "target",
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "gauge"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "value"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "boxplot"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "xField",
+              "min",
+              "q1",
+              "median",
+              "q3",
+              "max"
+            ]
           }
         },
         {
@@ -301,7 +650,30 @@
             ]
           },
           "then": {
-            "$ref": "#/definitions/tableComponent"
+            "required": [
+              "columns"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "heading",
+                  "markdown",
+                  "text"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "content"
+            ]
           }
         }
       ]

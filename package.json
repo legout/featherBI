@@ -22,10 +22,16 @@
   "devDependencies": {
     "@duckdb/duckdb-wasm": "1.32.0",
     "@playwright/test": "1.63.0",
+    "@siemens/ix": "5.2.1",
+    "@tailwindcss/cli": "4.3.3",
     "ajv": "8.20.0",
     "client-zip": "2.5.1",
+    "daisyui": "5.2.1",
     "echarts": "6.1.0",
     "esbuild": "0.28.2",
+    "postcss": "8.5.28",
+    "postcss-prefix-selector": "2.1.1",
+    "tailwindcss": "4.3.3",
     "yaml": "2.9.1"
   }
 }

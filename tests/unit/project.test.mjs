@@ -30,6 +30,10 @@ layout:
     query: total
     label: Total
     field: value
+    x: 1
+    y: 1
+    width: 12
+    height: 1
 `;
  await writeFile(path.join(dir, "dashboard.yaml"), yaml);
  if (overrides.sql !== null) {
@@ -57,6 +61,7 @@ test("manual YAML and external SQL compile deterministically to strict contract 
   contract: 2,
   app: "grid",
   title: "Example dashboard",
+  theme: "neutral",
   data: {
    mode: "upload",
    sources: [{
@@ -82,6 +87,10 @@ test("manual YAML and external SQL compile deterministically to strict contract 
    query: "total",
    label: "Total",
    field: "value",
+   x: 1,
+   y: 1,
+   width: 12,
+   height: 1,
   }],
  });
  assert.equal(validateConfig(first.config).ok, true);
@@ -110,7 +119,7 @@ test("project errors identify source location and cause", async () => {
    match: /dashboard\.yaml:7:1.*additional property/i,
   },
   {
-   yaml: `project: 1\ntitle: Example\nsources:\n  - id: inspections\n    type: json\n    file: inspections.json\n    schema: {station: {type: string, nullable: false}}\nfilters: []\nrelationships: []\nqueries:\n  total: {sql: ../escape.sql, params: []}\nlayout:\n  - {id: total, type: kpi, query: total, label: Total, field: value}\n`,
+   yaml: `project: 1\ntitle: Example\nsources:\n  - id: inspections\n    type: json\n    file: inspections.json\n    schema: {station: {type: string, nullable: false}}\nfilters: []\nrelationships: []\nqueries:\n  total: {sql: ../escape.sql, params: []}\nlayout:\n  - {id: total, type: kpi, query: total, label: Total, field: value, x: 1, y: 1, width: 12, height: 1}\n`,
    match: /dashboard\.yaml:11:\d+.*queries\//i,
   },
   {
@@ -142,7 +151,7 @@ test("project errors identify source location and cause", async () => {
 
 test("a declared confirmed relationship admits a join", async () => {
  const { dashboard } = await project({
-  yaml: `project: 1\ntitle: Joined example\nsources:\n  - id: inspections\n    type: json\n    file: inspections.json\n    schema: {product_id: {type: string, nullable: false}}\n  - id: products\n    type: json\n    file: products.json\n    schema: {product_id: {type: string, nullable: false}}\nfilters: []\nrelationships:\n  - {left: inspections, right: products, leftKey: product_id, rightKey: product_id, cardinality: many-to-one, confirmed: true}\nqueries:\n  total: {sql: queries/total.sql, params: []}\nlayout:\n  - {id: total, type: kpi, query: total, label: Total, field: value}\n`,
+  yaml: `project: 1\ntitle: Joined example\nsources:\n  - id: inspections\n    type: json\n    file: inspections.json\n    schema: {product_id: {type: string, nullable: false}}\n  - id: products\n    type: json\n    file: products.json\n    schema: {product_id: {type: string, nullable: false}}\nfilters: []\nrelationships:\n  - {left: inspections, right: products, leftKey: product_id, rightKey: product_id, cardinality: many-to-one, confirmed: true}\nqueries:\n  total: {sql: queries/total.sql, params: []}\nlayout:\n  - {id: total, type: kpi, query: total, label: Total, field: value, x: 1, y: 1, width: 12, height: 1}\n`,
   sql: "SELECT count(*) AS value FROM inspections JOIN products USING (product_id)\n",
  });
  assert.equal((await compileProject(dashboard)).config.contract, 2);

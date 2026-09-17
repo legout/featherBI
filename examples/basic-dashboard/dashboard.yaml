@@ -19,3 +19,7 @@ layout:
     query: total
     label: Total records
     field: value
+    x: 1
+    y: 1
+    width: 12
+    height: 1

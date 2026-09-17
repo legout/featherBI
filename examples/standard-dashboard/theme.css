@@ -1,0 +1,2 @@
+:root { --dashboard-accent: #145ea8; }
+[data-component-type="metric-group"] output { display: block; color: var(--dashboard-accent); }

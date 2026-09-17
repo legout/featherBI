@@ -39,6 +39,18 @@ for (const [version, filename] of [[1, "schema.json"], [2, "schema-v2.json"]]) {
  ].join("\n"));
  const { default: generatedValidate } = await import(pathToFileURL(outPath).href);
  const minimal = JSON.parse(await readFile(path.join(rootDir, "tests", "fixtures", "minimal.config.json"), "utf8"));
+ if (version === 2) {
+  minimal.theme = "neutral";
+  minimal.layout = minimal.layout.map((component, index) => ({
+   ...component,
+   ...(component.x !== undefined ? { xField: component.x } : {}),
+   ...(component.y !== undefined ? { yField: component.y } : {}),
+   x: 1,
+   y: index + 1,
+   width: 12,
+   height: 1,
+  }));
+ }
  if (!generatedValidate({ ...minimal, contract: version })) {
   throw new Error(`generated contract ${version} validator rejected the minimal config`);
  }

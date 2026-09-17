@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { validateConfig } from "../../contract/config.mjs";
+import { promptLiveCredentials } from "../../runtime/viewer.mjs";
 import {
  classifyLiveError,
  liveSecretName,
@@ -76,6 +77,45 @@ test("runtime rejects credential-bearing remote declarations", () => {
   const config = structuredClone(BASE_CONFIG);
   config.data.sources[0] = { ...config.data.sources[0], remote };
   assert.equal(validateConfig(config).ok, false);
+ }
+});
+
+test("private credential submission resolves before dialog close cancellation", async () => {
+ const previousDocument = globalThis.document;
+ const elements = [];
+ class FakeElement {
+  constructor(tag) {
+   this.tagName = tag;
+   this.children = [];
+   this.listeners = {};
+   this.dataset = {};
+   this.value = "";
+   elements.push(this);
+  }
+  append(...children) { this.children.push(...children); }
+  prepend(child) { this.children.unshift(child); }
+  addEventListener(name, listener) { this.listeners[name] = listener; }
+  setAttribute() {}
+  showModal() {}
+  close() { this.listeners.close?.(); }
+  remove() {}
+ }
+ try {
+  globalThis.document = { createElement: (tag) => new FakeElement(tag) };
+  const body = new FakeElement("body");
+  const promise = promptLiveCredentials(
+   { body },
+   { id: "bucket" },
+   null,
+  );
+  const inputs = elements.filter(({ tagName }) => tagName === "input");
+  inputs[0].value = "key";
+  inputs[1].value = "secret";
+  const form = elements.find(({ tagName }) => tagName === "form");
+  form.listeners.submit({ preventDefault() {} });
+  assert.deepEqual(await promise, { keyId: "key", secret: "secret", sessionToken: undefined });
+ } finally {
+  globalThis.document = previousDocument;
  }
 });
 

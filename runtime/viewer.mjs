@@ -89,7 +89,11 @@ export async function mountDashboard({
   const current = controller.state.filterOptionPages[id];
   const page =
    action === "next" ? current.page + 1 : Math.max(0, current.page - 1);
-  await controller.searchFilterOptions(id, current.search, page);
+  try {
+   await controller.searchFilterOptions(id, current.search, page);
+  } catch {
+   // The controller has already emitted the retained visible error state.
+  }
  });
 
  layout.addEventListener("featherbi-grid-select", async (event) => {
@@ -334,7 +338,7 @@ function buildSources(container, sources) {
  * credentials. Values resolve through the controller into a temporary
  * in-memory DuckDB secret and are never persisted or logged.
  */
-function promptLiveCredentials(root, source, priorError) {
+export function promptLiveCredentials(root, source, priorError) {
  return new Promise((resolve) => {
   const dialog = document.createElement("dialog");
   const heading = Object.assign(document.createElement("h2"), {
@@ -365,13 +369,18 @@ function promptLiveCredentials(root, source, priorError) {
    type: "button",
    textContent: "Cancel",
   });
+  let settled = false;
   const done = (value) => {
+   if (settled) return;
+   settled = true;
    dialog.close();
    dialog.remove();
    resolve(value);
   };
   cancel.addEventListener("click", () => done(null));
   dialog.addEventListener("close", () => {
+   if (settled) return;
+   settled = true;
    dialog.remove();
    resolve(null);
   });
@@ -1269,7 +1278,10 @@ function unique(values) {
 
 function debounce(key, action) {
  clearTimeout(debounceTimers.get(key));
- debounceTimers.set(key, setTimeout(action, 250));
+ debounceTimers.set(
+key,
+setTimeout(() => Promise.resolve(action()).catch(() => {}), 250),
+ );
 }
 
 function addDays(value, days) {

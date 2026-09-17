@@ -231,17 +231,21 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
    );
    if (!filter) throw new Error(`unknown select filter ${JSON.stringify(filterId)}`);
    if (!Number.isSafeInteger(page) || page < 0) throw new Error("option page must be a non-negative integer");
+   const prior = state;
    return enqueue(async () => {
     let result;
-    try {
+    const readOptions = async () => {
      await useGeneration(engine.connection, active.schema);
-     result = await optionPage(
+     return optionPage(
       engine.connection,
       filter,
       active,
       String(search),
       page,
      );
+    };
+    try {
+     result = await readOptions();
     } catch (error) {
      const annotated = annotateRemoteError(
       error,
@@ -249,15 +253,15 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
       { sql: `SELECT * FROM ${filter.source}` },
      );
      if (!isCredentialFailure(annotated)) throw annotated;
-     await retryLiveGeneration(annotated);
-     await useGeneration(engine.connection, active.schema);
-     result = await optionPage(
-      engine.connection,
-      filter,
-      active,
-      String(search),
-      page,
-     );
+     try {
+      await retryLiveGeneration(annotated);
+      result = await readOptions();
+     } catch (retryError) {
+      const visible = liveReadError(config, retryError);
+      state = retainedSnapshot(prior, visible);
+      emit(state);
+      throw visible;
+     }
     }
     state = {
      ...state,

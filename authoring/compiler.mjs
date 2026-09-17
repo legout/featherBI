@@ -108,11 +108,22 @@ export async function compileProject(projectPath) {
   app: "grid",
   title: project.title,
   theme: project.theme ?? "neutral",
+  rendererPreset: project.rendererPreset ?? "standard",
   data: { mode: "upload", sources: project.sources },
   filters: project.filters,
   queries,
   layout: project.layout,
  };
+ if (project.playground) {
+  config.playground = {
+   renderer: project.playground.renderer,
+   models: modelOrder.map((id) => ({ id, sql: modelSql[id] })),
+   schemas: Object.fromEntries([
+    ...project.sources.map((source) => [source.id, Object.keys(source.schema)]),
+    ...modelOrder.map((id) => [id, Object.keys(modelDeclarations[id].schema)]),
+   ]),
+  };
+ }
  if (themeCss) config.themeCss = themeCss;
  const validation = validateConfig(config);
  if (!validation.ok) {

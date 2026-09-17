@@ -62,6 +62,7 @@ test("manual YAML and external SQL compile deterministically to strict contract 
   app: "grid",
   title: "Example dashboard",
   theme: "neutral",
+  rendererPreset: "standard",
   data: {
    mode: "upload",
    sources: [{

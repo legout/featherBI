@@ -22,7 +22,11 @@ button:disabled { cursor: not-allowed; }
 #dashboard-layout > section { grid-column: var(--grid-x) / span var(--grid-width); grid-row: var(--grid-y) / span var(--grid-height); min-width: 0; padding: 1rem; border: 1px solid #d1d7df; border-radius: .45rem; background: white; box-shadow: 0 1px 2px #0001; overflow-wrap: anywhere; }
 h2 { margin-top: 0; font-size: 1rem; }
 output { font-size: 2rem; font-weight: 750; }
-.chart { width: 100%; height: 22rem; }
+.chart, .perspective-host { width: 100%; height: 22rem; }
+.perspective-host perspective-viewer { display: block; width: 100%; height: 100%; }
+.data-grid, [data-playground-result] { width: 100%; min-height: 12rem; }
+[data-playground-editor] { min-height: 8rem; border: 1px solid #aeb9c6; }
+[data-playground-error] { color: #a01515; }
 [data-chart-summary] { max-height: 5rem; overflow: auto; font-size: .8rem; color: #465463; }
 table { width: 100%; border-collapse: collapse; font-size: .875rem; }
 th, td { padding: .5rem; border-bottom: 1px solid #e3e7eb; text-align: left; }

@@ -1,6 +1,6 @@
 import { validateConfig } from "../contract/config.mjs";
 import { createEngine } from "./bootstrap.mjs";
-import { runQuery } from "./queries.mjs";
+import { RESULT_MAX_BYTES, RESULT_MAX_ROWS, RESULT_TIMEOUT_MS, runPlaygroundQuery, runQuery, runQueryArrow } from "./queries.mjs";
 import { registerSources } from "./sources.mjs";
 
 const CHART_LIMIT = 10_000;
@@ -29,6 +29,7 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
  let active;
  let state;
  let requestedFilterValues;
+ let playgroundConnection;
 
  const emit = (next) => onState({ ...next });
  const enqueue = (task) => {
@@ -41,6 +42,7 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
   active = await stageGeneration(engine, config, inputMap, sourceIds);
   state = snapshot(active, 0, "ready");
   requestedFilterValues = { ...state.filterValues };
+  playgroundConnection = config.playground ? await engine.db.connect() : null;
   emit(state);
  } catch (error) {
   await engine.dispose();
@@ -79,6 +81,7 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
       revision,
       filterValues: requested,
       results: batch.results,
+      perspectiveResults: batch.perspectiveResults,
       tablePages: batch.tablePages,
       timings: { ...prior.timings, queryMs: performance.now() - started },
       status: "ready",
@@ -221,10 +224,26 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
    });
   },
 
+  runPlayground(sql, { timeoutMs = RESULT_TIMEOUT_MS } = {}) {
+   requireLive(disposed);
+   if (!playgroundConnection || !config.playground) throw new Error("SQL playground is not enabled");
+   return enqueue(async () => {
+    await useGeneration(playgroundConnection, active.schema);
+    return runPlaygroundQuery({
+     connection: playgroundConnection,
+     sql,
+     declaredSources: sourceIds,
+     models: config.playground.models,
+     timeoutMs,
+    });
+   });
+  },
+
   async dispose() {
    if (disposed) return;
    disposed = true;
    await queue;
+   await playgroundConnection?.close();
    await retireGeneration(engine, active);
    await engine.dispose();
   },
@@ -324,6 +343,7 @@ async function dateDefault(connection, filter, generation) {
 async function executeVisibleQueries(connection, config, generation, filterValues, sourceIds) {
  await useGeneration(connection, generation.schema);
  const results = {};
+ const perspectiveResults = {};
  const tablePages = {};
  const componentsByQuery = new Map();
  for (const component of config.layout) {
@@ -334,18 +354,32 @@ async function executeVisibleQueries(connection, config, generation, filterValue
  }
  for (const [queryId, components] of componentsByQuery) {
   const table = components.find(({ type }) => type === "table");
-  const chart = components.some(({ type }) => ["bar", "line", "area", "scatter", "pie", "donut", "heatmap", "treemap", "sankey", "gauge", "boxplot"].includes(type));
-  const rows = await runQuery(
-   connection,
-   config.queries[queryId],
-   filterValues,
-   sourceIds,
-   table
-    ? { limit: TABLE_PAGE_SIZE + 1, offset: 0, requireOrder: true }
-    : { limit: chart ? CHART_LIMIT + 1 : 2 },
-  );
+  const chart = components.some(({ type }) => isChartType(type));
+  const perspective = components.some(({ type }) => type === "perspective") || (config.rendererPreset === "perspective-first" && chart);
+  let rows;
+  if (perspective) {
+   const result = await runQueryArrow(connection, config.queries[queryId], filterValues, sourceIds, {
+    limit: RESULT_MAX_ROWS + 1,
+    maxBytes: RESULT_MAX_BYTES,
+    timeoutMs: RESULT_TIMEOUT_MS,
+   });
+   rows = result.rows;
+   if (rows.length > RESULT_MAX_ROWS) throw new Error(`query ${JSON.stringify(queryId)} exceeds the ${RESULT_MAX_ROWS.toLocaleString("en-US")}-row Perspective limit`);
+   if (result.ipc.byteLength > RESULT_MAX_BYTES) throw new Error(`query ${JSON.stringify(queryId)} exceeds the 8 MiB Perspective Arrow limit`);
+   perspectiveResults[queryId] = result.ipc;
+  } else {
+   rows = await runQuery(
+    connection,
+    config.queries[queryId],
+    filterValues,
+    sourceIds,
+    table
+     ? { limit: TABLE_PAGE_SIZE + 1, offset: 0, requireOrder: true }
+     : { limit: chart ? CHART_LIMIT + 1 : 2 },
+   );
+  }
   validateRows(rows, components);
-  if (chart && rows.length > CHART_LIMIT) {
+  if (!perspective && chart && rows.length > CHART_LIMIT) {
    throw new Error(`query ${JSON.stringify(queryId)} exceeds the ${CHART_LIMIT}-row chart limit`);
   }
   if (table) {
@@ -355,7 +389,7 @@ async function executeVisibleQueries(connection, config, generation, filterValue
    results[queryId] = rows;
   }
  }
- return { results, tablePages };
+ return { results, perspectiveResults, tablePages };
 }
 
 function validateRows(rows, components) {
@@ -367,6 +401,8 @@ function validateRows(rows, components) {
     ? component.fields
    : component.type === "table"
     ? component.columns.map(({ field }) => field)
+   : component.type === "perspective"
+    ? [...(component.perspective.groupBy ?? []), ...(component.perspective.splitBy ?? []), ...component.perspective.columns]
     : chartFields(component);
   for (const field of required) {
    if (!fields.has(field)) throw bindingError(component, `missing result field ${JSON.stringify(field)}`);
@@ -384,6 +420,13 @@ function validateRows(rows, components) {
      if (!scalarOrNull(row[column.field])) {
       throw bindingError(component, `field ${JSON.stringify(column.field)} must be scalar or null`);
      }
+    }
+   }
+  } else if (component.type === "perspective") {
+   for (const row of rows) {
+    for (const field of required) {
+     requireField(row, field, component);
+     if (!scalarOrNull(row[field])) throw bindingError(component, `field ${JSON.stringify(field)} must be scalar or null`);
     }
    }
   } else {
@@ -457,6 +500,7 @@ function snapshot(generation, revision, status) {
   filterOptions: generation.filterOptions,
   filterOptionPages: generation.filterOptionPages,
   results: generation.results,
+  perspectiveResults: generation.perspectiveResults,
   tablePages: generation.tablePages,
   timings: generation.timings,
  };
@@ -482,6 +526,10 @@ function normalizeFilterValues(config, values) {
   }
  }
  return normalized;
+}
+
+function isChartType(type) {
+ return ["bar", "line", "area", "scatter", "pie", "donut", "heatmap", "treemap", "sankey", "gauge", "boxplot"].includes(type);
 }
 
 function chartFields(component) {

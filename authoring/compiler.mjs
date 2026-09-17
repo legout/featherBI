@@ -9,6 +9,7 @@ import { scopeThemeCss } from "./css.mjs";
 const validateProject = new Ajv({ allErrors: true }).compile(projectSchema);
 const FORBIDDEN_SQL = /\b(?:ALTER|ATTACH|CALL|COPY|CREATE|DELETE|DETACH|DROP|EXPORT|IMPORT|INSERT|INSTALL|LOAD|MERGE|PRAGMA|TRUNCATE|UPDATE|VACUUM)\b/i;
 const FILE_READER = /\b(?:read_csv|read_csv_auto|read_json|read_json_auto|read_ndjson|read_parquet|parquet_scan|csv_scan)\s*\(/i;
+const SECRET_PARAMETER = /(?:^|[^a-z])(?:x[-_]?amz[-_]?(?:credential|signature|security[-_]?token)|access[-_]?key|secret(?:[-_]?access[-_]?key)?|session[-_]?token|credential|password|private[-_]?key)(?:$|[^a-z])/i;
 
 /** Compile one dashboard project into deterministic strict runtime contract 2. */
 export async function compileProject(projectPath) {
@@ -55,6 +56,7 @@ export async function compileProject(projectPath) {
 
  validateRelationships(project, displayProject, document, lineCounter);
  validateCatalog(project, displayProject, document, lineCounter);
+ validateRemoteSources(project, displayProject, document, lineCounter);
  validateLayout(project.layout, displayProject, document, lineCounter);
  const sourceIds = new Set(project.sources.map(({ id }) => id));
  const modelDeclarations = project.models ?? {};
@@ -109,7 +111,7 @@ export async function compileProject(projectPath) {
   title: project.title,
   theme: project.theme ?? "neutral",
   rendererPreset: project.rendererPreset ?? "standard",
-  data: { mode: "upload", sources: project.sources },
+  data: { mode: "upload", sources: project.sources.map(runtimeSource) },
   filters: project.filters,
   queries,
   layout: project.layout,
@@ -131,7 +133,105 @@ export async function compileProject(projectPath) {
   const sourcePath = runtimePathToProjectPath(issue.path);
   throw yamlError(displayProject, document, lineCounter, sourcePath, issue.message);
  }
- return { config, json: `${JSON.stringify(sortObjectKeys(config), null, 2)}\n` };
+ const remoteSources = project.sources
+  .filter(
+   (source) =>
+    source.remote && source.remote.delivery !== "live",
+  )
+  .map((source) => ({
+   id: source.id,
+   uri: source.remote.uri,
+   format: source.remote.format,
+   auth: source.remote.auth,
+   ...(source.remote.region ? { region: source.remote.region } : {}),
+   ...(source.remote.endpoint ? { endpoint: source.remote.endpoint } : {}),
+   filename: remoteMemberName(source),
+  }));
+ return { config, json: `${JSON.stringify(sortObjectKeys(config), null, 2)}\n`, remoteSources };
+}
+
+/** Validate cross-field remote source rules the schema cannot express. */
+function validateRemoteSources(project, filename, document, lineCounter) {
+ for (const [index, source] of project.sources.entries()) {
+  if (!source.remote) continue;
+  if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.uri)) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", "uri"],
+    "remote uri must not embed credentials; declare auth and keep credentials in the gitignored .env",
+   );
+  }
+  const query = source.remote.uri.match(/[?#](.*)$/)?.[1] ?? "";
+  if (SECRET_PARAMETER.test(query)) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", "uri"],
+    "remote uri must not contain credential or secret-looking query parameters",
+   );
+  }
+  if (
+   source.remote.endpoint &&
+   (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.endpoint) ||
+    SECRET_PARAMETER.test(source.remote.endpoint))
+  ) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", "endpoint"],
+    "remote.endpoint must not contain credentials or secret-looking values",
+   );
+  }
+  if (!remoteMemberName(source)) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", "filename"],
+    `source ${JSON.stringify(source.id)}: remote URI has no usable file name; declare remote.filename`,
+   );
+  }
+ }
+}
+
+/** Map one authoring source to its strict runtime contract 2 shape. */
+function runtimeSource(source) {
+ if (!source.remote) return source;
+ const remote = source.remote;
+ if (remote.delivery === "live") {
+  // Live sources carry their remote metadata into the runtime config; the
+  // recipient's browser reads the URI directly (public) or after prompting
+  // for credentials (private). No local file exists for them.
+  return {
+   id: source.id,
+   schema: source.schema,
+   remote: {
+    uri: remote.uri,
+    format: remote.format,
+    auth: remote.auth,
+    ...(remote.region ? { region: remote.region } : {}),
+    ...(remote.endpoint ? { endpoint: remote.endpoint } : {}),
+   },
+  };
+ }
+ return {
+  id: source.id,
+  type: remote.format,
+  file: remoteMemberName(source),
+  schema: source.schema,
+ };
+}
+
+/** Safe ZIP member name for a remote source: declared filename or sanitized URI basename. */
+function remoteMemberName(source) {
+ if (source.remote.filename) return source.remote.filename;
+ const path = source.remote.uri.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+ const base = path.split(/[?#]/)[0].split("/").filter(Boolean).pop() ?? "";
+ return base.replace(/[/\\:\u0000-\u001f\u007f-\u009f]/g, "_");
 }
 
 function validateRelationships(project, filename, document, lineCounter) {
@@ -428,6 +528,7 @@ function schemaErrorPath(error) {
 
 function schemaMessage(error) {
  if (error.keyword === "additionalProperties") return "must not have an additional property";
+ if (error.keyword === "false schema") return "must not be declared together with remote";
  if (error.keyword === "const") return `must be ${JSON.stringify(error.params.allowedValue)}`;
  return error.message ?? "is invalid";
 }

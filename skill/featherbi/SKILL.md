@@ -27,7 +27,7 @@ test -f bin/featherbi.mjs && npm ci
      --output path/to/project/.featherbi/profile.json
    ```
 
-   Report material row/schema/null/cardinality evidence and stop on profile errors — never guess a schema. `--include-values` requires explicit permission and stays bounded. Details: [references/failures.md](references/failures.md).
+   Remote sources are profiled the same way with a read-only `s3://` or `https://` URI and `--auth none|s3`. For `auth: s3`, set up credentials once via the AWS credential chain or the gitignored `.env` created from the repository's `.env.example`; missing credentials fail naming the source and the required secret. Report material row/schema/null/cardinality evidence and stop on profile errors — never guess a schema. `--include-values` requires explicit permission and stays bounded. Details: [references/failures.md](references/failures.md).
 
 3. **Interview progressively.** Show the evidence, then ask only material questions in order: audience/decisions; metric meanings and grain; default population and filters; ambiguous relationships (joins need explicit confirmation with keys and expected cardinality); then appearance (preset, theme, layout). Recommend defaults from evidence; never invent business definitions. Decision tree: [references/interview.md](references/interview.md).
 
@@ -47,7 +47,7 @@ test -f bin/featherbi.mjs && npm ci
 
 6. **Iterate from feedback.** Treat every revision request as an edit to the same YAML/SQL/CSS source. Rebuild, reselect data when required, and point out the visibly changed output before asking for more feedback. Let Git record history; do not create parallel ledgers. Stop when the draft is approved or the user pauses.
 
-7. **Package for sharing.** Re-run compile/build, then verify the artifact before handing it over: the ZIP contains `dashboard.html` plus one member per declared source, the HTML contains neither dataset bytes nor absolute local paths, and a fresh extraction reopens in Chrome after explicit file selection. Packaging never publishes, uploads, or commits anything.
+7. **Package for sharing.** Re-run compile/build, then verify the artifact before handing it over: the ZIP contains `dashboard.html` plus one member per packaged source (local files and packaged remote sources; live remote sources instead read their URI in the recipient's browser and have no member), the HTML contains neither dataset bytes nor absolute local paths, and a fresh extraction reopens in Chrome after explicit file selection. Packaging never publishes, uploads, or commits anything.
 
 8. **Report.** Summarize source paths edited, commands run, evidence observed (profile facts, Chrome values, ZIP checks), and remaining decisions. Commit, push, publication, and release are separate owner actions.
 

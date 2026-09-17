@@ -183,3 +183,101 @@ test("unknown project versions and missing query files fail precisely", async ()
   /queries\/total\.sql:1:1.*cannot read/i,
  );
 });
+
+async function remoteProject(remote) {
+ return project({
+  yaml: `project: 1\ntitle: Remote dashboard\nsources:\n  - id: inspections\n    schema:\n      station: {type: string, nullable: false}\n    remote: ${remote}\n  - id: local_notes\n    type: json\n    file: local_notes.json\n    schema:\n      note: {type: string, nullable: false}\nfilters: []\nrelationships: []\nqueries:\n  total: {sql: queries/total.sql, params: []}\nlayout:\n  - {id: total, type: kpi, query: total, label: Total, field: value, x: 1, y: 1, width: 12, height: 1}\n`,
+ });
+}
+
+test("packaged remote sources compile to local-shaped runtime sources without remote metadata", async () => {
+ const { dashboard } = await remoteProject(
+  `{uri: s3://example-bucket/inspections.parquet, format: parquet, auth: s3, region: eu-central-1}`,
+ );
+ const { config, json, remoteSources } = await compileProject(dashboard);
+ assert.deepEqual(config.data.sources[0], {
+  id: "inspections",
+  type: "parquet",
+  file: "inspections.parquet",
+  schema: { station: { type: "string", nullable: false } },
+ });
+ assert.deepEqual(remoteSources, [
+  {
+   id: "inspections",
+   uri: "s3://example-bucket/inspections.parquet",
+   format: "parquet",
+   auth: "s3",
+   region: "eu-central-1",
+   filename: "inspections.parquet",
+  },
+ ]);
+ assert.equal(json.includes("s3://"), false);
+ assert.equal(json.includes("remote"), false);
+});
+
+test("remote member names fall back to the sanitized URI basename", async () => {
+ const { dashboard } = await remoteProject(
+  `{uri: "https://example.com/data/inspections.parquet?x=1", format: parquet, auth: none}`,
+ );
+ const { config, remoteSources } = await compileProject(dashboard);
+ assert.equal(config.data.sources[0].file, "inspections.parquet");
+ assert.equal(remoteSources[0].filename, "inspections.parquet");
+});
+
+test("live remote sources compile their read metadata into the runtime config", async () => {
+ const { dashboard } = await remoteProject(
+  `{uri: https://example.com/inspections.parquet, format: parquet, auth: s3, region: eu-central-1, delivery: live}`,
+ );
+ const { config, remoteSources } = await compileProject(dashboard);
+ assert.deepEqual(config.data.sources[0], {
+  id: "inspections",
+  schema: { station: { type: "string", nullable: false } },
+  remote: {
+   uri: "https://example.com/inspections.parquet",
+   format: "parquet",
+   auth: "s3",
+   region: "eu-central-1",
+  },
+ });
+ assert.equal(config.data.sources[0].file, undefined);
+ assert.equal(remoteSources.length, 0, "live sources must not be materialized at build time");
+});
+
+test("invalid or leak-prone remote declarations fail with precise locations", async () => {
+ const cases = [
+  {
+   remote: `{uri: ftp://example.com/a.parquet, format: parquet, auth: none}`,
+   match: /dashboard\.yaml:\d+:\d+.*sources\.0\.remote\.uri.*pattern/i,
+  },
+  {
+   remote: `{uri: https://example.com/a.parquet, format: parquet, auth: none, secret: "hunter2"}`,
+   match: /dashboard\.yaml:\d+:\d+.*sources\.0\.remote\.secret.*additional property/i,
+  },
+  {
+   remote: `{uri: https://key:hunter2@example.com/a.parquet, format: parquet, auth: none}`,
+   match: /dashboard\.yaml:\d+:\d+.*remote uri must not embed credentials/i,
+  },
+  {
+   remote: `{uri: "https://example.com/a.parquet?X-Amz-Credential=key&X-Amz-Signature=sig", format: parquet, auth: none}`,
+   match: /dashboard\.yaml:\d+:\d+.*credential or secret-looking query parameters/i,
+  },
+  {
+   remote: `{uri: https://example.com/a.parquet, format: parquet, auth: none, endpoint: "https://user:pass@example.com"}`,
+   match: /dashboard\.yaml:\d+:\d+.*remote\.endpoint.*credentials/i,
+  },
+  {
+   yamlOverride: `project: 1\ntitle: Remote dashboard\nsources:\n  - id: inspections\n    type: parquet\n    schema:\n      station: {type: string, nullable: false}\n    remote:\n      uri: https://example.com/a.parquet\n      format: parquet\n      auth: none\nfilters: []\nrelationships: []\nqueries: {}\nlayout: []\n`,
+   match: /dashboard\.yaml:\d+:\d+.*sources\.0\.(type|file).*must not be declared together with remote/i,
+  },
+  {
+   yamlOverride: `project: 1\ntitle: Remote dashboard\nsources:\n  - id: inspections\n    schema:\n      station: {type: string, nullable: false}\nfilters: []\nrelationships: []\nqueries: {}\nlayout: []\n`,
+   match: /dashboard\.yaml:\d+:\d+.*sources\.0\.(type|file).*required/i,
+  },
+ ];
+ for (const fixture of cases) {
+  const { dashboard } = await (fixture.yamlOverride
+   ? project({ yaml: fixture.yamlOverride, sql: null })
+   : remoteProject(fixture.remote));
+  await assert.rejects(() => compileProject(dashboard), fixture.match);
+ }
+});

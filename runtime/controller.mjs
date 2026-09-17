@@ -1,5 +1,6 @@
 import { validateConfig } from "../contract/config.mjs";
 import { createEngine } from "./bootstrap.mjs";
+import { classifyLiveError } from "./sources.mjs";
 import { RESULT_MAX_BYTES, RESULT_MAX_ROWS, RESULT_TIMEOUT_MS, runPlaygroundQuery, runQuery, runQueryArrow } from "./queries.mjs";
 import { registerSources } from "./sources.mjs";
 
@@ -9,7 +10,7 @@ const TABLE_PAGE_SIZE = 100;
 let nextDashboardGeneration = 1;
 
 /** Create one serialized dashboard runtime and publish only coherent snapshots. */
-export async function createDashboard({ config, inputs, onState = () => {} }) {
+export async function createDashboard({ config, inputs, onState = () => {}, liveCredentials = null }) {
  const validation = validateConfig(config);
  if (!validation.ok) {
   throw new Error(
@@ -20,6 +21,9 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
  }
  const sourceIds = config.data.sources.map(({ id }) => id);
  const inputMap = mapInputs(config, inputs);
+ const sessionCredentials = new Map();
+ const priorLiveErrors = new Map();
+ const live = { getCredentials: liveCredentials, sessionCredentials };
  onState({ status: "loading", error: null });
  const engine = await createEngine();
  let queue = Promise.resolve();
@@ -37,9 +41,54 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
   queue = result.catch(() => {});
   return result;
  };
+ const credentialSourceIds = (error) =>
+  [...new Set(error?.sourceIds ?? (error?.sourceId ? [error.sourceId] : []))];
+ const isCredentialFailure = (error) =>
+  credentialSourceIds(error).some((sourceId) =>
+   config.data.sources.some(
+    ({ id, remote }) => id === sourceId && remote?.auth === "s3",
+   ),
+  ) &&
+  classifyLiveError(error) === "credentials";
+ const stageWithCredentialRetry = async (sourceInputs) => {
+  try {
+   return await stageGeneration(engine, config, sourceInputs, sourceIds, live, priorLiveErrors);
+  } catch (error) {
+   if (!isCredentialFailure(error)) throw error;
+   for (const sourceId of credentialSourceIds(error)) {
+    priorLiveErrors.set(sourceId, error.message);
+    sessionCredentials.delete(sourceId);
+   }
+   return stageGeneration(engine, config, sourceInputs, sourceIds, live, priorLiveErrors);
+  }
+ };
+ const retryLiveGeneration = async (error) => {
+  if (!isCredentialFailure(error)) throw error;
+  for (const sourceId of credentialSourceIds(error)) {
+   priorLiveErrors.set(sourceId, error.message);
+   sessionCredentials.delete(sourceId);
+  }
+  const previous = active;
+  let candidate;
+  try {
+   candidate = await stageGeneration(
+    engine,
+    config,
+    active.inputs,
+    sourceIds,
+    live,
+    priorLiveErrors,
+   );
+  } catch (retryError) {
+   throw liveReadError(config, retryError);
+  }
+  active = candidate;
+  for (const sourceId of credentialSourceIds(error)) priorLiveErrors.delete(sourceId);
+  await retireGeneration(engine, previous);
+ };
 
  try {
-  active = await stageGeneration(engine, config, inputMap, sourceIds);
+  active = await stageWithCredentialRetry(inputMap);
   state = snapshot(active, 0, "ready");
   requestedFilterValues = { ...state.filterValues };
   playgroundConnection = config.playground ? await engine.db.connect() : null;
@@ -68,13 +117,26 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
     if (revision !== latestRevision) return state;
     try {
      const started = performance.now();
-     const batch = await executeVisibleQueries(
-      engine.connection,
-      config,
-      active,
-      requested,
-      sourceIds,
-     );
+     let batch;
+     try {
+      batch = await executeVisibleQueries(
+       engine.connection,
+       config,
+       active,
+       requested,
+       sourceIds,
+      );
+     } catch (error) {
+      if (!isCredentialFailure(error)) throw error;
+      await retryLiveGeneration(error);
+      batch = await executeVisibleQueries(
+       engine.connection,
+       config,
+       active,
+       requested,
+       sourceIds,
+      );
+     }
      if (revision !== latestRevision) return state;
      state = {
       ...prior,
@@ -111,19 +173,34 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
    emit({ ...prior, status: "busy", error: null });
    return enqueue(async () => {
     try {
-     await useGeneration(engine.connection, active.schema);
      const started = performance.now();
-     const rows = await runQuery(
-      engine.connection,
-      config.queries[component.query],
-      state.filterValues,
-      sourceIds,
-      {
-       limit: TABLE_PAGE_SIZE + 1,
-       offset: page * TABLE_PAGE_SIZE,
-       requireOrder: true,
-      },
-     );
+     let rows;
+     const readPage = async () => {
+      await useGeneration(engine.connection, active.schema);
+      return runQuery(
+       engine.connection,
+       config.queries[component.query],
+       state.filterValues,
+       sourceIds,
+       {
+        limit: TABLE_PAGE_SIZE + 1,
+        offset: page * TABLE_PAGE_SIZE,
+        requireOrder: true,
+       },
+      );
+     };
+     try {
+      rows = await readPage();
+     } catch (error) {
+      const annotated = annotateRemoteError(error, config, config.queries[component.query]);
+      if (!isCredentialFailure(annotated)) throw annotated;
+      await retryLiveGeneration(annotated);
+      try {
+       rows = await readPage();
+      } catch (retryError) {
+       throw annotateRemoteError(retryError, config, config.queries[component.query]);
+      }
+     }
      validateRows(rows, [component]);
      state = {
       ...state,
@@ -154,15 +231,38 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
    );
    if (!filter) throw new Error(`unknown select filter ${JSON.stringify(filterId)}`);
    if (!Number.isSafeInteger(page) || page < 0) throw new Error("option page must be a non-negative integer");
+   const prior = state;
    return enqueue(async () => {
-    await useGeneration(engine.connection, active.schema);
-    const result = await optionPage(
-     engine.connection,
-     filter,
-     active,
-     String(search),
-     page,
-    );
+    let result;
+    const readOptions = async () => {
+     await useGeneration(engine.connection, active.schema);
+     return optionPage(
+      engine.connection,
+      filter,
+      active,
+      String(search),
+      page,
+     );
+    };
+    try {
+     result = await readOptions();
+    } catch (error) {
+     const annotated = annotateRemoteError(
+      error,
+      config,
+      { sql: `SELECT * FROM ${filter.source}` },
+     );
+     if (!isCredentialFailure(annotated)) throw annotated;
+     try {
+      await retryLiveGeneration(annotated);
+      result = await readOptions();
+     } catch (retryError) {
+      const visible = liveReadError(config, retryError);
+      state = retainedSnapshot(prior, visible);
+      emit(state);
+      throw visible;
+     }
+    }
     state = {
      ...state,
      filterOptions: { ...state.filterOptions, [filter.id]: result.values },
@@ -198,7 +298,7 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
       if (!source) throw new Error(`unknown replacement source ${JSON.stringify(id)}`);
       candidateInputs.set(id, { source, file });
      }
-     candidate = await stageGeneration(engine, config, candidateInputs, sourceIds);
+     candidate = await stageWithCredentialRetry(candidateInputs);
      if (revision !== latestRevision) {
       await retireGeneration(engine, candidate);
       return state;
@@ -212,8 +312,15 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
      return state;
     } catch (error) {
      if (candidate) await retireGeneration(engine, candidate);
+     if (
+      error?.sourceId &&
+      classifyLiveError(error) === "credentials"
+     ) {
+      // Force a fresh prompt on the next replacement attempt.
+      sessionCredentials.delete(error.sourceId);
+     }
      if (revision === latestRevision) {
-      state = retainedSnapshot(prior, error);
+      state = retainedSnapshot(prior, liveReadError(config, error));
       requestedFilterValues = { ...prior.filterValues };
       emit(state);
      }
@@ -228,14 +335,24 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
    requireLive(disposed);
    if (!playgroundConnection || !config.playground) throw new Error("SQL playground is not enabled");
    return enqueue(async () => {
-    await useGeneration(playgroundConnection, active.schema);
-    return runPlaygroundQuery({
-     connection: playgroundConnection,
-     sql,
-     declaredSources: sourceIds,
-     models: config.playground.models,
-     timeoutMs,
-    });
+    const run = () =>
+     runPlaygroundQuery({
+      connection: playgroundConnection,
+      sql,
+      declaredSources: sourceIds,
+      models: config.playground.models,
+      timeoutMs,
+     });
+    try {
+     await useGeneration(playgroundConnection, active.schema);
+     return await run();
+    } catch (error) {
+     const annotated = annotateRemoteError(error, config, { sql });
+     if (!isCredentialFailure(annotated)) throw annotated;
+     await retryLiveGeneration(annotated);
+     await useGeneration(playgroundConnection, active.schema);
+     return run();
+    }
    });
   },
 
@@ -250,12 +367,51 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
  };
 }
 
-async function stageGeneration(engine, config, inputs, sourceIds) {
+async function stageGeneration(engine, config, inputs, sourceIds, live = null, priorLiveErrors = new Map()) {
  const number = nextDashboardGeneration++;
  const schema = `featherbi_gen_${number}`;
- const orderedInputs = config.data.sources.map(({ id }) => inputs.get(id));
+ const orderedInputs = [];
+ for (const source of config.data.sources) {
+  const input = inputs.get(source.id);
+  if (input) {
+   orderedInputs.push(input);
+   continue;
+  }
+  if (!source.remote) {
+   throw new Error(`missing input for source ${JSON.stringify(source.id)}`);
+  }
+  let credentials;
+  if (source.remote.auth === "s3") {
+   if (!live?.getCredentials) {
+    throw new Error(
+     `source ${JSON.stringify(source.id)} reads live and needs credentials; no credential prompt is available for this dashboard`,
+    );
+   }
+   credentials = live.sessionCredentials.get(source.id);
+   if (!credentials) {
+    credentials = await live.getCredentials(
+     source,
+     priorLiveErrors.get(source.id) ?? null,
+    );
+    if (!credentials) {
+     throw new Error(
+      `source ${JSON.stringify(source.id)} needs credentials for the live read; enter them to load the dashboard`,
+     );
+    }
+    live.sessionCredentials.set(source.id, credentials);
+   }
+  }
+  orderedInputs.push({ source, credentials });
+ }
  const loadStarted = performance.now();
- const registered = await registerSources(engine, orderedInputs, { schema });
+ const registered = await registerSources(engine, orderedInputs, {
+  schema,
+  liveCredentials: Object.fromEntries(
+   orderedInputs
+    .filter(({ credentials }) => credentials)
+    .map(({ source, credentials }) => [source.id, credentials]),
+  ),
+ });
  const generation = { number, schema, inputs, sources: registered.sources };
  try {
   const loadMs = performance.now() - loadStarted;
@@ -357,26 +513,30 @@ async function executeVisibleQueries(connection, config, generation, filterValue
   const chart = components.some(({ type }) => isChartType(type));
   const perspective = components.some(({ type }) => type === "perspective") || (config.rendererPreset === "perspective-first" && chart);
   let rows;
-  if (perspective) {
-   const result = await runQueryArrow(connection, config.queries[queryId], filterValues, sourceIds, {
-    limit: RESULT_MAX_ROWS + 1,
-    maxBytes: RESULT_MAX_BYTES,
-    timeoutMs: RESULT_TIMEOUT_MS,
-   });
-   rows = result.rows;
-   if (rows.length > RESULT_MAX_ROWS) throw new Error(`query ${JSON.stringify(queryId)} exceeds the ${RESULT_MAX_ROWS.toLocaleString("en-US")}-row Perspective limit`);
-   if (result.ipc.byteLength > RESULT_MAX_BYTES) throw new Error(`query ${JSON.stringify(queryId)} exceeds the 8 MiB Perspective Arrow limit`);
-   perspectiveResults[queryId] = result.ipc;
-  } else {
-   rows = await runQuery(
-    connection,
-    config.queries[queryId],
-    filterValues,
-    sourceIds,
-    table
-     ? { limit: TABLE_PAGE_SIZE + 1, offset: 0, requireOrder: true }
-     : { limit: chart ? CHART_LIMIT + 1 : 2 },
-   );
+  try {
+   if (perspective) {
+    const result = await runQueryArrow(connection, config.queries[queryId], filterValues, sourceIds, {
+     limit: RESULT_MAX_ROWS + 1,
+     maxBytes: RESULT_MAX_BYTES,
+     timeoutMs: RESULT_TIMEOUT_MS,
+    });
+    rows = result.rows;
+    if (rows.length > RESULT_MAX_ROWS) throw new Error(`query ${JSON.stringify(queryId)} exceeds the ${RESULT_MAX_ROWS.toLocaleString("en-US")}-row Perspective limit`);
+    if (result.ipc.byteLength > RESULT_MAX_BYTES) throw new Error(`query ${JSON.stringify(queryId)} exceeds the 8 MiB Perspective Arrow limit`);
+    perspectiveResults[queryId] = result.ipc;
+   } else {
+    rows = await runQuery(
+     connection,
+     config.queries[queryId],
+     filterValues,
+     sourceIds,
+     table
+      ? { limit: TABLE_PAGE_SIZE + 1, offset: 0, requireOrder: true }
+      : { limit: chart ? CHART_LIMIT + 1 : 2 },
+    );
+   }
+  } catch (error) {
+   throw annotateRemoteError(error, config, config.queries[queryId]);
   }
   validateRows(rows, components);
   if (!perspective && chart && rows.length > CHART_LIMIT) {
@@ -557,11 +717,48 @@ function mapInputs(config, inputs) {
   if (id) result.set(id, input.source ? input : { source: input });
  }
  for (const source of config.data.sources) {
-  if (!result.has(source.id)) {
+  // Live remote sources read their URI in the browser; no local file exists.
+  if (!result.has(source.id) && !source.remote) {
    throw new Error(`missing input for source ${JSON.stringify(source.id)}`);
   }
  }
  return result;
+}
+
+/** Attach private live source IDs to DuckDB query errors for credential retry. */
+function annotateRemoteError(error, config, query) {
+ if (error?.sourceId || error?.sourceIds) return error;
+ const sql = String(query?.sql ?? "");
+ const sourceIds = config.data.sources
+  .filter(({ remote }) => remote?.auth === "s3")
+  .filter(({ id }) =>
+   new RegExp(`\\b(?:FROM|JOIN)\\s+\\"?${id}\\"?\\b`, "i").test(sql),
+  )
+  .map(({ id }) => id);
+ if (sourceIds.length > 0) {
+  error.sourceIds = sourceIds;
+  error.sourceId = sourceIds[0];
+ }
+ return error;
+}
+
+/** Decorate failed live reads with the source name and the actionable remedy. */
+function liveReadError(config, error) {
+ if (!error?.sourceId) return error;
+ const source = config.data.sources.find(({ id }) => id === error.sourceId);
+ if (!source?.remote) return error;
+ const kind = classifyLiveError(error);
+ const remedy = kind === "credentials"
+  ? "the remote host rejected the credentials; if they are wrong or expired, the source will ask for them again"
+  : kind === "network"
+   ? "the browser could not reach the source host (a CORS block looks the same); ask the author for a packaged build or check the network"
+   : "the live remote read failed; ask the author for a packaged build if it persists";
+ const wrapped = new Error(
+  `source ${JSON.stringify(error.sourceId)}: ${remedy} (${error.message})`,
+  { cause: error },
+ );
+ wrapped.sourceId = error.sourceId;
+ return wrapped;
 }
 
 async function retireGeneration(engine, generation) {

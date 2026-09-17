@@ -10,16 +10,23 @@ featherBI turns a declarative dashboard config and local CSV, Parquet, or JSON f
 
 ```sh
 npm ci
-node bin/featherbi.mjs validate --config skill/featherbi/examples/ap.config.json
+node bin/featherbi.mjs profile --input path/to/inspections.parquet \
+  --source-id inspections --format parquet
+node bin/featherbi.mjs compile \
+  --project examples/basic-dashboard/dashboard.yaml
+node bin/featherbi.mjs validate \
+  --config examples/basic-dashboard/.featherbi/dashboard.config.json
 ```
+
+The profile defaults to aggregate schema/count evidence without raw rows, values, or input paths. `--include-values` is an explicit permission boundary for bounded ranges and top values. Project source is YAML plus external `queries/*.sql`; generated config and local mappings stay under the project's ignored `.featherbi/` directory.
 
 Build one artifact with an explicit local file for every source ID:
 
 ```sh
 node bin/featherbi.mjs build \
-  --config skill/featherbi/examples/ap.config.json \
-  --source ap=path/to/ap.json \
-  --output dashboard.zip
+  --config examples/basic-dashboard/.featherbi/dashboard.config.json \
+  --source inspections=path/to/inspections.parquet \
+  --output examples/basic-dashboard/.featherbi/dashboard.zip
 ```
 
 The result is one ZIP bundle containing `dashboard.html` plus each data file; dataset bytes never become part of the HTML.

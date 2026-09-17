@@ -33,7 +33,7 @@ test("minimal example config is valid", async () => {
 });
 
 test("unsupported contract version is rejected", async () => {
- const result = validateConfig({ ...(await loadMinimalConfig()), contract: 2 });
+ const result = validateConfig({ ...(await loadMinimalConfig()), contract: 3 });
  assert.equal(result.ok, false);
 });
 

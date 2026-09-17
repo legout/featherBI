@@ -331,14 +331,24 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
    requireLive(disposed);
    if (!playgroundConnection || !config.playground) throw new Error("SQL playground is not enabled");
    return enqueue(async () => {
-    await useGeneration(playgroundConnection, active.schema);
-    return runPlaygroundQuery({
-     connection: playgroundConnection,
-     sql,
-     declaredSources: sourceIds,
-     models: config.playground.models,
-     timeoutMs,
-    });
+    const run = () =>
+     runPlaygroundQuery({
+      connection: playgroundConnection,
+      sql,
+      declaredSources: sourceIds,
+      models: config.playground.models,
+      timeoutMs,
+     });
+    try {
+     await useGeneration(playgroundConnection, active.schema);
+     return await run();
+    } catch (error) {
+     const annotated = annotateRemoteError(error, config, { sql });
+     if (!isCredentialFailure(annotated)) throw annotated;
+     await retryLiveGeneration(annotated);
+     await useGeneration(playgroundConnection, active.schema);
+     return run();
+    }
    });
   },
 

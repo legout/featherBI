@@ -301,7 +301,7 @@ export function liveSecretSql(id, credentials, remote) {
   // ponytail: path-style for explicit endpoints; add a URL_STYLE override if a virtual-hosted S3-compatible endpoint appears.
   options.push("URL_STYLE 'path'");
  }
- return `CREATE OR REPLACE TEMP SECRET ${identifier(liveSecretName(id))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
+ return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(liveSecretName(id))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
 }
 
 /** Classify a failed live read: "credentials", "network", or "other". */

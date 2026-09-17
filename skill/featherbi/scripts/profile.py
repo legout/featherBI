@@ -112,7 +112,7 @@ def credential_chain_secret(con):
     """Create a temporary secret from the AWS credential chain; report success."""
     try:
         con.execute(
-            "CREATE OR REPLACE TEMP SECRET fthr_s3 "
+            "CREATE OR REPLACE TEMPORARY SECRET fthr_s3 "
             "(TYPE s3, PROVIDER credential_chain)"
         )
         return True
@@ -129,7 +129,7 @@ def configure_remote(con, input_path, source_id, auth, secret_values, region=Non
     if credential_chain_secret(con):
         return
     con.execute(
-        "CREATE OR REPLACE TEMP SECRET fthr_s3 "
+        "CREATE OR REPLACE TEMPORARY SECRET fthr_s3 "
         f"(TYPE s3, PROVIDER config, {s3_credentials(source_id, secret_values, region, endpoint)})"
     )
 

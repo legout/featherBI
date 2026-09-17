@@ -85,7 +85,7 @@ test("private live secrets build temporary config-provider SQL", () => {
   { keyId: "AKIA", secret: "s3cret", sessionToken: "tok" },
   LIVE_SOURCE.remote,
  );
- assert.match(sql, /CREATE OR REPLACE TEMP SECRET "featherbi_live_bucket"/);
+ assert.match(sql, /CREATE OR REPLACE TEMPORARY SECRET "featherbi_live_bucket"/);
  assert.match(sql, /PROVIDER config/);
  assert.match(sql, /KEY_ID 'AKIA'/);
  assert.match(sql, /SECRET 's3cret'/);

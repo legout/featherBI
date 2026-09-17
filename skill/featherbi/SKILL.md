@@ -1,44 +1,52 @@
 ---
 name: featherbi
-description: Author and package declarative featherBI dashboards from local data. Use when asked to create, validate, or share a featherBI dashboard; unlike web-app generators, this skill never writes executable HTML by hand.
+description: Understand local sample data, design and build a featherBI dashboard project, choose evidence-backed metrics/charts/filters, or iterate and package an existing dashboard. Never hand-write executable HTML.
 ---
 
 # featherBI authoring
 
-## State check
+## Start safely
 
-Work from the featherBI repository root:
+Work from the featherBI repository root and preserve existing project files:
 
 ```sh
 test -f bin/featherbi.mjs
 npm ci
 ```
 
-Stop if either command fails. Do not substitute a hand-written HTML page.
+Generated/private state belongs only in the project's ignored `.featherbi/` directory. Do not copy source data, absolute paths, profiles, generated JSON/HTML, screenshots, or ZIPs into portable source or commits.
 
-## Workflow
+## Progressive tracer
 
-1. Write an upload-mode contract-v1 JSON config. Start from [`examples/ap.config.json`](examples/ap.config.json) when useful; keep source IDs, schemas, filters, SQL, and component bindings declarative.
-2. Validate and fix every reported issue before packaging:
-
-   ```sh
-   node bin/featherbi.mjs validate --config path/to/dashboard.config.json
-   ```
-
-3. Build one ZIP bundle with one explicit `--source ID=LOCAL_FILE` for every declared source:
+1. Profile every representative source without values:
 
    ```sh
-   node bin/featherbi.mjs build --config path/to/dashboard.config.json \
-     --source ap=path/to/ap.json --output dashboard.zip
+   node bin/featherbi.mjs profile --input /absolute/local/file.parquet \
+     --source-id inspections --format parquet \
+     --output path/to/project/.featherbi/profile.json
    ```
 
-4. Share the ZIP. The recipient extracts it, opens `dashboard.html` through `file://` in desktop Chrome, and explicitly selects each accompanying data file.
-5. If validation, build, or opening fails, preserve the error, correct the config or source assignment, and repeat validation before rebuilding.
+   Explain material row/schema/null/approximate-cardinality evidence. Use `--include-values` only after explicit permission for bounded ranges and top values. Stop on profile errors; never guess schema.
+2. Ask only the initial decision frontier: audience/decisions; authoritative metric meaning, units, population/time window; filters/lookups; required views/interactions; and update cadence. For this tracer recommend the `standard` preset and neutral theme; SQL playground, alternate presets/themes, models, and expanded layout/catalog remain deferred.
+3. Copy [`templates/basic-dashboard/`](templates/basic-dashboard/) and edit the same source-only `dashboard.yaml` and `queries/*.sql`. Record absolute source assignments only in ignored `.featherbi/local-sources.yaml`.
+4. Compile, fix every filename/line/column error, then validate:
 
-## Safety and output
+   ```sh
+   node bin/featherbi.mjs compile --project path/to/project/dashboard.yaml
+   node bin/featherbi.mjs validate --config path/to/project/.featherbi/dashboard.config.json
+   ```
 
-- Existing outputs are never replaced unless the author adds `--overwrite` explicitly.
-- Packaging creates local files only; it does not upload, publish, deploy, commit, or grant recipient access.
-- ZIP members carry the mapped rows next to `dashboard.html`; dataset bytes never become part of the HTML. Share only with authorized recipients.
-- Runtime dependencies load online at pinned versions. Offline and Edge support are not claimed.
-- A successful run prints the output path, byte count, and SHA-256 digest. Report those values and the Chrome reopening result; do not claim success from config validation alone.
+5. Build through the existing external-data packager with one explicit mapping per source, extract the ZIP, and open `dashboard.html` through `file://` in desktop Chrome:
+
+   ```sh
+   node bin/featherbi.mjs build \
+     --config path/to/project/.featherbi/dashboard.config.json \
+     --source inspections=/absolute/local/file.parquet \
+     --output path/to/project/.featherbi/dashboard.zip
+   ```
+
+6. Explicitly select each extracted data file in Chrome. Verify visible values against independent profile/query evidence; config validation alone is not success.
+7. Ask targeted feedback about correctness, missing decisions, filters, chart choice, labels, and density. Edit the same YAML/SQL source, rebuild, reselect, and reverify.
+8. Stop when approved or paused. Commit, push, publication, issue closure, and release are separate actions and never implied by a successful preview.
+
+See [`references/project-tracer.md`](references/project-tracer.md) for the supported schema, relationship boundary, and failure checklist.

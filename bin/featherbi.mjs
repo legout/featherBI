@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { access } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +14,29 @@ try {
  const [command, ...args] = process.argv.slice(2);
  if (!command || command === "--help" || command === "-h") {
   printHelp();
+ } else if (command === "profile") {
+  const options = parseSimpleArgs(args, new Set(["--include-values"]));
+  const profileArgs = [
+   "run", "--script", path.join(rootDir, "skill", "featherbi", "scripts", "profile.py"),
+   required(options.input, "--input"),
+   "--source-id", required(options.sourceId, "--source-id"),
+   "--format", required(options.format, "--format"),
+  ];
+  if (options.includeValues) profileArgs.push("--include-values");
+  if (options.output) profileArgs.push("--output", options.output);
+  await run("uv", profileArgs);
+ } else if (command === "compile") {
+  const options = parseSimpleArgs(args);
+  await ensureValidator();
+  const projectPath = required(options.project, "--project");
+  const { compileProject } = await import("../authoring/compiler.mjs");
+  const result = await compileProject(projectPath);
+  const output = path.resolve(
+   options.output ?? path.join(path.dirname(projectPath), ".featherbi", "dashboard.config.json"),
+  );
+  await mkdir(path.dirname(output), { recursive: true });
+  await writeFile(output, result.json, "utf8");
+  console.log(`wrote ${output}`);
  } else if (command === "validate") {
   const options = parseArgs(args, { sources: false, build: false });
   await ensureValidator();
@@ -74,6 +98,26 @@ function parseArgs(args, { sources, build }) {
  return options;
 }
 
+function parseSimpleArgs(args, booleans = new Set()) {
+ const keys = {
+  "--input": "input",
+  "--source-id": "sourceId",
+  "--format": "format",
+  "--project": "project",
+  "--output": "output",
+  "--include-values": "includeValues",
+ };
+ const options = {};
+ for (let index = 0; index < args.length; index += 1) {
+  const flag = args[index];
+  const key = keys[flag];
+  if (!key) throw new Error(`unknown option ${JSON.stringify(flag)}`);
+  if (booleans.has(flag)) options[key] = true;
+  else options[key] = nextValue(args, ++index, flag);
+ }
+ return options;
+}
+
 function nextValue(args, index, flag) {
  if (index >= args.length) throw new Error(`${flag} requires a value`);
  return args[index];
@@ -84,18 +128,31 @@ function required(value, flag) {
  return value;
 }
 
+async function run(command, args) {
+ const child = spawn(command, args, { stdio: "inherit" });
+ const code = await new Promise((resolve, reject) => {
+  child.once("error", reject);
+  child.once("exit", resolve);
+ });
+ if (code !== 0) throw new Error(`${command} exited with status ${code}`);
+}
+
 async function ensureValidator() {
- const generated = path.join(rootDir, ".generated", "validate-config.mjs");
  try {
-  await access(generated);
+  await Promise.all([
+   access(path.join(rootDir, ".generated", "validate-config-v1.mjs")),
+   access(path.join(rootDir, ".generated", "validate-config-v2.mjs")),
+  ]);
  } catch {
   await import("../scripts/build-contract.mjs");
  }
 }
 
 function printHelp() {
- console.log(`featherbi validate --config CONFIG
+ console.log(`featherbi profile --input FILE --source-id ID --format csv|json|ndjson|parquet [--output FILE] [--include-values]
+featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config.json]
+featherbi validate --config CONFIG
 featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]
 
-Builds local artifacts only. It never publishes or uploads dashboard data.`);
+Profiles, compiles, and builds local artifacts only. It never publishes or uploads dashboard data.`);
 }

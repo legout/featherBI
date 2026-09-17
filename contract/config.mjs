@@ -1,13 +1,13 @@
 /**
- * featherBI runtime config validator (contract v1).
+ * featherBI runtime config validator (strict contracts v1 and v2).
  *
  * Public API:
  *   validateConfig(input) -> {ok: true, value: input}
  *                          | {ok: false, issues: [{path, code, message}]}
  *
- * Structural validation delegates to the build-time generated Ajv 8 standalone
- * validator in .generated/validate-config.mjs (produced by
- * `npm run generate:contract`); no schema compilation happens at runtime.
+ * Structural validation dispatches by exact contract version to separate
+ * build-time generated Ajv 8 standalone validators; no schema compilation
+ * happens at runtime.
  * On top of the schema this module enforces the cross-field rules a JSON
  * Schema alone cannot express:
  *   - reserved and empty file/schema names,
@@ -28,7 +28,8 @@
  * engine owns statement-level admission in a later plan.
  */
 
-import validateStructural from "../.generated/validate-config.mjs";
+import validateV1 from "../.generated/validate-config-v1.mjs";
+import validateV2 from "../.generated/validate-config-v2.mjs";
 
 /** @typedef {{path: string, code: string, message: string}} ConfigIssue */
 
@@ -39,6 +40,21 @@ import validateStructural from "../.generated/validate-config.mjs";
  */
 export function validateConfig(input) {
   const issues = [];
+  const version =
+    typeof input === "object" && input !== null && !Array.isArray(input)
+      ? input.contract
+      : undefined;
+  const validateStructural = version === 1 ? validateV1 : version === 2 ? validateV2 : null;
+  if (validateStructural === null) {
+    return {
+      ok: false,
+      issues: [{
+        path: "contract",
+        code: "contract.unsupported",
+        message: `unsupported contract version ${JSON.stringify(version)}`,
+      }],
+    };
+  }
   if (!validateStructural(input)) {
     for (const error of validateStructural.errors ?? []) {
       issues.push(toStructuralIssue(error));

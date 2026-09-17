@@ -1,0 +1,21 @@
+project: 1
+title: Example dashboard
+sources:
+  - id: inspections
+    type: parquet
+    file: inspections.parquet
+    schema:
+      station: {type: string, nullable: false}
+      amount: {type: number, nullable: true}
+filters: []
+relationships: []
+queries:
+  total:
+    sql: queries/total.sql
+    params: []
+layout:
+  - id: total
+    type: kpi
+    query: total
+    label: Total records
+    field: value

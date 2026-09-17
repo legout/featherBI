@@ -307,4 +307,4 @@ Before production implementation depends on them, run bounded disposable probes 
 3. capability-built bundle composition and asset initialization for ECharts, AG Grid Community, Perspective, CodeMirror, daisyUI, and Siemens iX; and
 4. scoped CSS transformation/rejection of imports and remote URLs.
 
-Probe reports belong under `docs/research/`. A successful probe is evidence, not authorization to weaken this contract or skip the staged implementation plan.
+Probe reports belong under `project/research/`. A successful probe is evidence, not authorization to weaken this contract or skip the staged implementation plan.

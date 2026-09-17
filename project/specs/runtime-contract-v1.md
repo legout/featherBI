@@ -1,6 +1,6 @@
 # featherBI runtime and config contract v1
 
-Status: approved behavioral specification, revised by the owner's 2026-09-15 external-data-only decision. The active execution map is [`docs/plans/mvp.md`](../plans/mvp.md); archived phase plans preserve history only. Execution uses proportional assurance and retains supervised candidate, integration, and publication gates.
+Status: approved behavioral specification, revised by the owner's 2026-09-15 external-data-only decision. The active execution map is [`project/plans/mvp.md`](../plans/mvp.md); archived phase plans preserve history only. Execution uses proportional assurance and retains supervised candidate, integration, and publication gates.
 
 ## 1. Authority and scope
 
@@ -188,7 +188,7 @@ These criteria define outcomes, not one test per bullet. The implementation plan
 
 ## 10. Planning handoff
 
-Capture checkpoint (planning-contract v1): confirmed vocabulary is in [CONTEXT.md](../../CONTEXT.md); ADR 0005 supersedes ADR 0001's embedded option, while ADRs 0002–0004 remain accepted; browser evidence remains under `docs/research/`; remote URLs are explicitly deferred and no material MVP decision is unresolved. Installed provenance is recorded in `skills-lock.json` rather than copied into this specification.
+Capture checkpoint (planning-contract v1): confirmed vocabulary is in [CONTEXT.md](../../CONTEXT.md); ADR 0005 supersedes ADR 0001's embedded option, while ADRs 0002–0004 remain accepted; browser evidence remains under `project/research/`; remote URLs are explicitly deferred and no material MVP decision is unresolved. Installed provenance is recorded in `skills-lock.json` rather than copied into this specification.
 
 The active [MVP plan](../plans/mvp.md) replaces the archived horizontal phase decomposition with three dependency-ordered GitHub issues. Contract/fixture, browser-engine, and initial source-loading work is already integrated as the foundation. Each ticket delivers an observable end-to-end increment and owns validation units rather than assigning a test to every task checkbox.
 

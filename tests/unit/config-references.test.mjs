@@ -25,6 +25,16 @@ async function base() {
  );
 }
 
+test("contract 1 charts may share ordinary result field names", async () => {
+ const config = await base();
+ config.layout.push({
+  ...config.layout[1],
+  id: "by_station_again",
+  label: "Records by station again",
+ });
+ assert.equal(validateConfig(config).ok, true);
+});
+
 test("layout referencing an unknown query is rejected", async () => {
  const config = await base();
  config.layout[0].query = "no_such_query";

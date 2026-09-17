@@ -218,11 +218,11 @@ function collectSemanticIssues(config, issues) {
   }
 
   // Filter outputs define the query parameter namespace:
-  // select/text filters emit <id>; date-range filters emit <id>_from/<id>_to.
+  // Scalar filters emit <id>; range filters emit <id>_from/<id>_to.
   const parameterOwner = new Map();
   for (const [index, filter] of config.filters.entries()) {
     const outputs =
-      filter.kind === "date-range"
+      filter.kind === "date-range" || filter.kind === "numeric-range"
         ? [`${filter.id}_from`, `${filter.id}_to`]
         : [filter.id];
     for (const name of outputs) {
@@ -283,6 +283,12 @@ function collectSemanticIssues(config, issues) {
         `date-range filter requires a date or timestamp column, found ${JSON.stringify(column.type)}`,
       );
     }
+    if (column !== undefined && filter.kind === "numeric-range" && !["integer", "number"].includes(column.type)) {
+      issue(basePath, "filter.column-type", `numeric-range filter requires an integer or number column, found ${JSON.stringify(column.type)}`);
+    }
+    if (column !== undefined && filter.kind === "boolean" && column.type !== "boolean") {
+      issue(basePath, "filter.column-type", `boolean filter requires a boolean column, found ${JSON.stringify(column.type)}`);
+    }
     validateFilterDefault(filter, column, basePath, issue);
   }
 
@@ -308,6 +314,17 @@ function collectSemanticIssues(config, issues) {
     }
   }
 
+  const declaredComponentIds = new Set(config.layout.map(({ id }) => id));
+  const alternatives = new Map();
+  for (const [index, container] of config.layout.entries()) {
+    for (const tab of container.tabs ?? []) {
+      for (const componentId of tab.components ?? []) {
+        if (!declaredComponentIds.has(componentId)) issue(`layout[${index}].tabs`, "component.unknown-id", `tab references unknown component ${JSON.stringify(componentId)}`);
+        if (alternatives.has(componentId)) issue(`layout[${index}].tabs`, "component.multiple-tabs", `component ${JSON.stringify(componentId)} belongs to more than one tab`);
+        alternatives.set(componentId, { owner: container.id, tab: tab.id });
+      }
+    }
+  }
   const componentIds = new Set();
   for (const [index, component] of config.layout.entries()) {
     if (componentIds.has(component.id)) {
@@ -318,6 +335,18 @@ function collectSemanticIssues(config, issues) {
       );
     } else {
       componentIds.add(component.id);
+    }
+    if (config.contract === 2 && component.x + component.width - 1 > 12) {
+      issue(`layout[${index}].width`, "layout.out-of-bounds", "placement exceeds the 12-column grid");
+    }
+    for (let earlier = 0; config.contract === 2 && earlier < index; earlier += 1) {
+      const other = config.layout[earlier];
+      const currentAlternative = alternatives.get(component.id);
+      const priorAlternative = alternatives.get(other.id);
+      const ownedAlternatives = currentAlternative && priorAlternative && currentAlternative.owner === priorAlternative.owner && currentAlternative.tab !== priorAlternative.tab;
+      if (!ownedAlternatives && component.x < other.x + other.width && other.x < component.x + component.width && component.y < other.y + other.height && other.y < component.y + component.height) {
+        issue(`layout[${index}]`, "layout.overlap", `placement overlaps component ${JSON.stringify(other.id)}`);
+      }
     }
   }
 
@@ -333,6 +362,7 @@ function collectSemanticIssues(config, issues) {
     }
   }
   for (const [index, component] of config.layout.entries()) {
+    if (!component.query) continue;
     if (!Object.hasOwn(config.queries, component.query)) {
       issue(
         `layout[${index}].query`,
@@ -377,7 +407,7 @@ function validateFilterDefault(filter, column, basePath, issue) {
   const value = filter.default;
   const defaultPath = `${basePath}.default`;
 
-  if (filter.kind === "date-range") {
+  if (filter.kind === "date-range" || filter.kind === "numeric-range") {
     if (!isPlainObject(value)) {
       issue(
         defaultPath,
@@ -387,7 +417,7 @@ function validateFilterDefault(filter, column, basePath, issue) {
       return;
     }
     const keys = new Set(Object.keys(value));
-    if (value.kind === "latest-days") {
+    if (filter.kind === "date-range" && value.kind === "latest-days") {
       if (keys.size !== 2 || !keys.has("days")) {
         issue(
           defaultPath,
@@ -416,14 +446,14 @@ function validateFilterDefault(filter, column, basePath, issue) {
       }
       let valid = true;
       for (const key of ["from", "through"]) {
-        if (
-          typeof value[key] !== "string" ||
-          !isValidCalendarDate(value[key])
-        ) {
+        const validValue = filter.kind === "numeric-range"
+          ? typeof value[key] === "number" && Number.isFinite(value[key])
+          : typeof value[key] === "string" && isValidCalendarDate(value[key]);
+        if (!validValue) {
           issue(
             `${defaultPath}.${key}`,
             "date.invalid",
-            `fixed range ${key} must be a valid YYYY-MM-DD calendar date`,
+            `fixed range ${key} must be a valid ${filter.kind === "numeric-range" ? "number" : "YYYY-MM-DD calendar date"}`,
           );
           valid = false;
         }
@@ -446,6 +476,14 @@ function validateFilterDefault(filter, column, basePath, issue) {
   }
 
   if (value === null) {
+    return;
+  }
+  if (filter.kind === "multi-select") {
+    if (!Array.isArray(value)) issue(defaultPath, "filter.default-type", "multi-select default must be an array or null");
+    return;
+  }
+  if (filter.kind === "boolean") {
+    if (typeof value !== "boolean") issue(defaultPath, "filter.default-type", "boolean filter default must be a boolean or null");
     return;
   }
   if (filter.kind === "text") {

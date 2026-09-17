@@ -1,0 +1,179 @@
+---
+project: 1
+title: Standard analytical dashboard
+theme: daisyui
+themeCss: theme.css
+sources:
+  - id: inspections
+    type: json
+    file: inspections.json
+    schema:
+      station: {type: string, nullable: false}
+      product: {type: string, nullable: false}
+      inspected_on: {type: date, nullable: false}
+      amount: {type: number, nullable: false}
+      successful: {type: boolean, nullable: false}
+models:
+  inspection_model:
+    sql: models/inspection_model.sql
+    schema:
+      station: {type: string, nullable: false}
+      product: {type: string, nullable: false}
+      inspected_on: {type: date, nullable: false}
+      amount: {type: number, nullable: false}
+      successful: {type: boolean, nullable: false}
+      success_value: {type: integer, nullable: false}
+dimensions:
+  station: {model: inspection_model, field: station, label: Station}
+  product: {model: inspection_model, field: product, label: Product}
+  inspected_on:
+    model: inspection_model
+    field: inspected_on
+    label: Inspection date
+    format: date
+  amount: {model: inspection_model, field: amount, label: Amount}
+  successful:
+    model: inspection_model
+    field: successful
+    label: Successful
+measures:
+  records:
+    model: inspection_model
+    aggregation: count
+    label: Records
+    format: integer
+    empty: zero
+  successes:
+    model: inspection_model
+    aggregation: sum
+    field: success_value
+    label: Successes
+    format: integer
+    empty: zero
+  success_rate:
+    model: inspection_model
+    ratio: {numerator: successes, denominator: records}
+    label: Success rate
+    format: decimal
+    empty: "null"
+    zero: "null"
+filters:
+  - id: stations
+    kind: multi-select
+    source: inspections
+    column: station
+    dimension: station
+    default: []
+  - id: station_lookup
+    kind: option-search
+    source: inspections
+    column: station
+    default: null
+  - id: product_text
+    kind: text
+    source: inspections
+    column: product
+    default: null
+  - id: window
+    kind: date-range
+    source: inspections
+    column: inspected_on
+    dimension: inspected_on
+    default: {kind: fixed, from: 2026-09-01, through: 2026-09-06}
+  - id: amount_range
+    kind: numeric-range
+    source: inspections
+    column: amount
+    dimension: amount
+    default: {kind: fixed, from: 0, through: 100}
+  - id: successful_only
+    kind: boolean
+    source: inspections
+    column: successful
+    dimension: successful
+    default: null
+relationships: []
+queries:
+  summary:
+    model: inspection_model
+    measures: [records, success_rate]
+    filters: [stations, window, amount_range, successful_only]
+  by_station:
+    model: inspection_model
+    dimensions: [station]
+    measures: [records]
+    filters: [window]
+    orderBy: [station]
+  by_day:
+    model: inspection_model
+    dimensions: [inspected_on]
+    measures: [records]
+    filters: [stations, window]
+    orderBy: [inspected_on]
+  by_product:
+    model: inspection_model
+    dimensions: [product]
+    measures: [records]
+    filters: [stations, window]
+    orderBy: [product]
+  by_success:
+    model: inspection_model
+    dimensions: [successful]
+    measures: [records]
+    filters: [window]
+    orderBy: [successful]
+layout:
+  - id: summary
+    type: metric-group
+    query: summary
+    label: Summary
+    fields: [records, success_rate]
+    decimals: 2
+    x: 1
+    y: 1
+    width: 4
+    height: 1
+  - id: by_station
+    type: bar
+    query: by_station
+    label: Records by station
+    xField: station
+    yField: records
+    interactionDimension: station
+    x: 5
+    y: 1
+    width: 8
+    height: 2
+  - id: by_day
+    type: line
+    query: by_day
+    label: Records by day
+    xField: inspected_on
+    yField: records
+    brushDimension: inspected_on
+    x: 1
+    y: 3
+    width: 12
+    height: 2
+  - id: local_product
+    type: scatter
+    query: by_product
+    label: Products
+    xField: product
+    yField: records
+    interactionDimension: product
+    x: 1
+    y: 5
+    width: 12
+    height: 2
+  - id: by_success
+    type: pie
+    query: by_success
+    label: Records by outcome
+    name: successful
+    value: records
+    interactionDimension: successful
+    x: 1
+    y: 7
+    width: 12
+    height: 2

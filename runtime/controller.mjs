@@ -147,7 +147,7 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
   searchFilterOptions(filterId, search = "", page = 0) {
    requireLive(disposed);
    const filter = config.filters.find(
-    ({ id, kind }) => id === filterId && kind === "select",
+    ({ id, kind }) => id === filterId && ["select", "single-select", "multi-select", "option-search"].includes(kind),
    );
    if (!filter) throw new Error(`unknown select filter ${JSON.stringify(filterId)}`);
    if (!Number.isSafeInteger(page) || page < 0) throw new Error("option page must be a non-negative integer");
@@ -267,14 +267,16 @@ async function initialFilters(connection, config, generation) {
  const filterOptions = {};
  const filterOptionPages = {};
  for (const filter of config.filters) {
-  if (filter.kind === "date-range") {
-   const range = await dateDefault(connection, filter, generation);
+   if (filter.kind === "date-range" || filter.kind === "numeric-range") {
+    const range = filter.kind === "date-range"
+     ? await dateDefault(connection, filter, generation)
+     : { from: filter.default.from, to: filter.default.through };
    filterValues[`${filter.id}_from`] = range.from;
    filterValues[`${filter.id}_to`] = range.to;
   } else {
    filterValues[filter.id] = filter.default;
   }
-  if (filter.kind === "select") {
+  if (["select", "single-select", "multi-select", "option-search"].includes(filter.kind)) {
    const result = await optionPage(connection, filter, generation, "", 0);
    filterOptions[filter.id] = result.values;
    filterOptionPages[filter.id] = {
@@ -325,13 +327,14 @@ async function executeVisibleQueries(connection, config, generation, filterValue
  const tablePages = {};
  const componentsByQuery = new Map();
  for (const component of config.layout) {
+  if (!component.query) continue;
   const components = componentsByQuery.get(component.query) ?? [];
   components.push(component);
   componentsByQuery.set(component.query, components);
  }
  for (const [queryId, components] of componentsByQuery) {
   const table = components.find(({ type }) => type === "table");
-  const chart = components.some(({ type }) => ["bar", "line", "heatmap"].includes(type));
+  const chart = components.some(({ type }) => ["bar", "line", "area", "scatter", "pie", "donut", "heatmap", "treemap", "sankey", "gauge", "boxplot"].includes(type));
   const rows = await runQuery(
    connection,
    config.queries[queryId],
@@ -360,19 +363,19 @@ function validateRows(rows, components) {
  for (const component of components) {
   const required = component.type === "kpi"
    ? [component.field]
+   : component.type === "metric-group"
+    ? component.fields
    : component.type === "table"
     ? component.columns.map(({ field }) => field)
-    : component.type === "heatmap"
-     ? [component.x, component.y, component.value]
-     : [component.x, component.y, ...(component.series ? [component.series] : [])];
+    : chartFields(component);
   for (const field of required) {
    if (!fields.has(field)) throw bindingError(component, `missing result field ${JSON.stringify(field)}`);
   }
-  if (component.type === "kpi") {
+  if (component.type === "kpi" || component.type === "metric-group") {
    if (rows.length !== 1) throw bindingError(component, "must return exactly one row");
-   requireField(rows[0], component.field, component);
-   if (!numericOrNull(rows[0][component.field])) {
-    throw bindingError(component, `field ${JSON.stringify(component.field)} must be numeric or null`);
+   for (const field of component.type === "kpi" ? [component.field] : component.fields) {
+    requireField(rows[0], field, component);
+    if (!numericOrNull(rows[0][field])) throw bindingError(component, `field ${JSON.stringify(field)} must be numeric or null`);
    }
   } else if (component.type === "table") {
    for (const row of rows) {
@@ -384,24 +387,22 @@ function validateRows(rows, components) {
     }
    }
   } else {
-   const numericField = component.type === "heatmap" ? component.value : component.y;
-   const categoryFields = component.type === "heatmap"
-    ? [component.x, component.y]
-    : [component.x, ...(component.series ? [component.series] : [])];
+   const numericFields = chartNumericFields(component);
+   const categoryFields = chartCategoryFields(component);
    const coordinates = new Set();
    for (const row of rows) {
-    requireField(row, numericField, component);
+    for (const field of numericFields) requireField(row, field, component);
     for (const field of categoryFields) {
      requireField(row, field, component);
      if (!scalarOrNull(row[field])) {
       throw bindingError(component, `field ${JSON.stringify(field)} must be scalar or null`);
      }
     }
-    if (!chartNumberOrNull(row[numericField])) {
-     throw bindingError(component, `field ${JSON.stringify(numericField)} must be a safe numeric value or null`);
+    for (const field of numericFields) if (!chartNumberOrNull(row[field])) {
+     throw bindingError(component, `field ${JSON.stringify(field)} must be a safe numeric value or null`);
     }
     if (component.type === "heatmap") {
-     const coordinate = `${valueKey(row[component.x])}\u0000${valueKey(row[component.y])}`;
+     const coordinate = `${valueKey(row[component.xField ?? component.x])}\u0000${valueKey(row[component.yField ?? component.y])}`;
      if (coordinates.has(coordinate)) throw bindingError(component, "has duplicate heatmap coordinates");
      coordinates.add(coordinate);
     }
@@ -473,7 +474,7 @@ function retainedSnapshot(prior, error) {
 function normalizeFilterValues(config, values) {
  const normalized = {};
  for (const filter of config.filters) {
-  if (filter.kind === "date-range") {
+  if (filter.kind === "date-range" || filter.kind === "numeric-range") {
    normalized[`${filter.id}_from`] = values[`${filter.id}_from`] ?? null;
    normalized[`${filter.id}_to`] = values[`${filter.id}_to`] ?? null;
   } else {
@@ -481,6 +482,24 @@ function normalizeFilterValues(config, values) {
   }
  }
  return normalized;
+}
+
+function chartFields(component) {
+ return [...new Set([...chartCategoryFields(component), ...chartNumericFields(component)])];
+}
+
+function chartNumericFields(component) {
+ if (["pie", "donut", "treemap", "sankey", "gauge", "heatmap"].includes(component.type)) return [component.value];
+ if (component.type === "boxplot") return [component.min, component.q1, component.median, component.q3, component.max];
+ return [component.yField ?? component.y];
+}
+
+function chartCategoryFields(component) {
+ if (["pie", "donut", "treemap"].includes(component.type)) return [component.name];
+ if (component.type === "sankey") return [component.source, component.target];
+ if (component.type === "gauge") return [];
+ if (component.type === "heatmap") return [component.xField ?? component.x, component.yField ?? component.y];
+ return [component.xField ?? component.x, ...(component.series ? [component.series] : [])];
 }
 
 function mapInputs(config, inputs) {

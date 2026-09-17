@@ -11,9 +11,11 @@ export async function mountDashboard({ config, inputs, root = document }) {
  const filters = root.querySelector("#dashboard-filters");
  const sources = root.querySelector("#dashboard-sources");
  const layout = root.querySelector("#dashboard-layout");
+ root.querySelector("#dashboard").dataset.theme = config.theme ?? "neutral";
  buildFilters(filters, config.filters);
  buildSources(sources, config.data.sources);
- buildLayout(layout, config.layout);
+ buildLayout(layout, config.layout, config.contract);
+ applyThemeClasses(root, config.theme ?? "neutral");
 
  let controller;
  const render = (state) => renderState(root, config, state);
@@ -54,7 +56,7 @@ export async function mountDashboard({ config, inputs, root = document }) {
    return;
   }
   const optionFilter = config.filters.find(
-   ({ id, kind }) => kind === "select" && control.id === `filter-${id}-search`,
+   ({ id, kind }) => ["select", "single-select", "multi-select", "option-search"].includes(kind) && control.id === `filter-${id}-search`,
   );
   if (optionFilter) {
    debounce(`options:${optionFilter.id}`, () =>
@@ -74,7 +76,25 @@ export async function mountDashboard({ config, inputs, root = document }) {
  });
 
  layout.addEventListener("click", async (event) => {
+  if (event.target.dataset.tabTarget) {
+   openTab(root, event.target.dataset.tabTarget);
+   return;
+  }
   if (!controller) return;
+  const actionValue = Object.hasOwn(event.target, "featherbiValue")
+   ? event.target.featherbiValue
+   : event.target.dataset.actionValue;
+  if (actionValue !== undefined) {
+   const typedAction = event.target.dataset.actionOpenTab || event.target.dataset.actionDrilldown
+    ? { openTab: event.target.dataset.actionOpenTab, drilldown: event.target.dataset.actionDrilldown }
+    : undefined;
+   await selectDimension(root, config, controller, event.target.closest("section"), actionValue, event.shiftKey || event.metaKey || event.ctrlKey, event.target.dataset.actionDimension, typedAction);
+   return;
+  }
+  if (event.target.dataset.brushApply !== undefined) {
+   await applyBrush(root, config, controller, event.target.closest("section"));
+   return;
+  }
   const action = event.target.dataset.pageAction;
   const id = event.target.dataset.componentId;
   if (!action || !id) return;
@@ -97,6 +117,7 @@ export async function mountDashboard({ config, inputs, root = document }) {
    render({ status: "error", error: "Select one file for every declared source." });
   }
  });
+ window.addEventListener("resize", () => requestAnimationFrame(() => layout.querySelectorAll(".chart").forEach((node) => charts.get(node)?.resize())));
  window.addEventListener("pagehide", () => controller?.dispose(), { once: true });
 
  if (inputs?.length) return start(inputs);
@@ -111,7 +132,7 @@ function buildFilters(container, filters) {
   const legend = document.createElement("legend");
   legend.textContent = filter.id;
   field.append(legend);
-  if (filter.kind === "select") {
+  if (["select", "single-select", "multi-select", "option-search"].includes(filter.kind)) {
    const search = document.createElement("input");
    search.type = "search";
    search.id = `filter-${filter.id}-search`;
@@ -119,20 +140,27 @@ function buildFilters(container, filters) {
    search.setAttribute("aria-label", `Search ${filter.id} options`);
    const select = document.createElement("select");
    select.id = `filter-${filter.id}`;
+   select.multiple = filter.kind === "multi-select";
    select.setAttribute("aria-label", filter.id);
    const previous = optionPageButton(filter.id, "previous", "Previous options");
    const next = optionPageButton(filter.id, "next", "More options");
    field.append(search, select, previous, next);
-  } else if (filter.kind === "date-range") {
+  } else if (filter.kind === "date-range" || filter.kind === "numeric-range") {
    const from = document.createElement("input");
-   from.type = "date";
+   from.type = filter.kind === "date-range" ? "date" : "number";
    from.id = `filter-${filter.id}-from`;
    from.setAttribute("aria-label", `${filter.id} from`);
    const through = document.createElement("input");
-   through.type = "date";
+   through.type = filter.kind === "date-range" ? "date" : "number";
    through.id = `filter-${filter.id}-through`;
    through.setAttribute("aria-label", `${filter.id} through`);
    field.append(from, " through ", through);
+  } else if (filter.kind === "boolean") {
+   const input = document.createElement("input");
+   input.type = "checkbox";
+   input.id = `filter-${filter.id}`;
+   input.setAttribute("aria-label", filter.label ?? filter.id);
+   field.append(input);
   } else {
    const all = document.createElement("input");
    all.type = "checkbox";
@@ -182,20 +210,55 @@ function buildSources(container, sources) {
  container.append(replace);
 }
 
-function buildLayout(container, components) {
+function buildLayout(container, components, contract) {
  container.replaceChildren();
- for (const component of components) {
+ for (const [index, component] of components.entries()) {
   const section = document.createElement("section");
   section.id = `component-${component.id}`;
   section.dataset.componentType = component.type;
+  const legacyWidth = component.type === "kpi" ? 3 : component.type === "bar" ? 6 : 12;
+  section.style.setProperty("--grid-x", contract === 2 ? component.x : 1);
+  section.style.setProperty("--grid-y", contract === 2 ? component.y : index + 1);
+  section.style.setProperty("--grid-width", contract === 2 ? component.width : legacyWidth);
+  section.style.setProperty("--grid-height", contract === 2 ? component.height : 1);
   const heading = document.createElement("h2");
   heading.textContent = component.label;
   section.append(heading);
-  if (component.type === "kpi") {
+  if (["heading", "markdown", "text"].includes(component.type)) {
+   const content = document.createElement(component.type === "heading" ? "h3" : "p");
+   content.textContent = component.content;
+   section.append(content);
+  } else if (component.type === "divider") {
+   section.append(document.createElement("hr"));
+  } else if (component.type === "tabs") {
+   const group = document.createElement("div");
+   group.setAttribute("role", "tablist");
+   for (const tab of component.tabs ?? []) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.role = "tab";
+    button.dataset.tabTarget = tab.id;
+    button.dataset.tabComponents = (tab.components ?? []).join(",");
+    button.textContent = tab.label;
+    group.append(button);
+   }
+   section.append(group);
+  } else if (component.type === "section") {
+   const group = document.createElement("div");
+   group.textContent = component.label;
+   section.append(group);
+  } else if (component.type === "kpi") {
    const value = document.createElement("output");
    value.dataset.value = "";
    value.textContent = "—";
    section.append(value);
+  } else if (component.type === "metric-group") {
+   for (const field of component.fields) {
+    const value = document.createElement("output");
+    value.dataset.metric = field;
+    value.textContent = "—";
+    section.append(value);
+   }
   } else if (component.type === "table") {
    const table = document.createElement("table");
    const head = document.createElement("thead");
@@ -229,9 +292,28 @@ function buildLayout(container, components) {
    const empty = document.createElement("p");
    empty.dataset.empty = "";
    section.append(chart, summary, empty);
+   if (component.brushDimension) {
+    const from = document.createElement("input"); from.type = "date"; from.dataset.brushFrom = ""; from.setAttribute("aria-label", `${component.label} brush from`);
+    const through = document.createElement("input"); through.type = "date"; through.dataset.brushThrough = ""; through.setAttribute("aria-label", `${component.label} brush through`);
+    const apply = document.createElement("button"); apply.type = "button"; apply.dataset.brushApply = ""; apply.textContent = "Apply range";
+    section.append(from, through, apply);
+   }
   }
   container.append(section);
  }
+ for (const tablist of container.querySelectorAll('[role="tablist"]')) {
+  const first = tablist.querySelector('[role="tab"]');
+  if (first) openTab(container.ownerDocument, first.dataset.tabTarget);
+ }
+}
+
+function applyThemeClasses(root, theme) {
+ if (theme !== "daisyui") return;
+ root.querySelectorAll("button").forEach((node) => node.classList.add("btn"));
+ root.querySelectorAll("#dashboard-layout > section").forEach((node) => node.classList.add("card"));
+ root.querySelectorAll("table").forEach((node) => node.classList.add("table"));
+ root.querySelectorAll("input").forEach((node) => node.classList.add("input"));
+ root.querySelectorAll("select").forEach((node) => node.classList.add("select"));
 }
 
 function tablePageButton(id, action, label) {
@@ -285,33 +367,44 @@ function renderState(root, config, state) {
    const value = rows[0]?.[component.field];
    root.querySelector(`#component-${component.id} [data-value]`).textContent =
     formatValue(value, component.decimals);
+  } else if (component.type === "metric-group") {
+   for (const field of component.fields) {
+    const value = rows[0]?.[field];
+    root.querySelector(`#component-${component.id} [data-metric="${field}"]`).textContent = formatValue(value, component.decimals);
+   }
   } else if (component.type === "table") {
    renderTable(root, component, rows, state.tablePages[component.id], state.status);
-  } else {
+  } else if (component.query) {
    renderChart(root, component, rows);
   }
  }
 }
 
 function renderFilter(root, filter, state) {
- if (filter.kind === "select") {
+ if (["select", "single-select", "multi-select", "option-search"].includes(filter.kind)) {
   const select = root.querySelector(`#filter-${filter.id}`);
   const selected = state.filterValues[filter.id];
   const values = [...(state.filterOptions[filter.id] ?? [])];
-  if (selected != null && !values.some((value) => optionKey(value) === optionKey(selected))) {
-   values.unshift(selected);
+  const selectedValues = filter.kind === "multi-select" ? (selected ?? []) : [selected];
+  for (const selectedValue of selectedValues) {
+   if (selectedValue != null && !values.some((value) => optionKey(value) === optionKey(selectedValue))) values.unshift(selectedValue);
   }
-  select.replaceChildren(option(null, "all"));
+  select.replaceChildren();
+  if (filter.kind !== "multi-select") select.append(option(null, "all"));
   for (const value of values) select.append(option(value, optionLabel(value)));
-  select.value = optionKey(selected);
+  for (const item of select.options) item.selected = selectedValues.some((value) => optionKey(value) === item.value);
   const page = state.filterOptionPages[filter.id];
   const locked = state.status === "loading" || state.status === "busy";
   root.querySelector(`[data-option-page="previous"][data-filter-id="${filter.id}"]`).disabled = locked || page.page === 0;
   root.querySelector(`[data-option-page="next"][data-filter-id="${filter.id}"]`).disabled = locked || !page.hasNext;
- } else if (filter.kind === "date-range") {
+ } else if (filter.kind === "date-range" || filter.kind === "numeric-range") {
   root.querySelector(`#filter-${filter.id}-from`).value = state.filterValues[`${filter.id}_from`] ?? "";
   const to = state.filterValues[`${filter.id}_to`];
-  root.querySelector(`#filter-${filter.id}-through`).value = to ? addDays(to, -1) : "";
+  root.querySelector(`#filter-${filter.id}-through`).value = to == null ? "" : filter.kind === "date-range" ? addDays(to, -1) : to;
+ } else if (filter.kind === "boolean") {
+  const input = root.querySelector(`#filter-${filter.id}`);
+  input.indeterminate = state.filterValues[filter.id] == null;
+  input.checked = state.filterValues[filter.id] === true;
  } else {
   const value = state.filterValues[filter.id];
   root.querySelector(`#filter-${filter.id}`).value = value ?? "";
@@ -320,13 +413,14 @@ function renderFilter(root, filter, state) {
 }
 
 function activeFilterText(filter, values) {
- if (filter.kind === "date-range") {
+ if (filter.kind === "date-range" || filter.kind === "numeric-range") {
   const from = values[`${filter.id}_from`];
   const to = values[`${filter.id}_to`];
-  return `${filter.id}: ${from && to ? `${from} through ${addDays(to, -1)}` : "all"}`;
+  const through = filter.kind === "date-range" && to ? addDays(to, -1) : to;
+  return `${filter.id}: ${from != null && to != null ? `${from} through ${through}` : "all"}`;
  }
  const value = values[filter.id];
- return `${filter.id}: ${value == null ? "all" : value === "" ? "(empty)" : String(value)}`;
+ return `${filter.id}: ${value == null || (Array.isArray(value) && value.length === 0) ? "all" : value === "" ? "(empty)" : Array.isArray(value) ? value.join(", ") : String(value)}`;
 }
 
 function renderTable(
@@ -344,6 +438,13 @@ function renderTable(
   for (const column of component.columns) {
    const cell = document.createElement("td");
    cell.textContent = formatScalar(row[column.field]);
+   if (column.dimension) {
+    cell.dataset.actionValue = formatScalar(row[column.field]);
+    cell.featherbiValue = row[column.field];
+    cell.dataset.actionDimension = column.dimension;
+    if (column.action?.openTab) cell.dataset.actionOpenTab = column.action.openTab;
+    if (column.action?.drilldown) cell.dataset.actionDrilldown = column.action.drilldown;
+   }
    tableRow.append(cell);
   }
   body.append(tableRow);
@@ -361,7 +462,18 @@ function renderChart(root, component, rows) {
  const empty = section.querySelector("[data-empty]");
  const summary = section.querySelector("[data-chart-summary]");
  empty.textContent = rows.length ? "" : "No rows";
- summary.textContent = rows.slice(0, 200).map((row) => chartRowLabel(component, row)).join("; ");
+ summary.replaceChildren();
+ rows.slice(0, 200).forEach((row, index) => {
+  if (index) summary.append("; ");
+  const field = interactionField(component);
+  if (!field) return summary.append(chartRowLabel(component, row));
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.actionValue = formatScalar(row[field]);
+  button.featherbiValue = row[field];
+  button.textContent = chartRowLabel(component, row);
+  summary.append(button);
+ });
  let chart = charts.get(chartNode);
  if (!chart) {
   chart = echarts.init(chartNode);
@@ -372,93 +484,118 @@ function renderChart(root, component, rows) {
 
 function chartOptions(component, rows) {
  if (component.type === "heatmap") {
-  const xs = unique(rows.map((row) => category(row[component.x])));
-  const ys = unique(rows.map((row) => category(row[component.y])));
+  const xField = component.xField ?? component.x;
+  const yField = component.yField ?? component.y;
+  const xs = unique(rows.map((row) => category(row[xField])));
+  const ys = unique(rows.map((row) => category(row[yField])));
   const xIndexes = new Map(xs.map((value, index) => [value, index]));
   const yIndexes = new Map(ys.map((value, index) => [value, index]));
-  const data = rows.map((row) => [
-   xIndexes.get(category(row[component.x])),
-   yIndexes.get(category(row[component.y])),
-   chartNumber(row[component.value]),
-  ]);
-  const maximum = Math.max(0, ...data.map((entry) => entry[2] ?? 0));
-  return {
-   animation: false,
-   aria: { enabled: true },
-   tooltip: {},
-   grid: { containLabel: true },
-   xAxis: { type: "category", data: xs },
-   yAxis: { type: "category", data: ys },
-   visualMap: { min: 0, max: maximum, calculable: true, orient: "horizontal" },
-   series: [{ name: component.label, type: "heatmap", data }],
-  };
+  const data = rows.map((row) => [xIndexes.get(category(row[xField])), yIndexes.get(category(row[yField])), chartNumber(row[component.value])]);
+  return { animation: false, aria: { enabled: true }, tooltip: {}, grid: { containLabel: true }, xAxis: { type: "category", data: xs }, yAxis: { type: "category", data: ys }, visualMap: { min: 0, max: Math.max(0, ...data.map((entry) => entry[2] ?? 0)), calculable: true, orient: "horizontal" }, series: [{ name: component.label, type: "heatmap", data }] };
  }
- const xs = unique(rows.map((row) => category(row[component.x])));
- const seriesNames = component.series
-  ? unique(rows.map((row) => category(row[component.series])))
-  : [component.label];
- const points = new Map(
-  rows.map((row) => [
-   JSON.stringify([
-    category(row[component.x]),
-    component.series ? category(row[component.series]) : component.label,
-   ]),
-   row,
-  ]),
- );
+ if (["pie", "donut"].includes(component.type)) return { animation: false, aria: { enabled: true }, tooltip: {}, legend: component.legend === false ? undefined : {}, series: [{ type: "pie", radius: component.type === "donut" ? ["45%", "70%"] : undefined, data: rows.map((row) => ({ name: category(row[component.name]), value: chartNumber(row[component.value]) })) }] };
+ if (component.type === "treemap") return { animation: false, aria: { enabled: true }, tooltip: {}, series: [{ type: "treemap", data: rows.map((row) => ({ name: category(row[component.name]), value: chartNumber(row[component.value]) })) }] };
+ if (component.type === "sankey") return { animation: false, aria: { enabled: true }, tooltip: {}, series: [{ type: "sankey", data: unique(rows.flatMap((row) => [category(row[component.source]), category(row[component.target])])).map((name) => ({ name })), links: rows.map((row) => ({ source: category(row[component.source]), target: category(row[component.target]), value: chartNumber(row[component.value]) })) }] };
+ if (component.type === "gauge") return { animation: false, aria: { enabled: true }, series: [{ type: "gauge", data: [{ value: chartNumber(rows[0]?.[component.value]), name: component.label }] }] };
+ if (component.type === "boxplot") return { animation: false, aria: { enabled: true }, tooltip: {}, xAxis: { type: "category", data: rows.map((row) => category(row[component.xField])) }, yAxis: { type: "value" }, series: [{ type: "boxplot", data: rows.map((row) => [component.min, component.q1, component.median, component.q3, component.max].map((field) => chartNumber(row[field]))) }] };
+ const xField = component.xField ?? component.x;
+ const yField = component.yField ?? component.y;
+ const xs = unique(rows.map((row) => category(row[xField])));
+ const seriesNames = component.series ? unique(rows.map((row) => category(row[component.series]))) : [component.label];
+ const points = new Map(rows.map((row) => [JSON.stringify([category(row[xField]), component.series ? category(row[component.series]) : component.label]), row]));
  const series = seriesNames.map((name) => {
-  const item = {
-   name,
-   type: component.type,
-   data: xs.map((x) => {
-    const row = points.get(JSON.stringify([x, name]));
-    return row ? chartNumber(row[component.y]) : null;
-   }),
-  };
-  if (component.type === "line") item.connectNulls = false;
+  const item = { name, type: component.type === "area" ? "line" : component.type, data: xs.map((x) => { const row = points.get(JSON.stringify([x, name])); return row ? chartNumber(row[yField]) : null; }) };
+  if (component.type === "line" || component.type === "area") item.connectNulls = false;
+  if (component.type === "area") item.areaStyle = {};
   return item;
  });
- const annotationData = (component.annotations ?? [])
-  .filter(({ at }) => xs.length && at >= xs[0] && at <= xs[xs.length - 1])
-  .map(({ at, label }) => ({ xAxis: at, label: { formatter: label } }));
- if (annotationData.length && series.length) {
-  series[0].markLine = { symbol: "none", data: annotationData };
- }
+ const annotationData = (component.annotations ?? []).filter(({ at }) => xs.length && at >= xs[0] && at <= xs[xs.length - 1]).map(({ at, label }) => ({ xAxis: at, label: { formatter: label } }));
+ if (annotationData.length && series.length) series[0].markLine = { symbol: "none", data: annotationData };
  const horizontal = component.type === "bar" && component.orientation === "horizontal";
- return {
-  animation: false,
-  aria: { enabled: true },
-  tooltip: { trigger: "axis" },
-  legend: component.series ? {} : undefined,
-  grid: { containLabel: true },
-  xAxis: horizontal ? { type: "value", name: component.label } : { type: "category", data: xs },
-  yAxis: horizontal ? { type: "category", data: xs } : { type: "value", name: component.label },
-  series,
- };
+ return { animation: false, aria: { enabled: true }, tooltip: { trigger: "axis" }, legend: component.series ? {} : undefined, grid: { containLabel: true }, xAxis: horizontal ? { type: "value", name: component.label } : { type: "category", data: xs }, yAxis: horizontal ? { type: "category", data: xs } : { type: "value", name: component.label }, series };
 }
 
 function chartRowLabel(component, row) {
- const metric = component.type === "heatmap" ? component.value : component.y;
- const categories = component.type === "heatmap"
-  ? [component.x, component.y]
-  : [component.x, ...(component.series ? [component.series] : [])];
- return `${categories.map((field) => category(row[field])).join(" / ")}: ${formatValue(row[metric])}`;
+ const metric = ["heatmap", "pie", "donut", "treemap", "sankey", "gauge"].includes(component.type) ? component.value : component.type === "boxplot" ? component.median : (component.yField ?? component.y);
+ const categories = component.type === "heatmap" ? [component.xField ?? component.x, component.yField ?? component.y] : ["pie", "donut", "treemap"].includes(component.type) ? [component.name] : component.type === "sankey" ? [component.source, component.target] : component.type === "gauge" ? [] : [component.xField ?? component.x, ...(component.series ? [component.series] : [])];
+ const prefix = categories.map((field) => category(row[field])).join(" / ");
+ return `${prefix ? `${prefix}: ` : ""}${formatValue(row[metric])}`;
+}
+
+function interactionField(component) {
+ if (["pie", "donut", "treemap"].includes(component.type)) return component.name;
+ if (component.type === "sankey") return component.source;
+ return component.xField ?? component.x;
+}
+
+async function selectDimension(root, config, controller, section, value, modifier, emittedDimension, emittedAction) {
+ const component = config.layout.find(({ id }) => section.id === `component-${id}`);
+ const dimension = emittedDimension ?? component.interactionDimension;
+ const filter = config.filters.find((entry) => entry.dimension && entry.dimension === dimension);
+ if (!filter) {
+  section.dataset.localSelection = section.dataset.localSelection === value ? "" : value;
+  applyTypedAction(root, emittedAction ?? component.action, value);
+  return;
+ }
+ const current = controller.state.filterValues[filter.id];
+ let next;
+ if (filter.kind === "multi-select") {
+  const selected = current ?? [];
+  if (modifier) next = selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
+  else next = selected.length === 1 && selected[0] === value ? [] : [value];
+ } else next = current === value ? null : value;
+ await controller.applyFilters({ [filter.id]: next });
+ applyTypedAction(root, emittedAction ?? component.action, value);
+}
+
+function openTab(root, id) {
+ const selected = root.querySelector(`[data-tab-target="${id}"]`);
+ if (!selected) return;
+ const buttons = [...selected.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
+ for (const button of buttons) {
+  const active = button === selected;
+  button.setAttribute("aria-selected", String(active));
+  for (const componentId of button.dataset.tabComponents.split(",").filter(Boolean)) {
+   const component = root.querySelector(`#component-${componentId}`);
+   if (component) component.hidden = !active;
+  }
+ }
+ root.querySelector("#dashboard").dataset.activeTab = id;
+ requestAnimationFrame(() => root.querySelectorAll(".chart").forEach((node) => charts.get(node)?.resize()));
+}
+
+function applyTypedAction(root, action, value) {
+ if (!action) return;
+ const dashboard = root.querySelector("#dashboard");
+ if (action.openTab) openTab(root, action.openTab);
+ if (action.drilldown) dashboard.dataset.drilldown = `${action.drilldown}:${value}`;
+}
+
+async function applyBrush(root, config, controller, section) {
+ const component = config.layout.find(({ id }) => section.id === `component-${id}`);
+ const filter = config.filters.find(({ dimension, kind }) => dimension === component.brushDimension && kind === "date-range");
+ if (!filter) return;
+ const from = section.querySelector("[data-brush-from]").value;
+ const through = section.querySelector("[data-brush-through]").value;
+ await controller.applyFilters({ [`${filter.id}_from`]: from || null, [`${filter.id}_to`]: through ? addDays(through, 1) : null });
 }
 
 function readFilters(root, filters) {
  const values = {};
  for (const filter of filters) {
-  if (filter.kind === "select") {
-   values[filter.id] = root.querySelector(`#filter-${filter.id}`).selectedOptions[0].featherbiValue;
-  } else if (filter.kind === "date-range") {
+  if (["select", "single-select", "multi-select", "option-search"].includes(filter.kind)) {
+   const selected = [...root.querySelector(`#filter-${filter.id}`).selectedOptions].map((entry) => entry.featherbiValue);
+   values[filter.id] = filter.kind === "multi-select" ? selected : selected[0] ?? null;
+  } else if (filter.kind === "date-range" || filter.kind === "numeric-range") {
    const from = root.querySelector(`#filter-${filter.id}-from`).value;
    const through = root.querySelector(`#filter-${filter.id}-through`).value;
-   values[`${filter.id}_from`] = from || null;
-   values[`${filter.id}_to`] = through ? addDays(through, 1) : null;
+   values[`${filter.id}_from`] = from === "" ? null : filter.kind === "numeric-range" ? Number(from) : from;
+   values[`${filter.id}_to`] = through === "" ? null : filter.kind === "numeric-range" ? Number(through) : addDays(through, 1);
+  } else if (filter.kind === "boolean") {
+   const input = root.querySelector(`#filter-${filter.id}`);
+   values[filter.id] = input.indeterminate ? null : input.checked;
   } else {
-   values[filter.id] = root.querySelector(`#filter-${filter.id}-all`).checked
-    ? null
-    : root.querySelector(`#filter-${filter.id}`).value;
+   values[filter.id] = root.querySelector(`#filter-${filter.id}-all`).checked ? null : root.querySelector(`#filter-${filter.id}`).value;
   }
  }
  return values;

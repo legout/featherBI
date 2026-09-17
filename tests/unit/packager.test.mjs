@@ -103,7 +103,18 @@ test("packaging produces one deterministic external-data ZIP", async () => {
  );
  assert.deepEqual(await readFile(sourcePath), source);
 
- await writeFile(configPath, JSON.stringify({ ...config, contract: 2 }));
+ await writeFile(configPath, JSON.stringify({
+  ...config,
+  contract: 2,
+  theme: "neutral",
+  layout: config.layout.map((component) => ({
+   ...component,
+   x: 1,
+   y: 1,
+   width: 12,
+   height: 1,
+  })),
+ }));
  const v2Zip = path.join(dir, "dashboard-v2.zip");
  await buildArtifact({ ...options, outPath: v2Zip });
  assert.ok((await readFile(v2Zip)).length > 0);

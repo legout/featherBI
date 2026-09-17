@@ -92,7 +92,8 @@ export async function runQuery(
   if (!Object.hasOwn(values, name)) {
    throw rejected(`missing value for parameter ${JSON.stringify(name)}`);
   }
-  return values[name];
+  const value = values[name];
+  return Array.isArray(value) ? (value.length ? JSON.stringify(value) : null) : value;
  });
  const limit = boundedInteger(options.limit, "limit", 1);
  const offset = boundedInteger(options.offset, "offset", 0) ?? 0;

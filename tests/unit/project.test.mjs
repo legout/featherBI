@@ -9,7 +9,9 @@ import { validateConfig } from "../../contract/config.mjs";
 async function project(overrides = {}) {
  const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-project-"));
  await mkdir(path.join(dir, "queries"));
- const yaml = overrides.yaml ?? `project: 1
+ const yaml =
+  overrides.yaml ??
+  `project: 1
 title: Example dashboard
 sources:
   - id: inspections
@@ -65,15 +67,17 @@ test("manual YAML and external SQL compile deterministically to strict contract 
   rendererPreset: "standard",
   data: {
    mode: "upload",
-   sources: [{
-    id: "inspections",
-    type: "json",
-    file: "inspections.json",
-    schema: {
-     station: { type: "string", nullable: false },
-     amount: { type: "number", nullable: true },
+   sources: [
+    {
+     id: "inspections",
+     type: "json",
+     file: "inspections.json",
+     schema: {
+      station: { type: "string", nullable: false },
+      amount: { type: "number", nullable: true },
+     },
     },
-   }],
+   ],
   },
   filters: [],
   queries: {
@@ -82,17 +86,19 @@ test("manual YAML and external SQL compile deterministically to strict contract 
     params: [],
    },
   },
-  layout: [{
-   id: "total",
-   type: "kpi",
-   query: "total",
-   label: "Total",
-   field: "value",
-   x: 1,
-   y: 1,
-   width: 12,
-   height: 1,
-  }],
+  layout: [
+   {
+    id: "total",
+    type: "kpi",
+    query: "total",
+    label: "Total",
+    field: "value",
+    x: 1,
+    y: 1,
+    width: 12,
+    height: 1,
+   },
+  ],
  });
  assert.equal(validateConfig(first.config).ok, true);
  assert.equal(first.json.includes(privatePath), false);
@@ -101,10 +107,16 @@ test("manual YAML and external SQL compile deterministically to strict contract 
 
 test("removed contract 1 runtime configs are rejected and unknown fields fail", async () => {
  const v1 = JSON.parse(
-  await readFile(new URL("../fixtures/minimal.config.json", import.meta.url), "utf8"),
+  await readFile(
+   new URL("../fixtures/minimal.config.json", import.meta.url),
+   "utf8",
+  ),
  );
  assert.equal(validateConfig({ ...v1, contract: 1 }).ok, false);
- const v2 = { ...(await compileProject((await project()).dashboard)).config, mystery: true };
+ const v2 = {
+  ...(await compileProject((await project()).dashboard)).config,
+  mystery: true,
+ };
  assert.equal(validateConfig(v2).ok, false);
 });
 

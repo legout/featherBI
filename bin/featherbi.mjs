@@ -17,10 +17,14 @@ try {
  } else if (command === "profile") {
   const options = parseSimpleArgs(args, new Set(["--include-values"]));
   const profileArgs = [
-   "run", "--script", path.join(rootDir, "skill", "featherbi", "scripts", "profile.py"),
+   "run",
+   "--script",
+   path.join(rootDir, "skill", "featherbi", "scripts", "profile.py"),
    required(options.input, "--input"),
-   "--source-id", required(options.sourceId, "--source-id"),
-   "--format", required(options.format, "--format"),
+   "--source-id",
+   required(options.sourceId, "--source-id"),
+   "--format",
+   required(options.format, "--format"),
   ];
   if (options.includeValues) profileArgs.push("--include-values");
   if (options.output) {
@@ -35,7 +39,8 @@ try {
   const { compileProject } = await import("../authoring/compiler.mjs");
   const result = await compileProject(projectPath);
   const output = path.resolve(
-   options.output ?? path.join(path.dirname(projectPath), ".featherbi", "dashboard.config.json"),
+   options.output ??
+    path.join(path.dirname(projectPath), ".featherbi", "dashboard.config.json"),
   );
   await mkdir(path.dirname(output), { recursive: true });
   await writeFile(output, result.json, "utf8");

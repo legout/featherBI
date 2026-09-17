@@ -103,25 +103,79 @@ await buildDashboard({
  outPath: path.join(outDir, "ap-dashboard.html"),
 });
 
-const standard = await compileProject(path.join(rootDir, "examples", "standard-dashboard", "dashboard.yaml"));
+const standard = await compileProject(
+ path.join(rootDir, "examples", "standard-dashboard", "dashboard.yaml"),
+);
 const standardRows = [
- { station: "SJ", product: "P1", inspected_on: "2026-09-01", amount: 10, successful: true },
- { station: "SJ", product: "P2", inspected_on: "2026-09-02", amount: 20, successful: true },
- { station: "SD", product: "P1", inspected_on: "2026-09-03", amount: 30, successful: false },
- { station: "SJ", product: "P2", inspected_on: "2026-09-04", amount: 40, successful: true },
- { station: "SD", product: "P3", inspected_on: "2026-09-05", amount: 50, successful: false },
- { station: "NY", product: "P1", inspected_on: "2026-09-06", amount: 60, successful: true },
+ {
+  station: "SJ",
+  product: "P1",
+  inspected_on: "2026-09-01",
+  amount: 10,
+  successful: true,
+ },
+ {
+  station: "SJ",
+  product: "P2",
+  inspected_on: "2026-09-02",
+  amount: 20,
+  successful: true,
+ },
+ {
+  station: "SD",
+  product: "P1",
+  inspected_on: "2026-09-03",
+  amount: 30,
+  successful: false,
+ },
+ {
+  station: "SJ",
+  product: "P2",
+  inspected_on: "2026-09-04",
+  amount: 40,
+  successful: true,
+ },
+ {
+  station: "SD",
+  product: "P3",
+  inspected_on: "2026-09-05",
+  amount: 50,
+  successful: false,
+ },
+ {
+  station: "NY",
+  product: "P1",
+  inspected_on: "2026-09-06",
+  amount: 60,
+  successful: true,
+ },
 ];
 await buildDashboard({
  config: standard.config,
- inputs: [{ id: "inspections", value: Buffer.from(JSON.stringify(standardRows)).toString("base64") }],
+ inputs: [
+  {
+   id: "inspections",
+   value: Buffer.from(JSON.stringify(standardRows)).toString("base64"),
+  },
+ ],
  outPath: path.join(outDir, "standard-runtime.html"),
 });
 
-const exploration = await compileProject(path.join(rootDir, "examples", "exploration-dashboard", "dashboard.yaml"));
+const exploration = await compileProject(
+ path.join(rootDir, "examples", "exploration-dashboard", "dashboard.yaml"),
+);
 await buildDashboard({
  config: exploration.config,
- inputs: [{ id: "inspections", value: Buffer.from(JSON.stringify(standardRows.map(({ station, amount }) => ({ station, amount })))).toString("base64") }],
+ inputs: [
+  {
+   id: "inspections",
+   value: Buffer.from(
+    JSON.stringify(
+     standardRows.map(({ station, amount }) => ({ station, amount })),
+    ),
+   ).toString("base64"),
+  },
+ ],
  outPath: path.join(outDir, "exploration-runtime.html"),
 });
 

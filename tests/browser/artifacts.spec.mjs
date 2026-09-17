@@ -26,19 +26,29 @@ const rows = Array.from({ length: 4 }, (_, index) => ({
 }));
 
 async function cli(...args) {
- return execFileAsync(process.execPath, [path.join(rootDir, "bin", "featherbi.mjs"), ...args]);
+ return execFileAsync(process.execPath, [
+  path.join(rootDir, "bin", "featherbi.mjs"),
+  ...args,
+ ]);
 }
 
 test.beforeAll(async ({ browser }) => {
  requireInstalledDesktopChrome(browser);
  await rm(deliveryDir, { recursive: true, force: true });
  await mkdir(deliveryDir, { recursive: true });
- await cp(path.join(rootDir, "examples", "ap-dashboard"), projectDir, { recursive: true });
- await writeFile(sourcePath.replace(/\.json$/, ".ndjson"), rows.map((row) => JSON.stringify(row)).join("\n"));
+ await cp(path.join(rootDir, "examples", "ap-dashboard"), projectDir, {
+  recursive: true,
+ });
+ await writeFile(
+  sourcePath.replace(/\.json$/, ".ndjson"),
+  rows.map((row) => JSON.stringify(row)).join("\n"),
+ );
  await execFileAsync("uv", [
   "run",
-  "--with", "duckdb",
-  "python", "-c",
+  "--with",
+  "duckdb",
+  "python",
+  "-c",
   [
    "import duckdb, sys",
    "rows_path, parquet_path = sys.argv[1], sys.argv[2]",
@@ -52,9 +62,12 @@ test.beforeAll(async ({ browser }) => {
  await cli("compile", "--project", path.join(projectDir, "dashboard.yaml"));
  await cli(
   "build",
-  "--config", path.join(projectDir, ".featherbi", "dashboard.config.json"),
-  "--source", `ap=${sourcePath}`,
-  "--output", zipPath,
+  "--config",
+  path.join(projectDir, ".featherbi", "dashboard.config.json"),
+  "--source",
+  `ap=${sourcePath}`,
+  "--output",
+  zipPath,
  );
  await mkdir(extractedDir, { recursive: true });
  await execFileAsync("uv", [
@@ -71,9 +84,15 @@ test.beforeAll(async ({ browser }) => {
 test("AP project ZIP members stay external, secret, and reopen after explicit selection", async ({
  browser,
 }) => {
- assert.deepEqual((await readdir(extractedDir)).sort(), ["dashboard.html", "unified_ap.parquet"]);
+ assert.deepEqual((await readdir(extractedDir)).sort(), [
+  "dashboard.html",
+  "unified_ap.parquet",
+ ]);
  const html = await readFile(path.join(extractedDir, "dashboard.html"), "utf8");
- assert.ok(!html.includes(sourcePath), "HTML must not contain local source paths");
+ assert.ok(
+  !html.includes(sourcePath),
+  "HTML must not contain local source paths",
+ );
  assert.ok(!html.includes("PE100"), "HTML must not contain dataset bytes");
 
  const context = await browser.newContext();
@@ -97,7 +116,9 @@ test("AP project ZIP members stay external, secret, and reopen after explicit se
    "data-state",
    "ready",
   );
-  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText("4");
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "4",
+  );
  } finally {
   await context.close();
  }

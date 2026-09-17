@@ -4,7 +4,12 @@ const charts = new WeakMap();
 const debounceTimers = new Map();
 
 /** Mount the fixed grid viewer for one validated dashboard config. */
-export async function mountDashboard({ config, inputs, root = document, capabilities = {} }) {
+export async function mountDashboard({
+ config,
+ inputs,
+ root = document,
+ capabilities = {},
+}) {
  root.title = config.title;
  root.querySelector("#dashboard-title").textContent = config.title;
  const filters = root.querySelector("#dashboard-filters");
@@ -15,13 +20,19 @@ export async function mountDashboard({ config, inputs, root = document, capabili
  buildSources(sources, config.data.sources);
  buildLayout(layout, config);
  applyThemeClasses(root, config.theme ?? "neutral");
- const playground = config.playground ? buildPlayground(root, config, capabilities.editor) : null;
+ const playground = config.playground
+  ? buildPlayground(root, config, capabilities.editor)
+  : null;
 
  let controller;
  const render = (state) => renderState(root, config, state, capabilities);
  const start = async (assignments) => {
   try {
-   controller = await createDashboard({ config, inputs: assignments, onState: render });
+   controller = await createDashboard({
+    config,
+    inputs: assignments,
+    onState: render,
+   });
    root.querySelector("#replace-files").textContent = "Replace selected files";
    return controller;
   } catch (error) {
@@ -56,7 +67,10 @@ export async function mountDashboard({ config, inputs, root = document, capabili
    return;
   }
   const optionFilter = config.filters.find(
-   ({ id, kind }) => ["select", "single-select", "multi-select", "option-search"].includes(kind) && control.id === `filter-${id}-search`,
+   ({ id, kind }) =>
+    ["select", "single-select", "multi-select", "option-search"].includes(
+     kind,
+    ) && control.id === `filter-${id}-search`,
   );
   if (optionFilter) {
    debounce(`options:${optionFilter.id}`, () =>
@@ -71,14 +85,24 @@ export async function mountDashboard({ config, inputs, root = document, capabili
   const id = event.target.dataset.filterId;
   if (!action || !id) return;
   const current = controller.state.filterOptionPages[id];
-  const page = action === "next" ? current.page + 1 : Math.max(0, current.page - 1);
+  const page =
+   action === "next" ? current.page + 1 : Math.max(0, current.page - 1);
   await controller.searchFilterOptions(id, current.search, page);
  });
 
  layout.addEventListener("featherbi-grid-select", async (event) => {
   if (!controller) return;
   const section = event.target.closest("section");
-  await selectDimension(root, config, controller, section, event.detail.value, event.detail.modifier, event.detail.dimension, event.detail.action);
+  await selectDimension(
+   root,
+   config,
+   controller,
+   section,
+   event.detail.value,
+   event.detail.modifier,
+   event.detail.dimension,
+   event.detail.action,
+  );
  });
 
  layout.addEventListener("click", async (event) => {
@@ -91,10 +115,23 @@ export async function mountDashboard({ config, inputs, root = document, capabili
    ? event.target.featherbiValue
    : event.target.dataset.actionValue;
   if (actionValue !== undefined) {
-   const typedAction = event.target.dataset.actionOpenTab || event.target.dataset.actionDrilldown
-    ? { openTab: event.target.dataset.actionOpenTab, drilldown: event.target.dataset.actionDrilldown }
-    : undefined;
-   await selectDimension(root, config, controller, event.target.closest("section"), actionValue, event.shiftKey || event.metaKey || event.ctrlKey, event.target.dataset.actionDimension, typedAction);
+   const typedAction =
+    event.target.dataset.actionOpenTab || event.target.dataset.actionDrilldown
+     ? {
+        openTab: event.target.dataset.actionOpenTab,
+        drilldown: event.target.dataset.actionDrilldown,
+       }
+     : undefined;
+   await selectDimension(
+    root,
+    config,
+    controller,
+    event.target.closest("section"),
+    actionValue,
+    event.shiftKey || event.metaKey || event.ctrlKey,
+    event.target.dataset.actionDimension,
+    typedAction,
+   );
    return;
   }
   if (event.target.dataset.brushApply !== undefined) {
@@ -105,22 +142,33 @@ export async function mountDashboard({ config, inputs, root = document, capabili
   const id = event.target.dataset.componentId;
   if (!action || !id) return;
   const current = controller.state.tablePages[id]?.page ?? 0;
-  await controller.setTablePage(id, action === "next" ? current + 1 : Math.max(0, current - 1));
+  await controller.setTablePage(
+   id,
+   action === "next" ? current + 1 : Math.max(0, current - 1),
+  );
  });
 
  root.querySelector("#apply-filters").addEventListener("click", async () => {
-  if (controller) await controller.applyFilters(readFilters(root, config.filters));
+  if (controller)
+   await controller.applyFilters(readFilters(root, config.filters));
  });
  root.querySelector("#replace-files").addEventListener("click", async () => {
   const replacements = selectedFiles(root, config.data.sources);
   if (controller) {
-   if (Object.keys(replacements).length) await controller.replaceFiles(replacements);
+   if (Object.keys(replacements).length)
+    await controller.replaceFiles(replacements);
   } else if (Object.keys(replacements).length === config.data.sources.length) {
    await start(
-    config.data.sources.map((source) => ({ source, file: replacements[source.id] })),
+    config.data.sources.map((source) => ({
+     source,
+     file: replacements[source.id],
+    })),
    );
   } else {
-   render({ status: "error", error: "Select one file for every declared source." });
+   render({
+    status: "error",
+    error: "Select one file for every declared source.",
+   });
   }
  });
  if (playground) {
@@ -130,26 +178,43 @@ export async function mountDashboard({ config, inputs, root = document, capabili
    playground.run.disabled = true;
    try {
     const result = await controller.runPlayground(playground.editor.getValue());
-    renderPlaygroundResult(playground, result, config.playground.renderer, capabilities);
+    renderPlaygroundResult(
+     playground,
+     result,
+     config.playground.renderer,
+     capabilities,
+    );
    } catch (error) {
-    playground.error.textContent = error instanceof Error ? error.message : String(error);
+    playground.error.textContent =
+     error instanceof Error ? error.message : String(error);
    } finally {
     playground.run.disabled = false;
    }
   });
  }
- window.addEventListener("resize", () => requestAnimationFrame(() => layout.querySelectorAll(".chart").forEach((node) => charts.get(node)?.resize())));
- window.addEventListener("pagehide", () => {
-  playground?.editor.dispose();
-  capabilities.perspective?.disposeAll();
-  controller?.dispose();
- }, { once: true });
+ window.addEventListener("resize", () =>
+  requestAnimationFrame(() =>
+   layout
+    .querySelectorAll(".chart")
+    .forEach((node) => charts.get(node)?.resize()),
+  ),
+ );
+ window.addEventListener(
+  "pagehide",
+  () => {
+   playground?.editor.dispose();
+   capabilities.perspective?.disposeAll();
+   controller?.dispose();
+  },
+  { once: true },
+ );
 
  if (inputs?.length) return start(inputs);
  render({ status: "waiting", error: null });
  return {
   runPlayground(...args) {
-   if (!controller) throw new Error("Select the declared data files before running SQL");
+   if (!controller)
+    throw new Error("Select the declared data files before running SQL");
    return controller.runPlayground(...args);
   },
   dispose() {
@@ -165,7 +230,11 @@ function buildFilters(container, filters) {
   const legend = document.createElement("legend");
   legend.textContent = filter.id;
   field.append(legend);
-  if (["select", "single-select", "multi-select", "option-search"].includes(filter.kind)) {
+  if (
+   ["select", "single-select", "multi-select", "option-search"].includes(
+    filter.kind,
+   )
+  ) {
    const search = document.createElement("input");
    search.type = "search";
    search.id = `filter-${filter.id}-search`;
@@ -247,12 +316,22 @@ function buildPlayground(root, config, editorCapability) {
  const section = root.querySelector("#dashboard-playground");
  section.hidden = false;
  section.replaceChildren();
- const heading = Object.assign(document.createElement("h2"), { textContent: "SQL playground" });
- const context = Object.assign(document.createElement("p"), { textContent: "Dashboard filters are shown above for context and are not injected into this query." });
+ const heading = Object.assign(document.createElement("h2"), {
+  textContent: "SQL playground",
+ });
+ const context = Object.assign(document.createElement("p"), {
+  textContent:
+   "Dashboard filters are shown above for context and are not injected into this query.",
+ });
  const editorNode = document.createElement("div");
  editorNode.dataset.playgroundEditor = "";
- editorNode.dataset.completions = Object.keys(config.playground.schemas).join(",");
- const run = Object.assign(document.createElement("button"), { type: "button", textContent: "Run query" });
+ editorNode.dataset.completions = Object.keys(config.playground.schemas).join(
+  ",",
+ );
+ const run = Object.assign(document.createElement("button"), {
+  type: "button",
+  textContent: "Run query",
+ });
  run.dataset.playgroundRun = "";
  const error = document.createElement("p");
  error.dataset.playgroundError = "";
@@ -260,15 +339,36 @@ function buildPlayground(root, config, editorCapability) {
  const result = document.createElement("div");
  result.dataset.playgroundResult = "";
  section.append(heading, context, editorNode, run, error, result);
- return { section, run, error, result, editor: editorCapability.mount(editorNode, config.playground.schemas) };
+ return {
+  section,
+  run,
+  error,
+  result,
+  editor: editorCapability.mount(editorNode, config.playground.schemas),
+ };
 }
 
-function renderPlaygroundResult(playground, queryResult, renderer, capabilities) {
+function renderPlaygroundResult(
+ playground,
+ queryResult,
+ renderer,
+ capabilities,
+) {
  playground.error.textContent = "";
- const columns = queryResult.table.schema.fields.map(({ name }) => ({ field: name, label: name }));
+ const columns = queryResult.table.schema.fields.map(({ name }) => ({
+  field: name,
+  label: name,
+ }));
  if (renderer === "perspective") {
-  capabilities.perspective.render(playground.result, queryResult.ipc, { plugin: "Datagrid", columns: columns.map(({ field }) => field) })
-   .catch((error) => { playground.error.textContent = error instanceof Error ? error.message : String(error); });
+  capabilities.perspective
+   .render(playground.result, queryResult.ipc, {
+    plugin: "Datagrid",
+    columns: columns.map(({ field }) => field),
+   })
+   .catch((error) => {
+    playground.error.textContent =
+     error instanceof Error ? error.message : String(error);
+   });
  } else {
   capabilities.grid.render(playground.result, queryResult.rows, columns);
  }
@@ -289,7 +389,9 @@ function buildLayout(container, config) {
   heading.textContent = component.label;
   section.append(heading);
   if (["heading", "markdown", "text"].includes(component.type)) {
-   const content = document.createElement(component.type === "heading" ? "h3" : "p");
+   const content = document.createElement(
+    component.type === "heading" ? "h3" : "p",
+   );
    content.textContent = component.content;
    section.append(content);
   } else if (component.type === "divider") {
@@ -340,7 +442,10 @@ function buildLayout(container, config) {
    section.append(grid, empty, navigation);
   } else {
    const chart = document.createElement("div");
-   const usePerspective = component.type === "perspective" || (config.rendererPreset === "perspective-first" && isChartType(component.type));
+   const usePerspective =
+    component.type === "perspective" ||
+    (config.rendererPreset === "perspective-first" &&
+     isChartType(component.type));
    chart.className = usePerspective ? "perspective-host" : "chart";
    if (usePerspective) chart.dataset.perspective = "";
    chart.setAttribute("role", "img");
@@ -351,9 +456,18 @@ function buildLayout(container, config) {
    empty.dataset.empty = "";
    section.append(chart, summary, empty);
    if (component.brushDimension) {
-    const from = document.createElement("input"); from.type = "date"; from.dataset.brushFrom = ""; from.setAttribute("aria-label", `${component.label} brush from`);
-    const through = document.createElement("input"); through.type = "date"; through.dataset.brushThrough = ""; through.setAttribute("aria-label", `${component.label} brush through`);
-    const apply = document.createElement("button"); apply.type = "button"; apply.dataset.brushApply = ""; apply.textContent = "Apply range";
+    const from = document.createElement("input");
+    from.type = "date";
+    from.dataset.brushFrom = "";
+    from.setAttribute("aria-label", `${component.label} brush from`);
+    const through = document.createElement("input");
+    through.type = "date";
+    through.dataset.brushThrough = "";
+    through.setAttribute("aria-label", `${component.label} brush through`);
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.dataset.brushApply = "";
+    apply.textContent = "Apply range";
     section.append(from, through, apply);
    }
   }
@@ -368,10 +482,14 @@ function buildLayout(container, config) {
 function applyThemeClasses(root, theme) {
  if (theme !== "daisyui") return;
  root.querySelectorAll("button").forEach((node) => node.classList.add("btn"));
- root.querySelectorAll("#dashboard-layout > section").forEach((node) => node.classList.add("card"));
+ root
+  .querySelectorAll("#dashboard-layout > section")
+  .forEach((node) => node.classList.add("card"));
  root.querySelectorAll("table").forEach((node) => node.classList.add("table"));
  root.querySelectorAll("input").forEach((node) => node.classList.add("input"));
- root.querySelectorAll("select").forEach((node) => node.classList.add("select"));
+ root
+  .querySelectorAll("select")
+  .forEach((node) => node.classList.add("select"));
 }
 
 function tablePageButton(id, action, label) {
@@ -390,20 +508,22 @@ function renderState(root, config, state, capabilities) {
   state.status === "loading"
    ? "Loading dashboard…"
    : state.status === "waiting"
-    ? "Select the declared data files to load this dashboard."
-    : state.status === "busy"
-     ? "Updating dashboard…"
-     : state.status === "error"
-      ? `${state.retained ? "Showing prior results. " : ""}${state.error}`
-      : "Dashboard ready";
+     ? "Select the declared data files to load this dashboard."
+     : state.status === "busy"
+       ? "Updating dashboard…"
+       : state.status === "error"
+         ? `${state.retained ? "Showing prior results. " : ""}${state.error}`
+         : "Dashboard ready";
  if (state.timings) {
   status.dataset.loadMs = String(Math.round(state.timings.loadMs));
   status.dataset.queryMs = String(Math.round(state.timings.queryMs));
  }
  root.querySelectorAll("button, input, select").forEach((control) => {
-  const sourceControl = control.id === "replace-files" || control.closest("#dashboard-sources");
+  const sourceControl =
+   control.id === "replace-files" || control.closest("#dashboard-sources");
   control.disabled =
-   state.status === "loading" || state.status === "busy" ||
+   state.status === "loading" ||
+   state.status === "busy" ||
    (state.status === "waiting" && !sourceControl);
  });
  if (!state.filterValues) return;
@@ -413,11 +533,13 @@ function renderState(root, config, state, capabilities) {
   .map((filter) => activeFilterText(filter, state.filterValues))
   .join("; ");
  const latest = config.filters.find(
-  ({ kind, default: value }) => kind === "date-range" && value.kind === "latest-days",
+  ({ kind, default: value }) =>
+   kind === "date-range" && value.kind === "latest-days",
  );
- root.querySelector("#snapshot-note").textContent = latest && state.filterValues[`${latest.id}_to`]
-  ? `Snapshot end ${addDays(state.filterValues[`${latest.id}_to`], -1)} may be incomplete.`
-  : "Snapshot end unavailable.";
+ root.querySelector("#snapshot-note").textContent =
+  latest && state.filterValues[`${latest.id}_to`]
+   ? `Snapshot end ${addDays(state.filterValues[`${latest.id}_to`], -1)} may be incomplete.`
+   : "Snapshot end unavailable.";
 
  for (const component of config.layout) {
   const rows = state.results[component.query] ?? [];
@@ -428,16 +550,42 @@ function renderState(root, config, state, capabilities) {
   } else if (component.type === "metric-group") {
    for (const field of component.fields) {
     const value = rows[0]?.[field];
-    root.querySelector(`#component-${component.id} [data-metric="${field}"]`).textContent = formatValue(value, component.decimals);
+    root.querySelector(
+     `#component-${component.id} [data-metric="${field}"]`,
+    ).textContent = formatValue(value, component.decimals);
    }
   } else if (component.type === "table") {
-   renderTable(root, component, rows, state.tablePages[component.id], state.status, capabilities.grid);
-  } else if (component.type === "perspective" || (config.rendererPreset === "perspective-first" && isChartType(component.type))) {
+   renderTable(
+    root,
+    component,
+    rows,
+    state.tablePages[component.id],
+    state.status,
+    capabilities.grid,
+   );
+  } else if (
+   component.type === "perspective" ||
+   (config.rendererPreset === "perspective-first" &&
+    isChartType(component.type))
+  ) {
    const section = root.querySelector(`#component-${component.id}`);
-   const perspectiveConfig = component.perspective ?? perspectiveConfigForChart(component);
-   capabilities.perspective.render(section.querySelector("[data-perspective]"), state.perspectiveResults[component.query], perspectiveConfig)
-    .then(() => { section.querySelector("[data-empty]").textContent = rows.length ? "" : "No rows"; })
-    .catch((error) => { section.querySelector("[data-empty]").textContent = error instanceof Error ? error.message : String(error); });
+   const perspectiveConfig =
+    component.perspective ?? perspectiveConfigForChart(component);
+   capabilities.perspective
+    .render(
+     section.querySelector("[data-perspective]"),
+     state.perspectiveResults[component.query],
+     perspectiveConfig,
+    )
+    .then(() => {
+     section.querySelector("[data-empty]").textContent = rows.length
+      ? ""
+      : "No rows";
+    })
+    .catch((error) => {
+     section.querySelector("[data-empty]").textContent =
+      error instanceof Error ? error.message : String(error);
+    });
   } else if (component.query) {
    renderChart(root, component, rows, capabilities.charts);
   }
@@ -445,26 +593,44 @@ function renderState(root, config, state, capabilities) {
 }
 
 function renderFilter(root, filter, state) {
- if (["select", "single-select", "multi-select", "option-search"].includes(filter.kind)) {
+ if (
+  ["select", "single-select", "multi-select", "option-search"].includes(
+   filter.kind,
+  )
+ ) {
   const select = root.querySelector(`#filter-${filter.id}`);
   const selected = state.filterValues[filter.id];
   const values = [...(state.filterOptions[filter.id] ?? [])];
-  const selectedValues = filter.kind === "multi-select" ? (selected ?? []) : [selected];
+  const selectedValues =
+   filter.kind === "multi-select" ? (selected ?? []) : [selected];
   for (const selectedValue of selectedValues) {
-   if (selectedValue != null && !values.some((value) => optionKey(value) === optionKey(selectedValue))) values.unshift(selectedValue);
+   if (
+    selectedValue != null &&
+    !values.some((value) => optionKey(value) === optionKey(selectedValue))
+   )
+    values.unshift(selectedValue);
   }
   select.replaceChildren();
   if (filter.kind !== "multi-select") select.append(option(null, "all"));
   for (const value of values) select.append(option(value, optionLabel(value)));
-  for (const item of select.options) item.selected = selectedValues.some((value) => optionKey(value) === item.value);
+  for (const item of select.options)
+   item.selected = selectedValues.some(
+    (value) => optionKey(value) === item.value,
+   );
   const page = state.filterOptionPages[filter.id];
   const locked = state.status === "loading" || state.status === "busy";
-  root.querySelector(`[data-option-page="previous"][data-filter-id="${filter.id}"]`).disabled = locked || page.page === 0;
-  root.querySelector(`[data-option-page="next"][data-filter-id="${filter.id}"]`).disabled = locked || !page.hasNext;
+  root.querySelector(
+   `[data-option-page="previous"][data-filter-id="${filter.id}"]`,
+  ).disabled = locked || page.page === 0;
+  root.querySelector(
+   `[data-option-page="next"][data-filter-id="${filter.id}"]`,
+  ).disabled = locked || !page.hasNext;
  } else if (filter.kind === "date-range" || filter.kind === "numeric-range") {
-  root.querySelector(`#filter-${filter.id}-from`).value = state.filterValues[`${filter.id}_from`] ?? "";
+  root.querySelector(`#filter-${filter.id}-from`).value =
+   state.filterValues[`${filter.id}_from`] ?? "";
   const to = state.filterValues[`${filter.id}_to`];
-  root.querySelector(`#filter-${filter.id}-through`).value = to == null ? "" : filter.kind === "date-range" ? addDays(to, -1) : to;
+  root.querySelector(`#filter-${filter.id}-through`).value =
+   to == null ? "" : filter.kind === "date-range" ? addDays(to, -1) : to;
  } else if (filter.kind === "boolean") {
   const input = root.querySelector(`#filter-${filter.id}`);
   input.indeterminate = state.filterValues[filter.id] == null;
@@ -496,12 +662,21 @@ function renderTable(
  gridCapability,
 ) {
  const section = root.querySelector(`#component-${component.id}`);
- gridCapability.render(section.querySelector("[data-grid]"), rows, component.columns);
- section.querySelector("[data-empty]").textContent = rows.length ? "" : "No rows";
- section.querySelector("[data-page-label]").textContent = `Page ${page.page + 1}`;
+ gridCapability.render(
+  section.querySelector("[data-grid]"),
+  rows,
+  component.columns,
+ );
+ section.querySelector("[data-empty]").textContent = rows.length
+  ? ""
+  : "No rows";
+ section.querySelector("[data-page-label]").textContent =
+  `Page ${page.page + 1}`;
  const locked = status === "loading" || status === "busy";
- section.querySelector('[data-page-action="previous"]').disabled = locked || page.page === 0;
- section.querySelector('[data-page-action="next"]').disabled = locked || !page.hasNext;
+ section.querySelector('[data-page-action="previous"]').disabled =
+  locked || page.page === 0;
+ section.querySelector('[data-page-action="next"]').disabled =
+  locked || !page.hasNext;
 }
 
 function renderChart(root, component, rows, chartCapability) {
@@ -531,16 +706,66 @@ function renderChart(root, component, rows, chartCapability) {
 }
 
 function isChartType(type) {
- return ["bar", "line", "area", "scatter", "pie", "donut", "heatmap", "treemap", "sankey", "gauge", "boxplot"].includes(type);
+ return [
+  "bar",
+  "line",
+  "area",
+  "scatter",
+  "pie",
+  "donut",
+  "heatmap",
+  "treemap",
+  "sankey",
+  "gauge",
+  "boxplot",
+ ].includes(type);
 }
 
 export function perspectiveConfigForChart(component) {
- if (["pie", "donut", "treemap"].includes(component.type)) return { plugin: "Y Bar", groupBy: [component.name], columns: [component.value] };
- if (component.type === "gauge") return { plugin: "Datagrid", columns: [component.value] };
- if (component.type === "heatmap") return { plugin: "Datagrid", columns: perspectiveColumns(component.xField ?? component.x, component.yField ?? component.y, component.value) };
- if (component.type === "sankey") return { plugin: "Datagrid", columns: perspectiveColumns(component.source, component.target, component.value) };
- if (component.type === "boxplot") return { plugin: "Datagrid", columns: perspectiveColumns(component.xField, component.min, component.q1, component.median, component.q3, component.max) };
- return { plugin: component.type === "table" ? "Datagrid" : "Y Bar", groupBy: [component.xField ?? component.x].filter(Boolean), splitBy: component.series ? [component.series] : [], columns: [component.yField ?? component.y].filter(Boolean) };
+ if (["pie", "donut", "treemap"].includes(component.type))
+  return {
+   plugin: "Y Bar",
+   groupBy: [component.name],
+   columns: [component.value],
+  };
+ if (component.type === "gauge")
+  return { plugin: "Datagrid", columns: [component.value] };
+ if (component.type === "heatmap")
+  return {
+   plugin: "Datagrid",
+   columns: perspectiveColumns(
+    component.xField ?? component.x,
+    component.yField ?? component.y,
+    component.value,
+   ),
+  };
+ if (component.type === "sankey")
+  return {
+   plugin: "Datagrid",
+   columns: perspectiveColumns(
+    component.source,
+    component.target,
+    component.value,
+   ),
+  };
+ if (component.type === "boxplot")
+  return {
+   plugin: "Datagrid",
+   columns: perspectiveColumns(
+    component.xField,
+    component.min,
+    component.q1,
+    component.median,
+    component.q3,
+    component.max,
+   ),
+  };
+ return {
+  plugin: component.type === "table" ? "Datagrid" : "Y Bar",
+  groupBy: [component.xField ?? component.x].filter(Boolean),
+  splitBy: component.series ? [component.series] : [],
+  columns: [component.yField ?? component.y].filter(Boolean),
+ };
 }
 
 /** Datagrid columns for chart families without an equivalent Perspective plugin; keeps every authored field once. */
@@ -556,50 +781,228 @@ function chartOptions(component, rows) {
   const ys = unique(rows.map((row) => category(row[yField])));
   const xIndexes = new Map(xs.map((value, index) => [value, index]));
   const yIndexes = new Map(ys.map((value, index) => [value, index]));
-  const data = rows.map((row) => [xIndexes.get(category(row[xField])), yIndexes.get(category(row[yField])), chartNumber(row[component.value])]);
-  return { animation: false, aria: { enabled: true }, tooltip: {}, grid: { containLabel: true }, xAxis: { type: "category", data: xs }, yAxis: { type: "category", data: ys }, visualMap: { min: 0, max: Math.max(0, ...data.map((entry) => entry[2] ?? 0)), calculable: true, orient: "horizontal" }, series: [{ name: component.label, type: "heatmap", data }] };
+  const data = rows.map((row) => [
+   xIndexes.get(category(row[xField])),
+   yIndexes.get(category(row[yField])),
+   chartNumber(row[component.value]),
+  ]);
+  return {
+   animation: false,
+   aria: { enabled: true },
+   tooltip: {},
+   grid: { containLabel: true },
+   xAxis: { type: "category", data: xs },
+   yAxis: { type: "category", data: ys },
+   visualMap: {
+    min: 0,
+    max: Math.max(0, ...data.map((entry) => entry[2] ?? 0)),
+    calculable: true,
+    orient: "horizontal",
+   },
+   series: [{ name: component.label, type: "heatmap", data }],
+  };
  }
- if (["pie", "donut"].includes(component.type)) return { animation: false, aria: { enabled: true }, tooltip: {}, legend: component.legend === false ? undefined : {}, series: [{ type: "pie", radius: component.type === "donut" ? ["45%", "70%"] : undefined, data: rows.map((row) => ({ name: category(row[component.name]), value: chartNumber(row[component.value]) })) }] };
- if (component.type === "treemap") return { animation: false, aria: { enabled: true }, tooltip: {}, series: [{ type: "treemap", data: rows.map((row) => ({ name: category(row[component.name]), value: chartNumber(row[component.value]) })) }] };
- if (component.type === "sankey") return { animation: false, aria: { enabled: true }, tooltip: {}, series: [{ type: "sankey", data: unique(rows.flatMap((row) => [category(row[component.source]), category(row[component.target])])).map((name) => ({ name })), links: rows.map((row) => ({ source: category(row[component.source]), target: category(row[component.target]), value: chartNumber(row[component.value]) })) }] };
- if (component.type === "gauge") return { animation: false, aria: { enabled: true }, series: [{ type: "gauge", data: [{ value: chartNumber(rows[0]?.[component.value]), name: component.label }] }] };
- if (component.type === "boxplot") return { animation: false, aria: { enabled: true }, tooltip: {}, xAxis: { type: "category", data: rows.map((row) => category(row[component.xField])) }, yAxis: { type: "value" }, series: [{ type: "boxplot", data: rows.map((row) => [component.min, component.q1, component.median, component.q3, component.max].map((field) => chartNumber(row[field]))) }] };
+ if (["pie", "donut"].includes(component.type))
+  return {
+   animation: false,
+   aria: { enabled: true },
+   tooltip: {},
+   legend: component.legend === false ? undefined : {},
+   series: [
+    {
+     type: "pie",
+     radius: component.type === "donut" ? ["45%", "70%"] : undefined,
+     data: rows.map((row) => ({
+      name: category(row[component.name]),
+      value: chartNumber(row[component.value]),
+     })),
+    },
+   ],
+  };
+ if (component.type === "treemap")
+  return {
+   animation: false,
+   aria: { enabled: true },
+   tooltip: {},
+   series: [
+    {
+     type: "treemap",
+     data: rows.map((row) => ({
+      name: category(row[component.name]),
+      value: chartNumber(row[component.value]),
+     })),
+    },
+   ],
+  };
+ if (component.type === "sankey")
+  return {
+   animation: false,
+   aria: { enabled: true },
+   tooltip: {},
+   series: [
+    {
+     type: "sankey",
+     data: unique(
+      rows.flatMap((row) => [
+       category(row[component.source]),
+       category(row[component.target]),
+      ]),
+     ).map((name) => ({ name })),
+     links: rows.map((row) => ({
+      source: category(row[component.source]),
+      target: category(row[component.target]),
+      value: chartNumber(row[component.value]),
+     })),
+    },
+   ],
+  };
+ if (component.type === "gauge")
+  return {
+   animation: false,
+   aria: { enabled: true },
+   series: [
+    {
+     type: "gauge",
+     data: [
+      { value: chartNumber(rows[0]?.[component.value]), name: component.label },
+     ],
+    },
+   ],
+  };
+ if (component.type === "boxplot")
+  return {
+   animation: false,
+   aria: { enabled: true },
+   tooltip: {},
+   xAxis: {
+    type: "category",
+    data: rows.map((row) => category(row[component.xField])),
+   },
+   yAxis: { type: "value" },
+   series: [
+    {
+     type: "boxplot",
+     data: rows.map((row) =>
+      [
+       component.min,
+       component.q1,
+       component.median,
+       component.q3,
+       component.max,
+      ].map((field) => chartNumber(row[field])),
+     ),
+    },
+   ],
+  };
  const xField = component.xField ?? component.x;
  const yField = component.yField ?? component.y;
  const xs = unique(rows.map((row) => category(row[xField])));
- const seriesNames = component.series ? unique(rows.map((row) => category(row[component.series]))) : [component.label];
- const points = new Map(rows.map((row) => [JSON.stringify([category(row[xField]), component.series ? category(row[component.series]) : component.label]), row]));
+ const seriesNames = component.series
+  ? unique(rows.map((row) => category(row[component.series])))
+  : [component.label];
+ const points = new Map(
+  rows.map((row) => [
+   JSON.stringify([
+    category(row[xField]),
+    component.series ? category(row[component.series]) : component.label,
+   ]),
+   row,
+  ]),
+ );
  const series = seriesNames.map((name) => {
-  const item = { name, type: component.type === "area" ? "line" : component.type, data: xs.map((x) => { const row = points.get(JSON.stringify([x, name])); return row ? chartNumber(row[yField]) : null; }) };
-  if (component.type === "line" || component.type === "area") item.connectNulls = false;
+  const item = {
+   name,
+   type: component.type === "area" ? "line" : component.type,
+   data: xs.map((x) => {
+    const row = points.get(JSON.stringify([x, name]));
+    return row ? chartNumber(row[yField]) : null;
+   }),
+  };
+  if (component.type === "line" || component.type === "area")
+   item.connectNulls = false;
   if (component.type === "area") item.areaStyle = {};
   return item;
  });
- const annotationData = (component.annotations ?? []).filter(({ at }) => xs.length && at >= xs[0] && at <= xs[xs.length - 1]).map(({ at, label }) => ({ xAxis: at, label: { formatter: label } }));
- if (annotationData.length && series.length) series[0].markLine = { symbol: "none", data: annotationData };
- const horizontal = component.type === "bar" && component.orientation === "horizontal";
- return { animation: false, aria: { enabled: true }, tooltip: { trigger: "axis" }, legend: component.series ? {} : undefined, grid: { containLabel: true }, xAxis: horizontal ? { type: "value", name: component.label } : { type: "category", data: xs }, yAxis: horizontal ? { type: "category", data: xs } : { type: "value", name: component.label }, series };
+ const annotationData = (component.annotations ?? [])
+  .filter(({ at }) => xs.length && at >= xs[0] && at <= xs[xs.length - 1])
+  .map(({ at, label }) => ({ xAxis: at, label: { formatter: label } }));
+ if (annotationData.length && series.length)
+  series[0].markLine = { symbol: "none", data: annotationData };
+ const horizontal =
+  component.type === "bar" && component.orientation === "horizontal";
+ return {
+  animation: false,
+  aria: { enabled: true },
+  tooltip: { trigger: "axis" },
+  legend: component.series ? {} : undefined,
+  grid: { containLabel: true },
+  xAxis: horizontal
+   ? { type: "value", name: component.label }
+   : { type: "category", data: xs },
+  yAxis: horizontal
+   ? { type: "category", data: xs }
+   : { type: "value", name: component.label },
+  series,
+ };
 }
 
 function chartRowLabel(component, row) {
- const metric = ["heatmap", "pie", "donut", "treemap", "sankey", "gauge"].includes(component.type) ? component.value : component.type === "boxplot" ? component.median : (component.yField ?? component.y);
- const categories = component.type === "heatmap" ? [component.xField ?? component.x, component.yField ?? component.y] : ["pie", "donut", "treemap"].includes(component.type) ? [component.name] : component.type === "sankey" ? [component.source, component.target] : component.type === "gauge" ? [] : [component.xField ?? component.x, ...(component.series ? [component.series] : [])];
+ const metric = [
+  "heatmap",
+  "pie",
+  "donut",
+  "treemap",
+  "sankey",
+  "gauge",
+ ].includes(component.type)
+  ? component.value
+  : component.type === "boxplot"
+    ? component.median
+    : (component.yField ?? component.y);
+ const categories =
+  component.type === "heatmap"
+   ? [component.xField ?? component.x, component.yField ?? component.y]
+   : ["pie", "donut", "treemap"].includes(component.type)
+     ? [component.name]
+     : component.type === "sankey"
+       ? [component.source, component.target]
+       : component.type === "gauge"
+         ? []
+         : [
+            component.xField ?? component.x,
+            ...(component.series ? [component.series] : []),
+           ];
  const prefix = categories.map((field) => category(row[field])).join(" / ");
  return `${prefix ? `${prefix}: ` : ""}${formatValue(row[metric])}`;
 }
 
 function interactionField(component) {
- if (["pie", "donut", "treemap"].includes(component.type)) return component.name;
+ if (["pie", "donut", "treemap"].includes(component.type))
+  return component.name;
  if (component.type === "sankey") return component.source;
  return component.xField ?? component.x;
 }
 
-async function selectDimension(root, config, controller, section, value, modifier, emittedDimension, emittedAction) {
- const component = config.layout.find(({ id }) => section.id === `component-${id}`);
+async function selectDimension(
+ root,
+ config,
+ controller,
+ section,
+ value,
+ modifier,
+ emittedDimension,
+ emittedAction,
+) {
+ const component = config.layout.find(
+  ({ id }) => section.id === `component-${id}`,
+ );
  const dimension = emittedDimension ?? component.interactionDimension;
- const filter = config.filters.find((entry) => entry.dimension && entry.dimension === dimension);
+ const filter = config.filters.find(
+  (entry) => entry.dimension && entry.dimension === dimension,
+ );
  if (!filter) {
-  section.dataset.localSelection = section.dataset.localSelection === value ? "" : value;
+  section.dataset.localSelection =
+   section.dataset.localSelection === value ? "" : value;
   applyTypedAction(root, emittedAction ?? component.action, value);
   return;
  }
@@ -607,7 +1010,10 @@ async function selectDimension(root, config, controller, section, value, modifie
  let next;
  if (filter.kind === "multi-select") {
   const selected = current ?? [];
-  if (modifier) next = selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
+  if (modifier)
+   next = selected.includes(value)
+    ? selected.filter((item) => item !== value)
+    : [...selected, value];
   else next = selected.length === 1 && selected[0] === value ? [] : [value];
  } else next = current === value ? null : value;
  await controller.applyFilters({ [filter.id]: next });
@@ -617,51 +1023,81 @@ async function selectDimension(root, config, controller, section, value, modifie
 function openTab(root, id) {
  const selected = root.querySelector(`[data-tab-target="${id}"]`);
  if (!selected) return;
- const buttons = [...selected.closest('[role="tablist"]').querySelectorAll('[role="tab"]')];
+ const buttons = [
+  ...selected.closest('[role="tablist"]').querySelectorAll('[role="tab"]'),
+ ];
  for (const button of buttons) {
   const active = button === selected;
   button.setAttribute("aria-selected", String(active));
-  for (const componentId of button.dataset.tabComponents.split(",").filter(Boolean)) {
+  for (const componentId of button.dataset.tabComponents
+   .split(",")
+   .filter(Boolean)) {
    const component = root.querySelector(`#component-${componentId}`);
    if (component) component.hidden = !active;
   }
  }
  root.querySelector("#dashboard").dataset.activeTab = id;
- requestAnimationFrame(() => root.querySelectorAll(".chart").forEach((node) => charts.get(node)?.resize()));
+ requestAnimationFrame(() =>
+  root.querySelectorAll(".chart").forEach((node) => charts.get(node)?.resize()),
+ );
 }
 
 function applyTypedAction(root, action, value) {
  if (!action) return;
  const dashboard = root.querySelector("#dashboard");
  if (action.openTab) openTab(root, action.openTab);
- if (action.drilldown) dashboard.dataset.drilldown = `${action.drilldown}:${value}`;
+ if (action.drilldown)
+  dashboard.dataset.drilldown = `${action.drilldown}:${value}`;
 }
 
 async function applyBrush(root, config, controller, section) {
- const component = config.layout.find(({ id }) => section.id === `component-${id}`);
- const filter = config.filters.find(({ dimension, kind }) => dimension === component.brushDimension && kind === "date-range");
+ const component = config.layout.find(
+  ({ id }) => section.id === `component-${id}`,
+ );
+ const filter = config.filters.find(
+  ({ dimension, kind }) =>
+   dimension === component.brushDimension && kind === "date-range",
+ );
  if (!filter) return;
  const from = section.querySelector("[data-brush-from]").value;
  const through = section.querySelector("[data-brush-through]").value;
- await controller.applyFilters({ [`${filter.id}_from`]: from || null, [`${filter.id}_to`]: through ? addDays(through, 1) : null });
+ await controller.applyFilters({
+  [`${filter.id}_from`]: from || null,
+  [`${filter.id}_to`]: through ? addDays(through, 1) : null,
+ });
 }
 
 function readFilters(root, filters) {
  const values = {};
  for (const filter of filters) {
-  if (["select", "single-select", "multi-select", "option-search"].includes(filter.kind)) {
-   const selected = [...root.querySelector(`#filter-${filter.id}`).selectedOptions].map((entry) => entry.featherbiValue);
-   values[filter.id] = filter.kind === "multi-select" ? selected : selected[0] ?? null;
+  if (
+   ["select", "single-select", "multi-select", "option-search"].includes(
+    filter.kind,
+   )
+  ) {
+   const selected = [
+    ...root.querySelector(`#filter-${filter.id}`).selectedOptions,
+   ].map((entry) => entry.featherbiValue);
+   values[filter.id] =
+    filter.kind === "multi-select" ? selected : (selected[0] ?? null);
   } else if (filter.kind === "date-range" || filter.kind === "numeric-range") {
    const from = root.querySelector(`#filter-${filter.id}-from`).value;
    const through = root.querySelector(`#filter-${filter.id}-through`).value;
-   values[`${filter.id}_from`] = from === "" ? null : filter.kind === "numeric-range" ? Number(from) : from;
-   values[`${filter.id}_to`] = through === "" ? null : filter.kind === "numeric-range" ? Number(through) : addDays(through, 1);
+   values[`${filter.id}_from`] =
+    from === "" ? null : filter.kind === "numeric-range" ? Number(from) : from;
+   values[`${filter.id}_to`] =
+    through === ""
+     ? null
+     : filter.kind === "numeric-range"
+       ? Number(through)
+       : addDays(through, 1);
   } else if (filter.kind === "boolean") {
    const input = root.querySelector(`#filter-${filter.id}`);
    values[filter.id] = input.indeterminate ? null : input.checked;
   } else {
-   values[filter.id] = root.querySelector(`#filter-${filter.id}-all`).checked ? null : root.querySelector(`#filter-${filter.id}`).value;
+   values[filter.id] = root.querySelector(`#filter-${filter.id}-all`).checked
+    ? null
+    : root.querySelector(`#filter-${filter.id}`).value;
   }
  }
  return values;
@@ -670,7 +1106,10 @@ function readFilters(root, filters) {
 function selectedFiles(root, sources) {
  return Object.fromEntries(
   sources
-   .map((source) => [source.id, root.querySelector(`#source-${source.id}`).files[0]])
+   .map((source) => [
+    source.id,
+    root.querySelector(`#source-${source.id}`).files[0],
+   ])
    .filter(([, file]) => file),
  );
 }
@@ -706,12 +1145,17 @@ function formatValue(value, decimals) {
 function formatScalar(value) {
  if (value == null) return "(missing)";
  if (value === "") return "(empty)";
- if (value instanceof Date) return value.toISOString().replace("T", " ").replace("Z", "");
+ if (value instanceof Date)
+  return value.toISOString().replace("T", " ").replace("Z", "");
  return String(value);
 }
 
 function category(value) {
- return value == null ? "(missing)" : value === "" ? "(empty)" : formatScalar(value);
+ return value == null
+  ? "(missing)"
+  : value === ""
+    ? "(empty)"
+    : formatScalar(value);
 }
 
 function chartNumber(value) {

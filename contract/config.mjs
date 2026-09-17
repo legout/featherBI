@@ -267,11 +267,27 @@ function collectSemanticIssues(config, issues) {
         `date-range filter requires a date or timestamp column, found ${JSON.stringify(column.type)}`,
       );
     }
-    if (column !== undefined && filter.kind === "numeric-range" && !["integer", "number"].includes(column.type)) {
-      issue(basePath, "filter.column-type", `numeric-range filter requires an integer or number column, found ${JSON.stringify(column.type)}`);
+    if (
+      column !== undefined &&
+      filter.kind === "numeric-range" &&
+      !["integer", "number"].includes(column.type)
+    ) {
+      issue(
+        basePath,
+        "filter.column-type",
+        `numeric-range filter requires an integer or number column, found ${JSON.stringify(column.type)}`,
+      );
     }
-    if (column !== undefined && filter.kind === "boolean" && column.type !== "boolean") {
-      issue(basePath, "filter.column-type", `boolean filter requires a boolean column, found ${JSON.stringify(column.type)}`);
+    if (
+      column !== undefined &&
+      filter.kind === "boolean" &&
+      column.type !== "boolean"
+    ) {
+      issue(
+        basePath,
+        "filter.column-type",
+        `boolean filter requires a boolean column, found ${JSON.stringify(column.type)}`,
+      );
     }
     validateFilterDefault(filter, column, basePath, issue);
   }
@@ -303,8 +319,18 @@ function collectSemanticIssues(config, issues) {
   for (const [index, container] of config.layout.entries()) {
     for (const tab of container.tabs ?? []) {
       for (const componentId of tab.components ?? []) {
-        if (!declaredComponentIds.has(componentId)) issue(`layout[${index}].tabs`, "component.unknown-id", `tab references unknown component ${JSON.stringify(componentId)}`);
-        if (alternatives.has(componentId)) issue(`layout[${index}].tabs`, "component.multiple-tabs", `component ${JSON.stringify(componentId)} belongs to more than one tab`);
+        if (!declaredComponentIds.has(componentId))
+          issue(
+            `layout[${index}].tabs`,
+            "component.unknown-id",
+            `tab references unknown component ${JSON.stringify(componentId)}`,
+          );
+        if (alternatives.has(componentId))
+          issue(
+            `layout[${index}].tabs`,
+            "component.multiple-tabs",
+            `component ${JSON.stringify(componentId)} belongs to more than one tab`,
+          );
         alternatives.set(componentId, { owner: container.id, tab: tab.id });
       }
     }
@@ -321,15 +347,33 @@ function collectSemanticIssues(config, issues) {
       componentIds.add(component.id);
     }
     if (component.x + component.width - 1 > 12) {
-      issue(`layout[${index}].width`, "layout.out-of-bounds", "placement exceeds the 12-column grid");
+      issue(
+        `layout[${index}].width`,
+        "layout.out-of-bounds",
+        "placement exceeds the 12-column grid",
+      );
     }
     for (let earlier = 0; earlier < index; earlier += 1) {
       const other = config.layout[earlier];
       const currentAlternative = alternatives.get(component.id);
       const priorAlternative = alternatives.get(other.id);
-      const ownedAlternatives = currentAlternative && priorAlternative && currentAlternative.owner === priorAlternative.owner && currentAlternative.tab !== priorAlternative.tab;
-      if (!ownedAlternatives && component.x < other.x + other.width && other.x < component.x + component.width && component.y < other.y + other.height && other.y < component.y + component.height) {
-        issue(`layout[${index}]`, "layout.overlap", `placement overlaps component ${JSON.stringify(other.id)}`);
+      const ownedAlternatives =
+        currentAlternative &&
+        priorAlternative &&
+        currentAlternative.owner === priorAlternative.owner &&
+        currentAlternative.tab !== priorAlternative.tab;
+      if (
+        !ownedAlternatives &&
+        component.x < other.x + other.width &&
+        other.x < component.x + component.width &&
+        component.y < other.y + other.height &&
+        other.y < component.y + component.height
+      ) {
+        issue(
+          `layout[${index}]`,
+          "layout.overlap",
+          `placement overlaps component ${JSON.stringify(other.id)}`,
+        );
       }
     }
   }
@@ -430,9 +474,10 @@ function validateFilterDefault(filter, column, basePath, issue) {
       }
       let valid = true;
       for (const key of ["from", "through"]) {
-        const validValue = filter.kind === "numeric-range"
-          ? typeof value[key] === "number" && Number.isFinite(value[key])
-          : typeof value[key] === "string" && isValidCalendarDate(value[key]);
+        const validValue =
+          filter.kind === "numeric-range"
+            ? typeof value[key] === "number" && Number.isFinite(value[key])
+            : typeof value[key] === "string" && isValidCalendarDate(value[key]);
         if (!validValue) {
           issue(
             `${defaultPath}.${key}`,
@@ -463,11 +508,21 @@ function validateFilterDefault(filter, column, basePath, issue) {
     return;
   }
   if (filter.kind === "multi-select") {
-    if (!Array.isArray(value)) issue(defaultPath, "filter.default-type", "multi-select default must be an array or null");
+    if (!Array.isArray(value))
+      issue(
+        defaultPath,
+        "filter.default-type",
+        "multi-select default must be an array or null",
+      );
     return;
   }
   if (filter.kind === "boolean") {
-    if (typeof value !== "boolean") issue(defaultPath, "filter.default-type", "boolean filter default must be a boolean or null");
+    if (typeof value !== "boolean")
+      issue(
+        defaultPath,
+        "filter.default-type",
+        "boolean filter default must be a boolean or null",
+      );
     return;
   }
   if (filter.kind === "text") {

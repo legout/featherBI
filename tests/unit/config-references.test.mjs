@@ -25,12 +25,13 @@ async function base() {
  );
 }
 
-test("contract 1 charts may share ordinary result field names", async () => {
+test("charts may share ordinary result field names", async () => {
  const config = await base();
  config.layout.push({
   ...config.layout[1],
   id: "by_station_again",
   label: "Records by station again",
+  y: 4,
  });
  assert.equal(validateConfig(config).ok, true);
 });

@@ -99,12 +99,11 @@ test("manual YAML and external SQL compile deterministically to strict contract 
  assert.equal(first.json.includes("queries/total.sql"), false);
 });
 
-test("contract 1 stays accepted and unsupported or unknown runtime fields fail", async () => {
+test("removed contract 1 runtime configs are rejected and unknown fields fail", async () => {
  const v1 = JSON.parse(
   await readFile(new URL("../fixtures/minimal.config.json", import.meta.url), "utf8"),
  );
- assert.equal(validateConfig(v1).ok, true);
- assert.equal(validateConfig({ ...v1, contract: 3 }).ok, false);
+ assert.equal(validateConfig({ ...v1, contract: 1 }).ok, false);
  const v2 = { ...(await compileProject((await project()).dashboard)).config, mystery: true };
  assert.equal(validateConfig(v2).ok, false);
 });

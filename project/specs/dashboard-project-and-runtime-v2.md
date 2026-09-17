@@ -1,6 +1,6 @@
 # featherBI dashboard project and runtime contract v2
 
-Status: owner-approved target specification captured from the 2026-09-16 grilling/design session; written-review gate pending. Runtime v1 remains the implemented behavior until the staged v2 migration is integrated.
+Status: owner-approved target specification captured from the 2026-09-16 grilling/design session; written-review gate pending. The staged v2 migration is complete: this specification is the implemented behavior, and runtime contract v1 is removed.
 
 ## 1. Purpose and authority
 
@@ -14,7 +14,7 @@ This specification defines the target workflow:
 6. edit the source project and refresh the preview until the user approves it; and
 7. package the approved dashboard as external-data ZIP delivery.
 
-It expands and ultimately replaces [runtime contract v1](runtime-contract-v1.md). The final v2 state does not accept v1 runtime configs. Staged implementation may temporarily support both versions only to keep each migration slice coherent and green.
+It expands and has now replaced [runtime contract v1](runtime-contract-v1.md), which survives as a superseded historical specification. The final v2 state does not accept v1 runtime configs. Staged implementation used temporary dual support only while each migration slice stayed coherent and green.
 
 Sources and rationale:
 
@@ -261,7 +261,7 @@ Skill evaluation covers positive triggers, nearby negative triggers, single- and
 
 ## 13. Migration
 
-The final target replaces runtime config v1 with contract v2 and migrates the checked AP dashboard/project. Staged implementation may use expand-contract sequencing:
+The v2 migration replaced runtime config v1 with contract v2 and migrated the checked AP dashboard/project. It used expand-contract sequencing:
 
 1. introduce project/compiler and contract-v2 validation beside v1;
 2. migrate runtime capabilities and the AP dashboard while both paths remain green;

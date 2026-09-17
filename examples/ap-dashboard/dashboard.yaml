@@ -1,0 +1,210 @@
+project: 1
+title: AP inspection activity and data quality
+sources:
+  - id: ap
+    type: parquet
+    file: unified_ap.parquet
+    schema:
+      source: {type: string, nullable: false}
+      order_number: {type: string, nullable: false}
+      test_station_identifier: {type: string, nullable: false}
+      sequence_number: {type: string, nullable: true}
+      G0003: {type: string, nullable: true}
+      product_mlfb: {type: string, nullable: true}
+      inspection_date: {type: timestamp, nullable: false}
+      is_last_measurement: {type: boolean, nullable: true}
+filters:
+  - id: date
+    kind: date-range
+    source: ap
+    column: inspection_date
+    default: {kind: latest-days, days: 30}
+  - id: source
+    kind: select
+    source: ap
+    column: source
+    default: null
+  - id: station
+    kind: select
+    source: ap
+    column: test_station_identifier
+    default: null
+  - id: product
+    kind: select
+    source: ap
+    column: product_mlfb
+    default: null
+  - id: order
+    kind: text
+    source: ap
+    column: order_number
+    default: null
+queries:
+  summary:
+    sql: queries/summary.sql
+    params: [date_from, date_to, source, station, product, order]
+  daily:
+    sql: queries/daily.sql
+    params: [date_from, date_to, source, station, product, order]
+  by_station:
+    sql: queries/by_station.sql
+    params: [date_from, date_to, source, station, product, order]
+  top_products:
+    sql: queries/top_products.sql
+    params: [date_from, date_to, source, station, product, order]
+  g0003_codes:
+    sql: queries/g0003_codes.sql
+    params: [date_from, date_to, source, station, product, order]
+  station_day:
+    sql: queries/station_day.sql
+    params: [date_from, date_to, source, station, product, order]
+  recent_records:
+    sql: queries/recent_records.sql
+    params: [date_from, date_to, source, station, product, order]
+layout:
+  - id: kpi_records
+    type: kpi
+    query: summary
+    field: records
+    label: Inspection records
+    x: 1
+    y: 1
+    width: 3
+    height: 1
+  - id: kpi_orders
+    type: kpi
+    query: summary
+    field: orders
+    label: Distinct orders
+    x: 4
+    y: 1
+    width: 3
+    height: 1
+  - id: kpi_products
+    type: kpi
+    query: summary
+    field: products
+    label: Distinct products
+    x: 7
+    y: 1
+    width: 3
+    height: 1
+  - id: kpi_stations
+    type: kpi
+    query: summary
+    field: stations
+    label: Active stations
+    x: 10
+    y: 1
+    width: 3
+    height: 1
+  - id: kpi_code
+    type: kpi
+    query: summary
+    field: code_present
+    label: Records with a G0003 code
+    x: 1
+    y: 2
+    width: 3
+    height: 1
+  - id: kpi_code_pct
+    type: kpi
+    query: summary
+    field: code_present_pct
+    label: "G0003 presence (%)"
+    decimals: 2
+    x: 4
+    y: 2
+    width: 3
+    height: 1
+  - id: kpi_non_last
+    type: kpi
+    query: summary
+    field: non_last
+    label: Records not marked as last measurement
+    x: 7
+    y: 2
+    width: 3
+    height: 1
+  - id: kpi_non_last_pct
+    type: kpi
+    query: summary
+    field: non_last_pct
+    label: "Not marked as last measurement (%)"
+    decimals: 2
+    x: 10
+    y: 2
+    width: 3
+    height: 1
+  - id: daily_volume
+    type: line
+    query: daily
+    xField: day
+    yField: records
+    series: source
+    label: Daily inspection record volume by source
+    annotations:
+      - {at: '2023-11-22', label: ap1 to ap2 source transition}
+    x: 1
+    y: 3
+    width: 12
+    height: 2
+  - id: station_activity
+    type: bar
+    query: by_station
+    xField: station
+    yField: records
+    orientation: horizontal
+    label: Station activity (inspection records)
+    x: 1
+    y: 5
+    width: 12
+    height: 2
+  - id: top_products_chart
+    type: bar
+    query: top_products
+    xField: product
+    yField: records
+    label: Top product MLFBs by inspection record count
+    x: 1
+    y: 7
+    width: 12
+    height: 2
+  - id: g0003_frequency
+    type: bar
+    query: g0003_codes
+    xField: code
+    yField: records
+    label: G0003 frequency among non-null codes
+    x: 1
+    y: 9
+    width: 12
+    height: 2
+  - id: station_day_heatmap
+    type: heatmap
+    query: station_day
+    xField: day
+    yField: station
+    value: records
+    label: Station activity by day (inspection records)
+    x: 1
+    y: 11
+    width: 12
+    height: 3
+  - id: recent_records
+    type: table
+    query: recent_records
+    label: Filtered inspection records
+    columns:
+      - {field: inspection_date, label: Inspection date}
+      - {field: order_number, label: Order}
+      - {field: product_mlfb, label: Product MLFB}
+      - {field: test_station_identifier, label: Station}
+      - {field: source, label: Source}
+      - {field: sequence_number, label: Sequence}
+      - {field: G0003, label: G0003}
+      - {field: is_last_measurement, label: Last measurement}
+    x: 1
+    y: 14
+    width: 12
+    height: 4

@@ -1,5 +1,5 @@
 {
-  "contract": 1,
+  "contract": 2,
   "app": "grid",
   "title": "AP inspection activity (synthetic fixtures)",
   "data": {
@@ -10,14 +10,38 @@
         "type": "parquet",
         "file": "inspections.parquet",
         "schema": {
-          "source": { "type": "string", "nullable": false },
-          "order_number": { "type": "string", "nullable": false },
-          "test_station_identifier": { "type": "string", "nullable": false },
-          "sequence_number": { "type": "string", "nullable": true },
-          "G0003": { "type": "string", "nullable": true },
-          "product_mlfb": { "type": "string", "nullable": true },
-          "inspection_date": { "type": "timestamp", "nullable": false },
-          "is_last_measurement": { "type": "boolean", "nullable": true }
+          "source": {
+            "type": "string",
+            "nullable": false
+          },
+          "order_number": {
+            "type": "string",
+            "nullable": false
+          },
+          "test_station_identifier": {
+            "type": "string",
+            "nullable": false
+          },
+          "sequence_number": {
+            "type": "string",
+            "nullable": true
+          },
+          "G0003": {
+            "type": "string",
+            "nullable": true
+          },
+          "product_mlfb": {
+            "type": "string",
+            "nullable": true
+          },
+          "inspection_date": {
+            "type": "timestamp",
+            "nullable": false
+          },
+          "is_last_measurement": {
+            "type": "boolean",
+            "nullable": true
+          }
         }
       },
       {
@@ -25,8 +49,14 @@
         "type": "parquet",
         "file": "products.parquet",
         "schema": {
-          "product_mlfb": { "type": "string", "nullable": false },
-          "product_label": { "type": "string", "nullable": false }
+          "product_mlfb": {
+            "type": "string",
+            "nullable": false
+          },
+          "product_label": {
+            "type": "string",
+            "nullable": false
+          }
         }
       }
     ]
@@ -37,7 +67,10 @@
       "kind": "date-range",
       "source": "inspections",
       "column": "inspection_date",
-      "default": { "kind": "latest-days", "days": 30 }
+      "default": {
+        "kind": "latest-days",
+        "days": 30
+      }
     },
     {
       "id": "source",
@@ -71,31 +104,80 @@
   "queries": {
     "summary": {
       "sql": "SELECT count(*) AS records, count(DISTINCT order_number) AS orders, count(DISTINCT product_mlfb) AS products, count(DISTINCT test_station_identifier) AS stations, count(*) FILTER (WHERE G0003 IS NOT NULL) AS code_present, round(100.0 * count(*) FILTER (WHERE G0003 IS NOT NULL) / nullif(count(*), 0), 2) AS code_present_pct, count(*) FILTER (WHERE is_last_measurement = false) AS non_last, round(100.0 * count(*) FILTER (WHERE is_last_measurement = false) / nullif(count(*), 0), 2) AS non_last_pct FROM inspections WHERE ($date_from IS NULL OR CAST(inspection_date AS DATE) >= $date_from) AND ($date_to IS NULL OR CAST(inspection_date AS DATE) < $date_to) AND ($source IS NULL OR source = $source) AND ($station IS NULL OR test_station_identifier = $station) AND ($product IS NULL OR product_mlfb = $product) AND ($order IS NULL OR order_number = $order)",
-      "params": ["date_from", "date_to", "source", "station", "product", "order"]
+      "params": [
+        "date_from",
+        "date_to",
+        "source",
+        "station",
+        "product",
+        "order"
+      ]
     },
     "daily": {
       "sql": "SELECT CAST(date_trunc('day', inspection_date) AS DATE) AS day, source, count(*) AS records FROM inspections WHERE ($date_from IS NULL OR CAST(inspection_date AS DATE) >= $date_from) AND ($date_to IS NULL OR CAST(inspection_date AS DATE) < $date_to) AND ($source IS NULL OR source = $source) AND ($station IS NULL OR test_station_identifier = $station) AND ($product IS NULL OR product_mlfb = $product) AND ($order IS NULL OR order_number = $order) GROUP BY day, source ORDER BY day",
-      "params": ["date_from", "date_to", "source", "station", "product", "order"]
+      "params": [
+        "date_from",
+        "date_to",
+        "source",
+        "station",
+        "product",
+        "order"
+      ]
     },
     "by_station": {
       "sql": "SELECT test_station_identifier AS station, count(*) AS records FROM inspections WHERE ($date_from IS NULL OR CAST(inspection_date AS DATE) >= $date_from) AND ($date_to IS NULL OR CAST(inspection_date AS DATE) < $date_to) AND ($source IS NULL OR source = $source) AND ($station IS NULL OR test_station_identifier = $station) AND ($product IS NULL OR product_mlfb = $product) AND ($order IS NULL OR order_number = $order) GROUP BY station ORDER BY records DESC, station",
-      "params": ["date_from", "date_to", "source", "station", "product", "order"]
+      "params": [
+        "date_from",
+        "date_to",
+        "source",
+        "station",
+        "product",
+        "order"
+      ]
     },
     "top_products": {
       "sql": "WITH grouped AS (SELECT COALESCE(p.product_label, i.product_mlfb) AS product, count(*) AS records FROM inspections i LEFT JOIN products p ON i.product_mlfb = p.product_mlfb WHERE ($date_from IS NULL OR CAST(i.inspection_date AS DATE) >= $date_from) AND ($date_to IS NULL OR CAST(i.inspection_date AS DATE) < $date_to) AND ($source IS NULL OR i.source = $source) AND ($station IS NULL OR i.test_station_identifier = $station) AND ($product IS NULL OR i.product_mlfb = $product) AND ($order IS NULL OR i.order_number = $order) GROUP BY product), ranked AS (SELECT product, records, row_number() OVER (ORDER BY records DESC, product) AS rn FROM grouped) SELECT CASE WHEN rn <= 10 THEN product ELSE 'Other' END AS product, sum(records) AS records FROM ranked GROUP BY product ORDER BY records DESC, product",
-      "params": ["date_from", "date_to", "source", "station", "product", "order"]
+      "params": [
+        "date_from",
+        "date_to",
+        "source",
+        "station",
+        "product",
+        "order"
+      ]
     },
     "g0003_codes": {
       "sql": "SELECT G0003 AS code, count(*) AS records FROM inspections WHERE G0003 IS NOT NULL AND ($date_from IS NULL OR CAST(inspection_date AS DATE) >= $date_from) AND ($date_to IS NULL OR CAST(inspection_date AS DATE) < $date_to) AND ($source IS NULL OR source = $source) AND ($station IS NULL OR test_station_identifier = $station) AND ($product IS NULL OR product_mlfb = $product) AND ($order IS NULL OR order_number = $order) GROUP BY code ORDER BY records DESC, code",
-      "params": ["date_from", "date_to", "source", "station", "product", "order"]
+      "params": [
+        "date_from",
+        "date_to",
+        "source",
+        "station",
+        "product",
+        "order"
+      ]
     },
     "station_day": {
       "sql": "SELECT CAST(date_trunc('day', inspection_date) AS DATE) AS day, test_station_identifier AS station, count(*) AS records FROM inspections WHERE ($date_from IS NULL OR CAST(inspection_date AS DATE) >= $date_from) AND ($date_to IS NULL OR CAST(inspection_date AS DATE) < $date_to) AND ($source IS NULL OR source = $source) AND ($station IS NULL OR test_station_identifier = $station) AND ($product IS NULL OR product_mlfb = $product) AND ($order IS NULL OR order_number = $order) GROUP BY day, station ORDER BY day, station",
-      "params": ["date_from", "date_to", "source", "station", "product", "order"]
+      "params": [
+        "date_from",
+        "date_to",
+        "source",
+        "station",
+        "product",
+        "order"
+      ]
     },
     "recent_records": {
       "sql": "SELECT inspection_date, order_number, product_mlfb, test_station_identifier, source, sequence_number, G0003, is_last_measurement FROM inspections WHERE ($date_from IS NULL OR CAST(inspection_date AS DATE) >= $date_from) AND ($date_to IS NULL OR CAST(inspection_date AS DATE) < $date_to) AND ($source IS NULL OR source = $source) AND ($station IS NULL OR test_station_identifier = $station) AND ($product IS NULL OR product_mlfb = $product) AND ($order IS NULL OR order_number = $order) ORDER BY inspection_date DESC, order_number, sequence_number NULLS LAST",
-      "params": ["date_from", "date_to", "source", "station", "product", "order"]
+      "params": [
+        "date_from",
+        "date_to",
+        "source",
+        "station",
+        "product",
+        "order"
+      ]
     }
   },
   "layout": [
@@ -104,35 +186,55 @@
       "type": "kpi",
       "query": "summary",
       "field": "records",
-      "label": "Inspection records"
+      "label": "Inspection records",
+      "x": 1,
+      "y": 1,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "kpi_orders",
       "type": "kpi",
       "query": "summary",
       "field": "orders",
-      "label": "Distinct orders"
+      "label": "Distinct orders",
+      "x": 1,
+      "y": 2,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "kpi_products",
       "type": "kpi",
       "query": "summary",
       "field": "products",
-      "label": "Distinct products"
+      "label": "Distinct products",
+      "x": 1,
+      "y": 3,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "kpi_stations",
       "type": "kpi",
       "query": "summary",
       "field": "stations",
-      "label": "Active stations"
+      "label": "Active stations",
+      "x": 1,
+      "y": 4,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "kpi_code_present",
       "type": "kpi",
       "query": "summary",
       "field": "code_present",
-      "label": "Records with G0003 code"
+      "label": "Records with G0003 code",
+      "x": 1,
+      "y": 5,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "kpi_code_pct",
@@ -140,14 +242,22 @@
       "query": "summary",
       "field": "code_present_pct",
       "label": "G0003 presence",
-      "decimals": 2
+      "decimals": 2,
+      "x": 1,
+      "y": 6,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "kpi_non_last",
       "type": "kpi",
       "query": "summary",
       "field": "non_last",
-      "label": "Records not marked last measurement"
+      "label": "Records not marked last measurement",
+      "x": 1,
+      "y": 7,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "kpi_non_last_pct",
@@ -155,53 +265,80 @@
       "query": "summary",
       "field": "non_last_pct",
       "label": "Not marked last measurement",
-      "decimals": 2
+      "decimals": 2,
+      "x": 1,
+      "y": 8,
+      "width": 12,
+      "height": 1
     },
     {
       "id": "daily_volume",
       "type": "line",
       "query": "daily",
-      "x": "day",
-      "y": "records",
       "series": "source",
       "label": "Daily record volume by source",
       "annotations": [
-        { "at": "2023-11-22", "label": "ap1 to ap2 source transition" }
-      ]
+        {
+          "at": "2023-11-22",
+          "label": "ap1 to ap2 source transition"
+        }
+      ],
+      "xField": "day",
+      "yField": "records",
+      "x": 1,
+      "y": 9,
+      "width": 12,
+      "height": 2
     },
     {
       "id": "station_activity",
       "type": "bar",
       "query": "by_station",
-      "x": "station",
-      "y": "records",
       "orientation": "horizontal",
-      "label": "Records by station"
+      "label": "Records by station",
+      "xField": "station",
+      "yField": "records",
+      "x": 1,
+      "y": 11,
+      "width": 12,
+      "height": 2
     },
     {
       "id": "top_products_chart",
       "type": "bar",
       "query": "top_products",
-      "x": "product",
-      "y": "records",
-      "label": "Top products by record count"
+      "label": "Top products by record count",
+      "xField": "product",
+      "yField": "records",
+      "x": 1,
+      "y": 13,
+      "width": 12,
+      "height": 2
     },
     {
       "id": "g0003_frequency",
       "type": "bar",
       "query": "g0003_codes",
-      "x": "code",
-      "y": "records",
-      "label": "G0003 code frequency"
+      "label": "G0003 code frequency",
+      "xField": "code",
+      "yField": "records",
+      "x": 1,
+      "y": 15,
+      "width": 12,
+      "height": 2
     },
     {
       "id": "station_day_heatmap",
       "type": "heatmap",
       "query": "station_day",
-      "x": "day",
-      "y": "station",
       "value": "records",
-      "label": "Station activity by day"
+      "label": "Station activity by day",
+      "xField": "day",
+      "yField": "station",
+      "x": 1,
+      "y": 17,
+      "width": 12,
+      "height": 3
     },
     {
       "id": "recent_records",
@@ -209,15 +346,44 @@
       "query": "recent_records",
       "label": "Recent inspection records",
       "columns": [
-        { "field": "inspection_date", "label": "Inspection date" },
-        { "field": "order_number", "label": "Order" },
-        { "field": "product_mlfb", "label": "Product MLFB" },
-        { "field": "test_station_identifier", "label": "Station" },
-        { "field": "source", "label": "Source" },
-        { "field": "sequence_number", "label": "Sequence" },
-        { "field": "G0003", "label": "G0003" },
-        { "field": "is_last_measurement", "label": "Last measurement" }
-      ]
+        {
+          "field": "inspection_date",
+          "label": "Inspection date"
+        },
+        {
+          "field": "order_number",
+          "label": "Order"
+        },
+        {
+          "field": "product_mlfb",
+          "label": "Product MLFB"
+        },
+        {
+          "field": "test_station_identifier",
+          "label": "Station"
+        },
+        {
+          "field": "source",
+          "label": "Source"
+        },
+        {
+          "field": "sequence_number",
+          "label": "Sequence"
+        },
+        {
+          "field": "G0003",
+          "label": "G0003"
+        },
+        {
+          "field": "is_last_measurement",
+          "label": "Last measurement"
+        }
+      ],
+      "x": 1,
+      "y": 20,
+      "width": 12,
+      "height": 4
     }
-  ]
+  ],
+  "theme": "neutral"
 }

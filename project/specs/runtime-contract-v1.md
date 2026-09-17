@@ -1,6 +1,6 @@
 # featherBI runtime and config contract v1
 
-Status: approved behavioral specification, revised by the owner's 2026-09-15 external-data-only decision. The active execution map is [`project/plans/mvp.md`](../plans/mvp.md); archived phase plans preserve history only. Execution uses proportional assurance and retains supervised candidate, integration, and publication gates.
+Status: superseded historical specification. The runtime contract v1 behavior this document defined was removed when the staged v2 migration completed in [dashboard project and runtime v2](dashboard-project-and-runtime-v2.md) (issue #8). It is retained only as historical authority for what v1 meant; no supported caller, config, or tool accepts `contract: 1` anymore.
 
 ## 1. Authority and scope
 

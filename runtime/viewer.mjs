@@ -276,17 +276,15 @@ function renderPlaygroundResult(playground, queryResult, renderer, capabilities)
 
 function buildLayout(container, config) {
  const components = config.layout;
- const contract = config.contract;
  container.replaceChildren();
- for (const [index, component] of components.entries()) {
+ for (const component of components) {
   const section = document.createElement("section");
   section.id = `component-${component.id}`;
   section.dataset.componentType = component.type;
-  const legacyWidth = component.type === "kpi" ? 3 : component.type === "bar" ? 6 : 12;
-  section.style.setProperty("--grid-x", contract === 2 ? component.x : 1);
-  section.style.setProperty("--grid-y", contract === 2 ? component.y : index + 1);
-  section.style.setProperty("--grid-width", contract === 2 ? component.width : legacyWidth);
-  section.style.setProperty("--grid-height", contract === 2 ? component.height : 1);
+  section.style.setProperty("--grid-x", component.x);
+  section.style.setProperty("--grid-y", component.y);
+  section.style.setProperty("--grid-width", component.width);
+  section.style.setProperty("--grid-height", component.height);
   const heading = document.createElement("h2");
   heading.textContent = component.label;
   section.append(heading);

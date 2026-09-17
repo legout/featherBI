@@ -23,7 +23,10 @@ try {
    "--format", required(options.format, "--format"),
   ];
   if (options.includeValues) profileArgs.push("--include-values");
-  if (options.output) profileArgs.push("--output", options.output);
+  if (options.output) {
+   await mkdir(path.dirname(path.resolve(options.output)), { recursive: true });
+   profileArgs.push("--output", options.output);
+  }
   await run("uv", profileArgs);
  } else if (command === "compile") {
   const options = parseSimpleArgs(args);
@@ -139,10 +142,7 @@ async function run(command, args) {
 
 async function ensureValidator() {
  try {
-  await Promise.all([
-   access(path.join(rootDir, ".generated", "validate-config-v1.mjs")),
-   access(path.join(rootDir, ".generated", "validate-config-v2.mjs")),
-  ]);
+  await access(path.join(rootDir, ".generated", "validate-config-v2.mjs"));
  } catch {
   await import("../scripts/build-contract.mjs");
  }

@@ -4,7 +4,7 @@
 
 Goal: a simple, fully functional featherBI MVP. Optimize for working user-visible features, not process ceremony or test volume.
 
-- The active execution map is `docs/plans/mvp.md`. Behavior authority is `docs/specs/runtime-contract-v1.md`; accepted architecture is `docs/adr/`; vocabulary is `CONTEXT.md`; artifact routing is `docs/agents/artifacts.md`.
+- The active execution map is `docs/plans/mvp.md`. Behavior authority is `docs/specs/dashboard-project-and-runtime-v2.md`; `docs/specs/runtime-contract-v1.md` is superseded historical migration evidence; accepted architecture is `docs/adr/`; vocabulary is `CONTEXT.md`; artifact routing is `docs/agents/artifacts.md`.
 - Execute approved work through `orchestrate-implementation` in its default supervised mode: one writer per managed worktree, with candidate assembly, integration, and publication kept behind their explicit gates.
 - Plan and implement vertical slices. Give each validation unit exactly one obligation (`new-test`, `existing-check`, or `no-new-test`); do not test Ajv/DuckDB-WASM library behavior or build edge-case matrices without a named failure mode.
 - Code changes use the smallest relevant check; runtime/browser changes include the browser gate. Documentation-only changes need focused link/diff inspection, not the application test suite. Report skipped checks honestly.

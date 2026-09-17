@@ -32,9 +32,11 @@ test("minimal example config is valid", async () => {
  assert.equal(result.value.data.sources[0].id, "inspections");
 });
 
-test("unsupported contract version is rejected", async () => {
- const result = validateConfig({ ...(await loadMinimalConfig()), contract: 3 });
- assert.equal(result.ok, false);
+test("unsupported contract versions are rejected", async () => {
+ const config = await loadMinimalConfig();
+ for (const removed of [1, 3]) {
+  assert.equal(validateConfig({ ...config, contract: removed }).ok, false);
+ }
 });
 
 test("unknown top-level property is rejected", async () => {

@@ -1,6 +1,7 @@
 {
-  "contract": 1,
+  "contract": 2,
   "app": "grid",
+  "theme": "neutral",
   "title": "Inspection activity",
   "data": {
     "mode": "upload",
@@ -32,7 +33,7 @@
     }
   },
   "layout": [
-    {"id": "records", "type": "kpi", "query": "summary", "field": "records", "label": "Inspection records"},
-    {"id": "by_station", "type": "bar", "query": "stations", "x": "station", "y": "records", "label": "Records by station"}
+    {"id": "records", "type": "kpi", "query": "summary", "field": "records", "label": "Inspection records", "x": 1, "y": 1, "width": 12, "height": 1},
+    {"id": "by_station", "type": "bar", "query": "stations", "xField": "station", "yField": "records", "label": "Records by station", "x": 1, "y": 2, "width": 12, "height": 2}
   ]
 }

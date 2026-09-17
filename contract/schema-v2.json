@@ -57,6 +57,63 @@
     },
     "themeCss": {
       "type": "string"
+    },
+    "rendererPreset": {
+      "enum": [
+        "standard",
+        "perspective-first"
+      ],
+      "default": "standard"
+    },
+    "playground": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renderer",
+        "models",
+        "schemas"
+      ],
+      "properties": {
+        "renderer": {
+          "enum": [
+            "ag-grid",
+            "perspective"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "sql"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/definitions/id"
+              },
+              "sql": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "schemas": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/definitions/id"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/columnName"
+            },
+            "uniqueItems": true
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -261,7 +318,8 @@
             "sankey",
             "gauge",
             "boxplot",
-            "table"
+            "table",
+            "perspective"
           ]
         },
         "label": {
@@ -447,6 +505,9 @@
             "hide",
             "zero"
           ]
+        },
+        "perspective": {
+          "$ref": "#/definitions/perspectiveConfig"
         }
       },
       "allOf": [
@@ -468,7 +529,8 @@
                   "sankey",
                   "gauge",
                   "boxplot",
-                  "table"
+                  "table",
+                  "perspective"
                 ]
               }
             },
@@ -673,6 +735,23 @@
           "then": {
             "required": [
               "content"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "perspective"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "perspective"
             ]
           }
         }
@@ -891,6 +970,44 @@
           "label": {
             "$ref": "#/definitions/plainText"
           }
+        }
+      }
+    },
+    "perspectiveConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plugin",
+        "columns"
+      ],
+      "properties": {
+        "plugin": {
+          "enum": [
+            "Datagrid",
+            "Y Bar"
+          ]
+        },
+        "groupBy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/bindingField"
+          },
+          "uniqueItems": true
+        },
+        "splitBy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/bindingField"
+          },
+          "uniqueItems": true
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/bindingField"
+          },
+          "uniqueItems": true
         }
       }
     }

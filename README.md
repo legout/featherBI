@@ -39,6 +39,12 @@ Extract the ZIP bundle, open `dashboard.html` through `file://` in desktop Chrom
 
 Chrome is the supported browser for this release. Edge and offline operation are not claimed. If pinned online runtime assets cannot load, the dashboard reports a visible boot error rather than working offline.
 
+## Exploration capabilities
+
+Contract-v2 projects may select `rendererPreset: standard | perspective-first`, add typed `perspective` components, and enable the session-only SQL playground with `playground.renderer: ag-grid | perspective`. Tables use AG Grid Community only. Playground SQL is one engine-admitted SELECT/CTE over declared sources/models and is limited to 10,000 rows, 8 MiB Arrow IPC, and 30 seconds; cancellation uses DuckDB-WASM's `AsyncDuckDBConnection.send()` and `cancelSent()` on a dedicated connection.
+
+Perspective 3.8.0 receives only completed bounded Arrow results. The `file://` build embeds the three published WASM assets and registers the chart through the package's published `@finos/perspective-viewer-d3fc/column` export; it does not rewrite installed package files. Capability metadata in the artifact lists stable selected versions and Perspective asset hashes. See `examples/exploration-dashboard` for the complete source shape.
+
 ## Trust limits
 
 A shared artifact exposes every included or accompanying row to its recipient; source-system permissions do not follow the data. Runtime dependencies execute in the dashboard's browser context, and authored SQL is trusted code rather than a hostile-code sandbox. Inspect artifacts and share them only with authorized recipients. Replacing data in the browser changes only that session and does not rewrite the saved artifact.
@@ -50,3 +56,5 @@ npm run build
 npm run check
 npm run test:browser
 ```
+
+The lockfile narrowly overrides Perspective D3FC's `d3-svg-legend` transitive `d3-color` to compatible exact `3.1.0` for GHSA-36jr-mh4h-2g58; Perspective remains pinned at 3.8.0.

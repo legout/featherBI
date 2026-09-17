@@ -10,6 +10,31 @@ import { DUCKDB_WASM_VERSION } from "../runtime/bootstrap.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const CHART_TYPES = new Set(["bar", "line", "area", "scatter", "pie", "donut", "heatmap", "treemap", "sankey", "gauge", "boxplot"]);
+const CAPABILITY_VERSIONS = {
+ core: "0.1.0",
+ "ag-grid": "35.3.1",
+ echarts: "6.1.0",
+ perspective: "3.8.0",
+ codemirror: "6.10.0",
+ daisyui: "5.2.1",
+ "siemens-ix": "5.2.1",
+};
+
+/** Resolve project-selected runtime modules in deterministic dependency order. */
+export function resolveCapabilities(config) {
+ const ids = new Set(["core"]);
+ const chart = config.layout.some(({ type }) => CHART_TYPES.has(type));
+ if (config.layout.some(({ type }) => type === "table") || config.playground?.renderer === "ag-grid") ids.add("ag-grid");
+ if (chart && config.rendererPreset !== "perspective-first") ids.add("echarts");
+ if (config.layout.some(({ type }) => type === "perspective") || config.rendererPreset === "perspective-first" || config.playground?.renderer === "perspective") ids.add("perspective");
+ if (config.playground) ids.add("codemirror");
+ if (config.theme === "daisyui") ids.add("daisyui");
+ if (config.theme === "siemens-ix") ids.add("siemens-ix");
+ return ["core", "ag-grid", "echarts", "perspective", "codemirror", "daisyui", "siemens-ix"]
+  .filter((id) => ids.has(id))
+  .map((id) => ({ id, version: CAPABILITY_VERSIONS[id] }));
+}
 
 /** Render the fixed viewer with a safely embedded config and optional test inputs. */
 export async function renderDashboard({ config, inputs = null }) {
@@ -21,23 +46,46 @@ export async function renderDashboard({ config, inputs = null }) {
     .join("; ")}`,
   );
  }
- const echarts = parseJson(
-  await readFile(path.join(rootDir, "node_modules/echarts/package.json"), "utf8"),
-  "ECharts package metadata",
- ).version;
+ const capabilities = await capabilityManifest(resolveCapabilities(config));
+ const selected = new Set(capabilities.map(({ id }) => id));
+ const imports = ['import { mountDashboard } from "./runtime/viewer.mjs";'];
+ const runtimeCapabilities = [];
+ if (selected.has("ag-grid")) {
+  imports.push('import { gridCapability } from "./runtime/capabilities/grid.mjs";');
+  runtimeCapabilities.push("grid: gridCapability");
+ }
+ if (selected.has("echarts")) {
+  imports.push('import { chartCapability } from "./runtime/capabilities/charts.mjs";');
+  runtimeCapabilities.push("charts: chartCapability");
+ }
+ if (selected.has("perspective")) {
+  imports.push('import { perspectiveCapability } from "./runtime/capabilities/perspective.mjs";');
+  runtimeCapabilities.push("perspective: perspectiveCapability");
+ }
+ if (selected.has("codemirror")) {
+  imports.push('import { editorCapability } from "./runtime/capabilities/editor.mjs";');
+  runtimeCapabilities.push("editor: editorCapability");
+ }
  const theme = await themeAdapter(config.theme ?? "neutral");
+ const buildMetadata = {
+  duckdbWasm: DUCKDB_WASM_VERSION,
+  theme: config.theme ?? "neutral",
+  themeVersion: theme.version,
+  capabilities,
+ };
  const build = await esbuild.build({
   stdin: {
    contents: `
-    import { mountDashboard } from "./runtime/viewer.mjs";
+    ${imports.join("\n")}
     const config = ${scriptJson(config)};
     const embeddedInputs = ${scriptJson(inputs)};
     const inputs = embeddedInputs?.map(({ id, value }) => ({
      source: config.data.sources.find((source) => source.id === id),
      bytes: { encoding: "base64", value },
     }));
-    window.__featherbiBuild = ${scriptJson({ duckdbWasm: DUCKDB_WASM_VERSION, echarts, theme: config.theme ?? "neutral", themeVersion: theme.version })};
-    window.__featherbiDashboardReady = mountDashboard({ config, inputs });
+    const capabilities = { ${runtimeCapabilities.join(", ")} };
+    window.__featherbiBuild = ${scriptJson(buildMetadata)};
+    window.__featherbiDashboardReady = mountDashboard({ config, inputs, capabilities });
     window.__featherbiDashboardReady.catch(() => {});
    `,
    resolveDir: rootDir,
@@ -47,24 +95,47 @@ export async function renderDashboard({ config, inputs = null }) {
   format: "iife",
   platform: "browser",
   target: "chrome130",
+  outfile: "viewer.js",
+  loader: { ".wasm": "binary" },
+  metafile: true,
   minify: false,
   write: false,
   legalComments: "none",
   logLevel: "warning",
  });
- const code = build.outputFiles[0].text;
+ const code = build.outputFiles.find(({ path: outputPath }) => outputPath.endsWith(".js")).text;
  const safeCode = code.replaceAll("</script", "<\\/script");
  const shell = await readFile(path.join(rootDir, "shells/grid.html"), "utf8");
- const css = `${await readFile(path.join(rootDir, "runtime/viewer.css"), "utf8")}\n${theme.css}\n${config.themeCss ?? ""}`.replaceAll("</style", "<\\/style");
+ const perspectiveCss = selected.has("perspective")
+  ? await readFile(path.join(rootDir, "node_modules/@finos/perspective-viewer/dist/css/pro.css"), "utf8")
+  : "";
+ const css = `${await readFile(path.join(rootDir, "runtime/viewer.css"), "utf8")}\n${theme.css}\n${perspectiveCss}\n${config.themeCss ?? ""}`.replaceAll("</style", "<\\/style");
  const html = shell
-  .replace("<!-- FEATHERBI_STYLE -->", css)
-  .replace("<!-- FEATHERBI_SCRIPT -->", `<script>\n${safeCode}\n</script>`);
+  .replace("<!-- FEATHERBI_STYLE -->", () => css)
+  .replace("<!-- FEATHERBI_SCRIPT -->", () => `<script>\n${safeCode}\n</script>`);
  return {
   html,
   bundleSha256: createHash("sha256").update(safeCode).digest("hex"),
   duckdbWasm: DUCKDB_WASM_VERSION,
-  echarts,
+  echarts: selected.has("echarts") ? CAPABILITY_VERSIONS.echarts : null,
+  capabilities,
+  metafile: build.metafile,
  };
+}
+
+async function capabilityManifest(capabilities) {
+ return Promise.all(capabilities.map(async (capability) => {
+  if (capability.id !== "perspective") return capability;
+  const assets = await Promise.all([
+   ["perspective-js.wasm", "@finos/perspective/dist/wasm/perspective-js.wasm"],
+   ["perspective-server.wasm", "@finos/perspective/dist/wasm/perspective-server.wasm"],
+   ["perspective-viewer.wasm", "@finos/perspective-viewer/dist/wasm/perspective-viewer.wasm"],
+  ].map(async ([name, relative]) => {
+   const bytes = await readFile(path.join(rootDir, "node_modules", relative));
+   return { name, bytes: bytes.byteLength, sha256: createHash("sha256").update(bytes).digest("hex") };
+  }));
+  return { ...capability, assets };
+ }));
 }
 
 async function themeAdapter(theme) {

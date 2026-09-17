@@ -300,6 +300,28 @@
           }
         ]
       }
+    },
+    "rendererPreset": {
+      "enum": [
+        "standard",
+        "perspective-first"
+      ],
+      "default": "standard"
+    },
+    "playground": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renderer"
+      ],
+      "properties": {
+        "renderer": {
+          "enum": [
+            "ag-grid",
+            "perspective"
+          ]
+        }
+      }
     }
   },
   "definitions": {
@@ -504,7 +526,8 @@
             "sankey",
             "gauge",
             "boxplot",
-            "table"
+            "table",
+            "perspective"
           ]
         },
         "label": {
@@ -690,6 +713,9 @@
             "hide",
             "zero"
           ]
+        },
+        "perspective": {
+          "$ref": "#/definitions/perspectiveConfig"
         }
       },
       "allOf": [
@@ -711,7 +737,8 @@
                   "sankey",
                   "gauge",
                   "boxplot",
-                  "table"
+                  "table",
+                  "perspective"
                 ]
               }
             },
@@ -916,6 +943,23 @@
           "then": {
             "required": [
               "content"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "perspective"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "perspective"
             ]
           }
         }
@@ -1192,6 +1236,44 @@
         },
         "confirmed": {
           "const": true
+        }
+      }
+    },
+    "perspectiveConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plugin",
+        "columns"
+      ],
+      "properties": {
+        "plugin": {
+          "enum": [
+            "Datagrid",
+            "Y Bar"
+          ]
+        },
+        "groupBy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/bindingField"
+          },
+          "uniqueItems": true
+        },
+        "splitBy": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/bindingField"
+          },
+          "uniqueItems": true
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/bindingField"
+          },
+          "uniqueItems": true
         }
       }
     }

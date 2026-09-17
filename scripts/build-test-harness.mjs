@@ -122,11 +122,19 @@ await buildDashboard({
  outPath: path.join(outDir, "standard-runtime.html"),
 });
 
+const exploration = await compileProject(path.join(rootDir, "examples", "exploration-dashboard", "dashboard.yaml"));
+await buildDashboard({
+ config: exploration.config,
+ inputs: [{ id: "inspections", value: Buffer.from(JSON.stringify(standardRows.map(({ station, amount }) => ({ station, amount })))).toString("base64") }],
+ outPath: path.join(outDir, "exploration-runtime.html"),
+});
+
 console.log(`wrote ${outPath}`);
 console.log(`wrote ${path.join(outDir, "dashboard.html")}`);
 console.log(`wrote ${path.join(outDir, "ap-dashboard.html")}`);
 console.log(`wrote ${path.join(outDir, "ap-dashboard-upload.html")}`);
 console.log(`wrote ${path.join(outDir, "standard-runtime.html")}`);
+console.log(`wrote ${path.join(outDir, "exploration-runtime.html")}`);
 console.log(
  `bundle sha256=${codeSha256} duckdb-wasm=${DUCKDB_WASM_VERSION} (pinned remote assets)`,
 );

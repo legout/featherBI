@@ -223,7 +223,7 @@ test("AP dashboard keeps one population across bounded views", async ({
    await expect(codeSummary).toContainText("PE101: 467");
    await expect(codeSummary).toContainText("F165: 365");
   }
-  await expect(page.locator("#component-recent_records tbody tr")).toHaveCount(100);
+  await expect(page.locator("#component-recent_records .ag-row")).toHaveCount(100);
   await expect(page.locator('#component-recent_records [data-page-action="next"]'))
    .toBeEnabled();
 
@@ -272,7 +272,7 @@ test("AP dashboard keeps one population across bounded views", async ({
   }
 
   await page.locator('#component-recent_records [data-page-action="next"]').click();
-  await expect(page.locator("#component-recent_records tbody tr")).toHaveCount(20);
+  await expect(page.locator("#component-recent_records .ag-row")).toHaveCount(20);
   await expect(page.locator("#component-recent_records [data-page-label]"))
    .toHaveText("Page 2");
 
@@ -281,7 +281,7 @@ test("AP dashboard keeps one population across bounded views", async ({
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText("70");
   await expect(page.locator("#component-station_activity [data-chart-summary]"))
    .toContainText("SJ: 70");
-  await expect(page.locator("#component-recent_records tbody tr")).toHaveCount(70);
+  await expect(page.locator("#component-recent_records .ag-row")).toHaveCount(70);
 
   await page.locator("#filter-order").fill("not-an-order");
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText("0");

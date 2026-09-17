@@ -20,11 +20,21 @@
     "check": "npm run generate:contract && npm run fixtures && npm run test:unit"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/lang-sql": "6.10.0",
+    "@codemirror/state": "6.5.2",
+    "@codemirror/view": "6.38.6",
     "@duckdb/duckdb-wasm": "1.32.0",
+    "@finos/perspective": "3.8.0",
+    "@finos/perspective-viewer": "3.8.0",
+    "@finos/perspective-viewer-d3fc": "3.8.0",
+    "@finos/perspective-viewer-datagrid": "3.8.0",
     "@playwright/test": "1.63.0",
     "@siemens/ix": "5.2.1",
     "@tailwindcss/cli": "4.3.3",
+    "ag-grid-community": "35.3.1",
     "ajv": "8.20.0",
+    "apache-arrow": "17.0.0",
     "client-zip": "2.5.1",
     "daisyui": "5.2.1",
     "echarts": "6.1.0",
@@ -33,5 +43,12 @@
     "postcss-prefix-selector": "2.1.1",
     "tailwindcss": "4.3.3",
     "yaml": "2.9.1"
+  },
+  "overrides": {
+    "@finos/perspective-viewer-d3fc": {
+      "d3-svg-legend": {
+        "d3-color": "3.1.0"
+      }
+    }
   }
 }

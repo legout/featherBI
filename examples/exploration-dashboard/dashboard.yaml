@@ -1,0 +1,67 @@
+project: 1
+title: Exploration dashboard
+rendererPreset: perspective-first
+sources:
+  - id: inspections
+    type: json
+    file: inspections.json
+    schema:
+      station: {type: string, nullable: false}
+      amount: {type: number, nullable: false}
+models:
+  inspection_model:
+    sql: models/inspection_model.sql
+    schema:
+      station: {type: string, nullable: false}
+      amount: {type: number, nullable: false}
+dimensions:
+  station: {model: inspection_model, field: station, label: Station}
+filters:
+  - id: station_filter
+    kind: multi-select
+    source: inspections
+    column: station
+    dimension: station
+    default: []
+relationships: []
+queries:
+  grid_rows: {sql: queries/grid_rows.sql, params: []}
+  exploration: {sql: queries/exploration.sql, params: [station_filter]}
+  heatmap_cells: {sql: queries/heatmap_cells.sql, params: []}
+playground:
+  renderer: ag-grid
+layout:
+  - id: rows
+    type: table
+    query: grid_rows
+    label: Inspection records
+    columns:
+      - {field: station, label: Station, dimension: station}
+      - {field: amount, label: Amount}
+    x: 1
+    y: 1
+    width: 6
+    height: 3
+  - id: explore
+    type: perspective
+    query: exploration
+    label: Amount by station
+    perspective:
+      plugin: Y Bar
+      groupBy: [station]
+      columns: [amount]
+    x: 7
+    y: 1
+    width: 6
+    height: 3
+  - id: heatmap
+    type: heatmap
+    query: heatmap_cells
+    label: Amount by station and band
+    xField: station
+    yField: band
+    value: total
+    x: 1
+    y: 4
+    width: 6
+    height: 3

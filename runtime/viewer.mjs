@@ -1,11 +1,10 @@
-import * as echarts from "echarts";
 import { createDashboard } from "./controller.mjs";
 
 const charts = new WeakMap();
 const debounceTimers = new Map();
 
 /** Mount the fixed grid viewer for one validated dashboard config. */
-export async function mountDashboard({ config, inputs, root = document }) {
+export async function mountDashboard({ config, inputs, root = document, capabilities = {} }) {
  root.title = config.title;
  root.querySelector("#dashboard-title").textContent = config.title;
  const filters = root.querySelector("#dashboard-filters");
@@ -14,11 +13,12 @@ export async function mountDashboard({ config, inputs, root = document }) {
  root.querySelector("#dashboard").dataset.theme = config.theme ?? "neutral";
  buildFilters(filters, config.filters);
  buildSources(sources, config.data.sources);
- buildLayout(layout, config.layout, config.contract);
+ buildLayout(layout, config);
  applyThemeClasses(root, config.theme ?? "neutral");
+ const playground = config.playground ? buildPlayground(root, config, capabilities.editor) : null;
 
  let controller;
- const render = (state) => renderState(root, config, state);
+ const render = (state) => renderState(root, config, state, capabilities);
  const start = async (assignments) => {
   try {
    controller = await createDashboard({ config, inputs: assignments, onState: render });
@@ -75,6 +75,12 @@ export async function mountDashboard({ config, inputs, root = document }) {
   await controller.searchFilterOptions(id, current.search, page);
  });
 
+ layout.addEventListener("featherbi-grid-select", async (event) => {
+  if (!controller) return;
+  const section = event.target.closest("section");
+  await selectDimension(root, config, controller, section, event.detail.value, event.detail.modifier, event.detail.dimension, event.detail.action);
+ });
+
  layout.addEventListener("click", async (event) => {
   if (event.target.dataset.tabTarget) {
    openTab(root, event.target.dataset.tabTarget);
@@ -117,12 +123,39 @@ export async function mountDashboard({ config, inputs, root = document }) {
    render({ status: "error", error: "Select one file for every declared source." });
   }
  });
+ if (playground) {
+  playground.run.addEventListener("click", async () => {
+   if (!controller) return;
+   playground.error.textContent = "";
+   playground.run.disabled = true;
+   try {
+    const result = await controller.runPlayground(playground.editor.getValue());
+    renderPlaygroundResult(playground, result, config.playground.renderer, capabilities);
+   } catch (error) {
+    playground.error.textContent = error instanceof Error ? error.message : String(error);
+   } finally {
+    playground.run.disabled = false;
+   }
+  });
+ }
  window.addEventListener("resize", () => requestAnimationFrame(() => layout.querySelectorAll(".chart").forEach((node) => charts.get(node)?.resize())));
- window.addEventListener("pagehide", () => controller?.dispose(), { once: true });
+ window.addEventListener("pagehide", () => {
+  playground?.editor.dispose();
+  capabilities.perspective?.disposeAll();
+  controller?.dispose();
+ }, { once: true });
 
  if (inputs?.length) return start(inputs);
  render({ status: "waiting", error: null });
- return null;
+ return {
+  runPlayground(...args) {
+   if (!controller) throw new Error("Select the declared data files before running SQL");
+   return controller.runPlayground(...args);
+  },
+  dispose() {
+   return controller?.dispose();
+  },
+ };
 }
 
 function buildFilters(container, filters) {
@@ -210,7 +243,40 @@ function buildSources(container, sources) {
  container.append(replace);
 }
 
-function buildLayout(container, components, contract) {
+function buildPlayground(root, config, editorCapability) {
+ const section = root.querySelector("#dashboard-playground");
+ section.hidden = false;
+ section.replaceChildren();
+ const heading = Object.assign(document.createElement("h2"), { textContent: "SQL playground" });
+ const context = Object.assign(document.createElement("p"), { textContent: "Dashboard filters are shown above for context and are not injected into this query." });
+ const editorNode = document.createElement("div");
+ editorNode.dataset.playgroundEditor = "";
+ editorNode.dataset.completions = Object.keys(config.playground.schemas).join(",");
+ const run = Object.assign(document.createElement("button"), { type: "button", textContent: "Run query" });
+ run.dataset.playgroundRun = "";
+ const error = document.createElement("p");
+ error.dataset.playgroundError = "";
+ error.setAttribute("role", "alert");
+ const result = document.createElement("div");
+ result.dataset.playgroundResult = "";
+ section.append(heading, context, editorNode, run, error, result);
+ return { section, run, error, result, editor: editorCapability.mount(editorNode, config.playground.schemas) };
+}
+
+function renderPlaygroundResult(playground, queryResult, renderer, capabilities) {
+ playground.error.textContent = "";
+ const columns = queryResult.table.schema.fields.map(({ name }) => ({ field: name, label: name }));
+ if (renderer === "perspective") {
+  capabilities.perspective.render(playground.result, queryResult.ipc, { plugin: "Datagrid", columns: columns.map(({ field }) => field) })
+   .catch((error) => { playground.error.textContent = error instanceof Error ? error.message : String(error); });
+ } else {
+  capabilities.grid.render(playground.result, queryResult.rows, columns);
+ }
+}
+
+function buildLayout(container, config) {
+ const components = config.layout;
+ const contract = config.contract;
  container.replaceChildren();
  for (const [index, component] of components.entries()) {
   const section = document.createElement("section");
@@ -260,17 +326,9 @@ function buildLayout(container, components, contract) {
     section.append(value);
    }
   } else if (component.type === "table") {
-   const table = document.createElement("table");
-   const head = document.createElement("thead");
-   const headingRow = document.createElement("tr");
-   for (const column of component.columns) {
-    const cell = document.createElement("th");
-    cell.scope = "col";
-    cell.textContent = column.label;
-    headingRow.append(cell);
-   }
-   head.append(headingRow);
-   table.append(head, document.createElement("tbody"));
+   const grid = document.createElement("div");
+   grid.className = "data-grid";
+   grid.dataset.grid = "";
    const empty = document.createElement("p");
    empty.dataset.empty = "";
    const navigation = document.createElement("nav");
@@ -281,10 +339,12 @@ function buildLayout(container, components, contract) {
     tablePageButton(component.id, "next", "Next page"),
    );
    navigation.children[1].dataset.pageLabel = "";
-   section.append(table, empty, navigation);
+   section.append(grid, empty, navigation);
   } else {
    const chart = document.createElement("div");
-   chart.className = "chart";
+   const usePerspective = component.type === "perspective" || (config.rendererPreset === "perspective-first" && isChartType(component.type));
+   chart.className = usePerspective ? "perspective-host" : "chart";
+   if (usePerspective) chart.dataset.perspective = "";
    chart.setAttribute("role", "img");
    chart.setAttribute("aria-label", component.label);
    const summary = document.createElement("p");
@@ -325,7 +385,7 @@ function tablePageButton(id, action, label) {
  return button;
 }
 
-function renderState(root, config, state) {
+function renderState(root, config, state, capabilities) {
  const status = root.querySelector("#dashboard-status");
  status.dataset.state = state.status;
  status.textContent =
@@ -373,9 +433,15 @@ function renderState(root, config, state) {
     root.querySelector(`#component-${component.id} [data-metric="${field}"]`).textContent = formatValue(value, component.decimals);
    }
   } else if (component.type === "table") {
-   renderTable(root, component, rows, state.tablePages[component.id], state.status);
+   renderTable(root, component, rows, state.tablePages[component.id], state.status, capabilities.grid);
+  } else if (component.type === "perspective" || (config.rendererPreset === "perspective-first" && isChartType(component.type))) {
+   const section = root.querySelector(`#component-${component.id}`);
+   const perspectiveConfig = component.perspective ?? perspectiveConfigForChart(component);
+   capabilities.perspective.render(section.querySelector("[data-perspective]"), state.perspectiveResults[component.query], perspectiveConfig)
+    .then(() => { section.querySelector("[data-empty]").textContent = rows.length ? "" : "No rows"; })
+    .catch((error) => { section.querySelector("[data-empty]").textContent = error instanceof Error ? error.message : String(error); });
   } else if (component.query) {
-   renderChart(root, component, rows);
+   renderChart(root, component, rows, capabilities.charts);
   }
  }
 }
@@ -429,26 +495,10 @@ function renderTable(
  rows,
  page = { page: 0, hasNext: false },
  status = "ready",
+ gridCapability,
 ) {
  const section = root.querySelector(`#component-${component.id}`);
- const body = section.querySelector("tbody");
- body.replaceChildren();
- for (const row of rows) {
-  const tableRow = document.createElement("tr");
-  for (const column of component.columns) {
-   const cell = document.createElement("td");
-   cell.textContent = formatScalar(row[column.field]);
-   if (column.dimension) {
-    cell.dataset.actionValue = formatScalar(row[column.field]);
-    cell.featherbiValue = row[column.field];
-    cell.dataset.actionDimension = column.dimension;
-    if (column.action?.openTab) cell.dataset.actionOpenTab = column.action.openTab;
-    if (column.action?.drilldown) cell.dataset.actionDrilldown = column.action.drilldown;
-   }
-   tableRow.append(cell);
-  }
-  body.append(tableRow);
- }
+ gridCapability.render(section.querySelector("[data-grid]"), rows, component.columns);
  section.querySelector("[data-empty]").textContent = rows.length ? "" : "No rows";
  section.querySelector("[data-page-label]").textContent = `Page ${page.page + 1}`;
  const locked = status === "loading" || status === "busy";
@@ -456,7 +506,7 @@ function renderTable(
  section.querySelector('[data-page-action="next"]').disabled = locked || !page.hasNext;
 }
 
-function renderChart(root, component, rows) {
+function renderChart(root, component, rows, chartCapability) {
  const section = root.querySelector(`#component-${component.id}`);
  const chartNode = section.querySelector(".chart");
  const empty = section.querySelector("[data-empty]");
@@ -476,10 +526,28 @@ function renderChart(root, component, rows) {
  });
  let chart = charts.get(chartNode);
  if (!chart) {
-  chart = echarts.init(chartNode);
+  chart = chartCapability.init(chartNode);
   charts.set(chartNode, chart);
  }
  chart.setOption(chartOptions(component, rows), true);
+}
+
+function isChartType(type) {
+ return ["bar", "line", "area", "scatter", "pie", "donut", "heatmap", "treemap", "sankey", "gauge", "boxplot"].includes(type);
+}
+
+export function perspectiveConfigForChart(component) {
+ if (["pie", "donut", "treemap"].includes(component.type)) return { plugin: "Y Bar", groupBy: [component.name], columns: [component.value] };
+ if (component.type === "gauge") return { plugin: "Datagrid", columns: [component.value] };
+ if (component.type === "heatmap") return { plugin: "Datagrid", columns: perspectiveColumns(component.xField ?? component.x, component.yField ?? component.y, component.value) };
+ if (component.type === "sankey") return { plugin: "Datagrid", columns: perspectiveColumns(component.source, component.target, component.value) };
+ if (component.type === "boxplot") return { plugin: "Datagrid", columns: perspectiveColumns(component.xField, component.min, component.q1, component.median, component.q3, component.max) };
+ return { plugin: component.type === "table" ? "Datagrid" : "Y Bar", groupBy: [component.xField ?? component.x].filter(Boolean), splitBy: component.series ? [component.series] : [], columns: [component.yField ?? component.y].filter(Boolean) };
+}
+
+/** Datagrid columns for chart families without an equivalent Perspective plugin; keeps every authored field once. */
+function perspectiveColumns(...fields) {
+ return [...new Set(fields.filter(Boolean))];
 }
 
 function chartOptions(component, rows) {

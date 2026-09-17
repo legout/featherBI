@@ -22,7 +22,7 @@ Execute sequentially through `orchestrate-implementation` in supervised mode. Ea
 4. [#7 — Add AG Grid, Perspective, and bounded SQL exploration](https://github.com/legout/featherBI/issues/7) — blocked by #6; V2-06/V2-08/V2-09 exploration boundary.
 5. [#9 — Preserve unmappable charts in Perspective-first preset](https://github.com/legout/featherBI/issues/9) — blocking correctness follow-up on the reviewed #7 candidate; lossless heatmap/sankey/boxplot fallback mappings.
 6. [#8 — Complete the authoring skill and migrate off runtime v1](https://github.com/legout/featherBI/issues/8) — blocked by #7 and #9; V2-02–V2-04/V2-10–V2-12 and final v1 removal.
-7. [#11 — Add remote sources to authoring and packaged delivery](https://github.com/legout/featherBI/issues/11) — blocked by #5; remote declaration, credential resolution, httpfs profiling, packaged materialization.
+7. [#11 — Add remote sources to authoring and packaged delivery](https://github.com/legout/featherBI/issues/11) — blocked by #5; remote declaration, credential resolution, httpfs profiling, packaged materialization; [implementation plan](2026-09-17-0001-remote-sources-packaged.md) approved.
 8. [#12 — Add live remote reads and recipient credential form](https://github.com/legout/featherBI/issues/12) — blocked by #11; RS-03–RS-06 live path.
 9. [#13 — Add featherbi setup checks and duckdb-skills prompt](https://github.com/legout/featherBI/issues/13) — independent bounded CLI slice.
 

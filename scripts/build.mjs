@@ -173,14 +173,27 @@ export async function buildDashboard({ config, outPath, inputs = null }) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
- const configPath = path.resolve(process.argv[2] ?? "examples/ap-dashboard.config.json");
- const outPath = path.resolve(process.argv[3] ?? "build/ap-dashboard.html");
- const config = parseJson(await readFile(configPath, "utf8"), configPath);
- const metadata = await buildDashboard({ config, outPath });
- console.log(`wrote ${metadata.outPath}`);
- console.log(
-  `bundle sha256=${metadata.bundleSha256} duckdb-wasm=${metadata.duckdbWasm} echarts=${metadata.echarts}`,
- );
+ const configPath = process.argv[2];
+ const outPath = process.argv[3];
+ if (!configPath || !outPath) {
+  // Default build: compile the AP example project and render it as a smoke check.
+  const { compileProject } = await import("../authoring/compiler.mjs");
+  const { config } = await compileProject(
+   path.join(rootDir, "examples", "ap-dashboard", "dashboard.yaml"),
+  );
+  const metadata = await buildDashboard({ config, outPath: path.join(rootDir, "build", "ap-dashboard.html") });
+  console.log(`wrote ${metadata.outPath}`);
+  console.log(
+   `bundle sha256=${metadata.bundleSha256} duckdb-wasm=${metadata.duckdbWasm} echarts=${metadata.echarts}`,
+  );
+ } else {
+  const config = parseJson(await readFile(path.resolve(configPath), "utf8"), configPath);
+  const metadata = await buildDashboard({ config, outPath: path.resolve(outPath) });
+  console.log(`wrote ${metadata.outPath}`);
+  console.log(
+   `bundle sha256=${metadata.bundleSha256} duckdb-wasm=${metadata.duckdbWasm} echarts=${metadata.echarts}`,
+  );
+ }
 }
 
 function parseJson(text, label) {

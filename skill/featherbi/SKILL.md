@@ -1,24 +1,25 @@
 ---
 name: featherbi
-description: Understand local sample data, design and build a featherBI dashboard project, choose evidence-backed metrics/charts/filters, or iterate and package an existing dashboard. Never hand-write executable HTML.
+description: Profile local CSV, Parquet, or JSON sample data and author, iterate, or package a featherBI dashboard project - compile to runtime contract 2, preview in desktop Chrome, and deliver an external-data ZIP. Use for dataset-to-dashboard requests; not for generic SQL analysis, spreadsheet cleanup, or editing unrelated web pages.
 ---
 
 # featherBI authoring
 
+Turn local sample data into an editable dashboard project, verify it in desktop Chrome, and package it as an external-data ZIP. Generated state (profiles, compiled config, previews, ZIPs, screenshots) lives only in the project's ignored `.featherbi/` directory. Never hand-write executable dashboard HTML; edit YAML/SQL/CSS source and rebuild.
+
 ## Start safely
 
-Work from the featherBI repository root and preserve existing project files:
+Work from a featherBI checkout with the `featherbi` CLI available, keep the project's own files, and use Git as the iteration history:
 
 ```sh
-test -f bin/featherbi.mjs
-npm ci
+test -f bin/featherbi.mjs && npm ci
 ```
 
-Generated/private state belongs only in the project's ignored `.featherbi/` directory. Do not copy source data, absolute paths, profiles, generated JSON/HTML, screenshots, or ZIPs into portable source or commits.
+## Workflow
 
-## Progressive tracer
+1. **Locate sources.** Ask for one or more representative local CSV/Parquet/JSON files. Reference them by absolute path in commands only; never copy the bytes into the project or context.
 
-1. Profile every representative source without values:
+2. **Profile without copying.** Create the project workspace (an ignored `.featherbi/` directory) and profile each source:
 
    ```sh
    node bin/featherbi.mjs profile --input /absolute/local/file.parquet \
@@ -26,27 +27,28 @@ Generated/private state belongs only in the project's ignored `.featherbi/` dire
      --output path/to/project/.featherbi/profile.json
    ```
 
-   Explain material row/schema/null/approximate-cardinality evidence. Use `--include-values` only after explicit permission for bounded ranges and top values. Stop on profile errors; never guess schema.
-2. Ask only the initial decision frontier: audience/decisions; authoritative metric meaning, units, population/time window; filters/lookups; required views/interactions; and update cadence. For this tracer recommend the `standard` preset and neutral theme; SQL playground, alternate presets/themes, models, and expanded layout/catalog remain deferred.
-3. Copy [`templates/basic-dashboard/`](templates/basic-dashboard/) and edit the same source-only `dashboard.yaml` and `queries/*.sql`. Record absolute source assignments only in ignored `.featherbi/local-sources.yaml`.
-4. Compile, fix every filename/line/column error, then validate:
+   Report material row/schema/null/cardinality evidence and stop on profile errors — never guess a schema. `--include-values` requires explicit permission and stays bounded. Details: [references/failures.md](references/failures.md).
+
+3. **Interview progressively.** Show the evidence, then ask only material questions in order: audience/decisions; metric meanings and grain; default population and filters; ambiguous relationships (joins need explicit confirmation with keys and expected cardinality); then appearance (preset, theme, layout). Recommend defaults from evidence; never invent business definitions. Decision tree: [references/interview.md](references/interview.md).
+
+4. **Scaffold the project.** Copy [`templates/basic-dashboard/`](templates/basic-dashboard/) and shape it into the smallest dashboard that answers the stated decisions. Source files are `dashboard.yaml`, `queries/*.sql`, optional `models/*.sql` and `theme.css`. Schema and examples: [references/project-reference.md](references/project-reference.md); component/filter catalog: [references/components.md](references/components.md); metrics and SQL admission: [references/metrics-and-sql.md](references/metrics-and-sql.md); themes: [references/themes-and-css.md](references/themes-and-css.md).
+
+5. **Compile and preview.** Compile to strict runtime contract 2, fix every reported filename/line/column error, then build and open the extracted ZIP through `file://` in desktop Chrome with each data file explicitly selected:
 
    ```sh
    node bin/featherbi.mjs compile --project path/to/project/dashboard.yaml
-   node bin/featherbi.mjs validate --config path/to/project/.featherbi/dashboard.config.json
-   ```
-
-5. Build through the existing external-data packager with one explicit mapping per source, extract the ZIP, and open `dashboard.html` through `file://` in desktop Chrome:
-
-   ```sh
    node bin/featherbi.mjs build \
      --config path/to/project/.featherbi/dashboard.config.json \
      --source inspections=/absolute/local/file.parquet \
      --output path/to/project/.featherbi/dashboard.zip
    ```
 
-6. Explicitly select each extracted data file in Chrome. Verify visible values against independent profile/query evidence; config validation alone is not success.
-7. Ask targeted feedback about correctness, missing decisions, filters, chart choice, labels, and density. Edit the same YAML/SQL source, rebuild, reselect, and reverify.
-8. Stop when approved or paused. Commit, push, publication, issue closure, and release are separate actions and never implied by a successful preview.
+   Extract the ZIP, open `dashboard.html`, select the local files under **Data files**, and verify visible values against independent profile/query evidence. What to check: [references/verification.md](references/verification.md).
 
-See [`references/project-tracer.md`](references/project-tracer.md) for the supported schema, relationship boundary, and failure checklist.
+6. **Iterate from feedback.** Treat every revision request as an edit to the same YAML/SQL/CSS source. Rebuild, reselect data when required, and point out the visibly changed output before asking for more feedback. Let Git record history; do not create parallel ledgers. Stop when the draft is approved or the user pauses.
+
+7. **Package for sharing.** Re-run compile/build, then verify the artifact before handing it over: the ZIP contains `dashboard.html` plus one member per declared source, the HTML contains neither dataset bytes nor absolute local paths, and a fresh extraction reopens in Chrome after explicit file selection. Packaging never publishes, uploads, or commits anything.
+
+8. **Report.** Summarize source paths edited, commands run, evidence observed (profile facts, Chrome values, ZIP checks), and remaining decisions. Commit, push, publication, and release are separate owner actions.
+
+Evaluation fixtures for this skill (trigger and execution cases) live in [evals/evals.json](evals/evals.json).

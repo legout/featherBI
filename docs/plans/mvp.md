@@ -4,7 +4,7 @@
 
 **Goal:** open a config, load local data, see and filter a dashboard, replace data safely, and share it as a ZIP bundle with data kept outside HTML.
 
-**Sources:** behavior = [runtime contract v1](../specs/runtime-contract-v1.md) and [AP dashboard](../specs/ap-inspection-dashboard.md); constraints = [ADRs 0002–0005](../adr/) with ADR 0005 superseding ADR 0001; vocabulary = [CONTEXT.md](../../CONTEXT.md); optional hardening = [deferred.md](deferred.md).
+**Sources:** behavior = [dashboard project and runtime v2](../specs/dashboard-project-and-runtime-v2.md), with [runtime contract v1](../specs/runtime-contract-v1.md) and the [AP dashboard](../specs/ap-inspection-dashboard.md) retained as migration evidence; constraints = [ADRs 0002–0006](../adr/) with ADR 0006 owning the target runtime and ADR 0005 superseding ADR 0001; vocabulary = [CONTEXT.md](../../CONTEXT.md); optional hardening = [deferred.md](deferred.md).
 
 **Capture checkpoint:** `Artifact` now means the ZIP-only external-data deliverable in `CONTEXT.md`; ADR 0005 records the consequential removal of embedded data; public remote URLs are deferred; no material MVP decision is unresolved. Planning-contract v1 provenance is recorded in `skills-lock.json`.
 

@@ -73,15 +73,11 @@ await buildDashboard({
  outPath: path.join(outDir, "dashboard.html"),
 });
 
-const apConfig = parseJson(
- await readFile(
-  path.join(rootDir, "examples/ap-dashboard.config.json"),
-  "utf8",
- ),
- "AP dashboard config",
+const apProject = await compileProject(
+ path.join(rootDir, "examples", "ap-dashboard", "dashboard.yaml"),
 );
 await buildDashboard({
- config: apConfig,
+ config: apProject.config,
  outPath: path.join(outDir, "ap-dashboard-upload.html"),
 });
 const rows = Array.from({ length: 120 }, (_, index) => ({
@@ -96,7 +92,7 @@ const rows = Array.from({ length: 120 }, (_, index) => ({
   .slice(0, 19),
  is_last_measurement: index < 24 ? false : true,
 }));
-const syntheticConfig = structuredClone(apConfig);
+const syntheticConfig = structuredClone(apProject.config);
 syntheticConfig.data.sources[0].type = "json";
 syntheticConfig.data.sources[0].file = "ap.json";
 await buildDashboard({

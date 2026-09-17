@@ -1,13 +1,13 @@
 /**
- * featherBI runtime config validator (strict contracts v1 and v2).
+ * featherBI runtime config validator (strict contract v2).
  *
  * Public API:
  *   validateConfig(input) -> {ok: true, value: input}
  *                          | {ok: false, issues: [{path, code, message}]}
  *
- * Structural validation dispatches by exact contract version to separate
- * build-time generated Ajv 8 standalone validators; no schema compilation
- * happens at runtime.
+ * Structural validation uses the build-time generated Ajv 8 standalone
+ * validator; no schema compilation happens at runtime. Runtime contract v1
+ * is removed: only `contract: 2` documents are accepted.
  * On top of the schema this module enforces the cross-field rules a JSON
  * Schema alone cannot express:
  *   - reserved and empty file/schema names,
@@ -16,8 +16,8 @@
  *     including calendar-valid date and timezone-naive timestamp defaults,
  *   - the filter-to-parameter namespace (<id>, <id>_from, <id>_to) with
  *     collision detection and query parameter admission,
- *   - component query references, table query exclusivity, and annotation
- *     dates.
+ *   - component query references, table query exclusivity, annotation
+ *     dates, and 12-column grid bounds without overlap.
  *
  * validateConfig never mutates its input and never throws for an invalid
  * config; only genuine runtime defects raise exceptions. Dictionaries are
@@ -28,7 +28,6 @@
  * engine owns statement-level admission in a later plan.
  */
 
-import validateV1 from "../.generated/validate-config-v1.mjs";
 import validateV2 from "../.generated/validate-config-v2.mjs";
 
 /** @typedef {{path: string, code: string, message: string}} ConfigIssue */
@@ -40,23 +39,8 @@ import validateV2 from "../.generated/validate-config-v2.mjs";
  */
 export function validateConfig(input) {
   const issues = [];
-  const version =
-    typeof input === "object" && input !== null && !Array.isArray(input)
-      ? input.contract
-      : undefined;
-  const validateStructural = version === 1 ? validateV1 : version === 2 ? validateV2 : null;
-  if (validateStructural === null) {
-    return {
-      ok: false,
-      issues: [{
-        path: "contract",
-        code: "contract.unsupported",
-        message: `unsupported contract version ${JSON.stringify(version)}`,
-      }],
-    };
-  }
-  if (!validateStructural(input)) {
-    for (const error of validateStructural.errors ?? []) {
+  if (!validateV2(input)) {
+    for (const error of validateV2.errors ?? []) {
       issues.push(toStructuralIssue(error));
     }
     if (issues.length > 0) {
@@ -336,10 +320,10 @@ function collectSemanticIssues(config, issues) {
     } else {
       componentIds.add(component.id);
     }
-    if (config.contract === 2 && component.x + component.width - 1 > 12) {
+    if (component.x + component.width - 1 > 12) {
       issue(`layout[${index}].width`, "layout.out-of-bounds", "placement exceeds the 12-column grid");
     }
-    for (let earlier = 0; config.contract === 2 && earlier < index; earlier += 1) {
+    for (let earlier = 0; earlier < index; earlier += 1) {
       const other = config.layout[earlier];
       const currentAlternative = alternatives.get(component.id);
       const priorAlternative = alternatives.get(other.id);

@@ -1,0 +1,88 @@
+{
+  "note": "Static evaluation fixtures for the featherBI authoring skill. Trigger cases judge routing quality by human review; they are not executed here. Execution cases map one-to-one onto deterministic checks in tests/unit/skill.test.mjs; the compiler-level parts run under npm run check, and the full browser path (profile, compile, preview, feedback, rebuild, package) is executed separately against real desktop Chrome with synthetic data.",
+  "triggers": [
+    {
+      "prompt": "I have three months of support tickets in tickets.parquet. Build me a dashboard showing volume by category and week.",
+      "expect": "trigger",
+      "why": "Local-data-to-dashboard request; the core skill workflow."
+    },
+    {
+      "prompt": "Here is sales.csv. Which metrics, charts, and filters would you pick for a monthly revenue review, and can you package the result so a colleague can open it locally?",
+      "expect": "trigger",
+      "why": "Design-and-package request over local sample data."
+    },
+    {
+      "prompt": "Iterate on my dashboard project in ./analytics: sort the station chart by record count and retitle it for the Q3 review.",
+      "expect": "trigger",
+      "why": "Iteration on an existing featherBI dashboard project."
+    },
+    {
+      "prompt": "What columns, null gaps, and cardinality are in sensor_readings.parquet? Then propose metrics for an ops dashboard.",
+      "expect": "trigger",
+      "why": "Profile-then-design request starting from local sample data."
+    },
+    {
+      "prompt": "This warehouse SQL query is slow; rewrite it with better indexes and hints.",
+      "expect": "near-miss",
+      "why": "Generic SQL performance work with no dashboard, packaging, or featherBI project involved."
+    },
+    {
+      "prompt": "Clean up this spreadsheet: dedupe rows, fix the date formats, and fill missing zip codes in orders.xlsx.",
+      "expect": "near-miss",
+      "why": "Spreadsheet data cleaning; no dashboard or featherBI artifact is requested."
+    },
+    {
+      "prompt": "Fix the CSS on my blog landing page; the hero image overlaps the navigation bar.",
+      "expect": "near-miss",
+      "why": "Editing an unrelated web page's styles, not authoring a featherBI dashboard."
+    },
+    {
+      "prompt": "Set up a Grafana instance with alerting for our team's infrastructure metrics.",
+      "expect": "near-miss",
+      "why": "A different BI tool with server infrastructure; outside featherBI local-data authoring."
+    }
+  ],
+  "execution": [
+    {
+      "id": "single-source-dashboard",
+      "request": "Build a simple dashboard from my inspections.json showing total inspection records.",
+      "steps": [
+        "Profile the single source and report bounded evidence.",
+        "Scaffold the starter project and name the KPI from the interview.",
+        "Compile to runtime contract 2 and package; open in Chrome and select the file.",
+        "Verify the KPI equals the profiled row count."
+      ],
+      "evidence": "Compiled config declares contract 2 with one upload source; Chrome shows the KPI matching the profiled row count after explicit selection."
+    },
+    {
+      "id": "ambiguous-join-stops",
+      "request": "Join my inspections to the products lookup and show record counts per product label.",
+      "steps": [
+        "Profile both sources and propose join keys with expected cardinality.",
+        "Stop and ask the user to confirm the relationship before generating model or query SQL.",
+        "Only after confirmation add the confirmed relationship and compile."
+      ],
+      "evidence": "Compilation rejects the JOIN while the relationship is unconfirmed; no dashboard is built on a guessed join."
+    },
+    {
+      "id": "appearance-feedback-rebuild",
+      "request": "The label 'Total records' is unclear, and the KPI should sit further right.",
+      "steps": [
+        "Edit the same dashboard.yaml label and grid position.",
+        "Recompile and rebuild the artifact.",
+        "Reopen the preview and point out the visible label and position change."
+      ],
+      "evidence": "The rebuilt config reflects the new label and position while staying valid contract 2; the reopened preview visibly differs."
+    },
+    {
+      "id": "failure-honesty",
+      "request": "Compile and preview the project. (The query file is missing.)",
+      "steps": [
+        "Run the compile step.",
+        "Report the exact failing file and location without fabricating success.",
+        "Fix only the reported defect and rerun the same command."
+      ],
+      "evidence": "The compiler error names queries/total.sql line 1 with the failure cause; nothing is claimed as built until the command succeeds."
+    }
+  ]
+}

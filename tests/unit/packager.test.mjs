@@ -14,8 +14,9 @@ test("packaging produces one deterministic external-data ZIP", async () => {
  const sourcePath = path.join(dir, "ap.json");
  const configPath = path.join(dir, "config.json");
  const config = {
-  contract: 1,
+  contract: 2,
   app: "grid",
+  theme: "neutral",
   title: "</script><script>globalThis.__featherbiInjected = true</script>",
   data: {
    mode: "upload",
@@ -39,6 +40,10 @@ test("packaging produces one deterministic external-data ZIP", async () => {
     query: "summary",
     field: "records",
     label: "Records",
+    x: 1,
+    y: 1,
+    width: 12,
+    height: 1,
    },
   ],
  };
@@ -102,22 +107,6 @@ test("packaging produces one deterministic external-data ZIP", async () => {
   /must not replace/i,
  );
  assert.deepEqual(await readFile(sourcePath), source);
-
- await writeFile(configPath, JSON.stringify({
-  ...config,
-  contract: 2,
-  theme: "neutral",
-  layout: config.layout.map((component) => ({
-   ...component,
-   x: 1,
-   y: 1,
-   width: 12,
-   height: 1,
-  })),
- }));
- const v2Zip = path.join(dir, "dashboard-v2.zip");
- await buildArtifact({ ...options, outPath: v2Zip });
- assert.ok((await readFile(v2Zip)).length > 0);
 
  await writeFile(configPath, JSON.stringify({ ...config, contract: 3 }));
  await assert.rejects(

@@ -536,10 +536,18 @@ function isChartType(type) {
  return ["bar", "line", "area", "scatter", "pie", "donut", "heatmap", "treemap", "sankey", "gauge", "boxplot"].includes(type);
 }
 
-function perspectiveConfigForChart(component) {
+export function perspectiveConfigForChart(component) {
  if (["pie", "donut", "treemap"].includes(component.type)) return { plugin: "Y Bar", groupBy: [component.name], columns: [component.value] };
  if (component.type === "gauge") return { plugin: "Datagrid", columns: [component.value] };
+ if (component.type === "heatmap") return { plugin: "Datagrid", columns: perspectiveColumns(component.xField ?? component.x, component.yField ?? component.y, component.value) };
+ if (component.type === "sankey") return { plugin: "Datagrid", columns: perspectiveColumns(component.source, component.target, component.value) };
+ if (component.type === "boxplot") return { plugin: "Datagrid", columns: perspectiveColumns(component.xField, component.min, component.q1, component.median, component.q3, component.max) };
  return { plugin: component.type === "table" ? "Datagrid" : "Y Bar", groupBy: [component.xField ?? component.x].filter(Boolean), splitBy: component.series ? [component.series] : [], columns: [component.yField ?? component.y].filter(Boolean) };
+}
+
+/** Datagrid columns for chart families without an equivalent Perspective plugin; keeps every authored field once. */
+function perspectiveColumns(...fields) {
+ return [...new Set(fields.filter(Boolean))];
 }
 
 function chartOptions(component, rows) {

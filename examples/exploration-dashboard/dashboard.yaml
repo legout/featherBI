@@ -27,6 +27,7 @@ relationships: []
 queries:
   grid_rows: {sql: queries/grid_rows.sql, params: []}
   exploration: {sql: queries/exploration.sql, params: [station_filter]}
+  heatmap_cells: {sql: queries/heatmap_cells.sql, params: []}
 playground:
   renderer: ag-grid
 layout:
@@ -51,5 +52,16 @@ layout:
       columns: [amount]
     x: 7
     y: 1
+    width: 6
+    height: 3
+  - id: heatmap
+    type: heatmap
+    query: heatmap_cells
+    label: Amount by station and band
+    xField: station
+    yField: band
+    value: total
+    x: 1
+    y: 4
     width: 6
     height: 3

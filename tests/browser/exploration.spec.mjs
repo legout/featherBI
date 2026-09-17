@@ -52,6 +52,13 @@ test("file exploration uses Community grid, bounded Perspective, and recoverable
   await expect(page.locator("#component-rows .ag-root")).toBeVisible();
   await expect(page.locator("#component-explore perspective-viewer")).toBeVisible({ timeout: 120_000 });
   await expect.poll(() => page.locator("#component-explore perspective-viewer").evaluate((viewer) => viewer.save().then((config) => config.plugin))).toBe("Y Bar");
+  const heatmapViewer = page.locator("#component-heatmap perspective-viewer");
+  await expect(heatmapViewer).toBeVisible({ timeout: 120_000 });
+  await expect.poll(() => heatmapViewer.evaluate((viewer) => viewer.getTable().then((table) => table.size()))).toBeGreaterThan(0);
+  const heatmapConfig = await heatmapViewer.evaluate((viewer) => viewer.save());
+  expect(heatmapConfig.plugin).toBe("Datagrid");
+  expect(heatmapConfig.columns).toEqual(["station", "band", "total"]);
+  await expect(page.locator("#component-heatmap [data-empty]")).toHaveText("");
   await expect(page.locator("[data-playground-editor] .cm-editor")).toBeVisible();
   await expect(page.locator("[data-playground-editor]")).toHaveAttribute("data-completions", "inspection_model,inspections");
 

@@ -14,11 +14,14 @@ let nextGeneration = 1;
 /**
  * Register `{source, file}` or `{source, bytes}` entries and create views whose
  * names are the declared source IDs. Embedded config source objects may be
- * passed directly when they contain base64 `content`.
+ * passed directly when they contain base64 `content`. Sources carrying a
+ * `remote` declaration are read live through httpfs instead of registered
+ * bytes; `options.liveCredentials` maps source IDs to `{keyId, secret,
+ * sessionToken?}` for private (`auth: "s3"`) live reads.
  *
  * @param {{db: object, connection: object}} engine
  * @param {Array<object> | {sources: Array<object>}} files
- * @param {{schema?: string}} [options]
+ * @param {{schema?: string, liveCredentials?: Map<string, object> | object}} [options]
  */
 export async function registerSources(engine, files, options = {}) {
  const inputs = Array.isArray(files) ? files : files?.sources;
@@ -28,7 +31,6 @@ export async function registerSources(engine, files, options = {}) {
  if (!inputs?.length) {
   throw new TypeError("registerSources requires at least one source file");
  }
-
  const seen = new Set();
  const sources = {};
  const generation = nextGeneration++;
@@ -53,22 +55,38 @@ export async function registerSources(engine, files, options = {}) {
 
   const schema = source.schema;
   const sqlTypes = schemaTypes(id, schema);
-  const type = inputType(source, input);
+  const remote = source.remote ?? null;
+  const type = remote ? remoteFormat(id, remote) : inputType(source, input);
   const physicalName = `__featherbi_source_${generation}_${index}.${type}`;
   try {
-   const payload = await payloadFor(source, input, id, type);
-   await registerPayload(engine.db, physicalName, payload);
-   registeredPhysicalNames.push(physicalName);
-   const columns =
-    type === "parquet"
-     ? await describe(engine.connection, physicalName)
-     : payload.headers;
+   let columns;
+   let readerName;
+   let readerPayload;
+   if (remote) {
+    await prepareRemoteSource(engine, source, id, options.liveCredentials);
+    readerName = remote.uri;
+    columns = await describeReader(
+     engine.connection,
+     readerSql(type, readerName, { headers: [] }),
+    );
+    readerPayload = { headers: columns, remote: true };
+   } else {
+    const payload = await payloadFor(source, input, id, type);
+    await registerPayload(engine.db, physicalName, payload);
+    registeredPhysicalNames.push(physicalName);
+    readerName = physicalName;
+    columns =
+     type === "parquet"
+      ? await describe(engine.connection, physicalName)
+      : payload.headers;
+    readerPayload = payload;
+   }
    uniqueColumns(id, columns, type.toUpperCase());
    if (!(type === "json" && columns.length === 0)) {
     missingColumns(id, schema, columns);
    }
 
-   const reader = readerSql(type, physicalName, payload);
+   const reader = readerSql(type, readerName, readerPayload);
    const view = reader
     ? `SELECT ${Object.keys(schema)
        .map(
@@ -96,7 +114,7 @@ export async function registerSources(engine, files, options = {}) {
    );
    await validateNullability(engine.connection, id, logicalName, schema);
    sources[id] = {
-    physicalName,
+    physicalName: remote ? null : physicalName,
     view: logicalName,
     schema: generationSchema,
    };
@@ -250,11 +268,90 @@ async function registerPayload(db, name, payload) {
  }
 }
 
-async function describe(connection, name) {
- const table = await runSql(
-  connection,
-  `DESCRIBE SELECT * FROM read_parquet(${stringLiteral(name)})`,
+/** Logical data format for one live remote source. */
+function remoteFormat(id, remote) {
+ const format = String(remote.format ?? "").toLowerCase();
+ if (!INPUT_TYPES.has(format)) {
+  throw sourceError(
+   id,
+   `unsupported remote format ${JSON.stringify(remote.format)}`,
+   "sources.unsupported-type",
+  );
+ }
+ return format;
+}
+
+/** In-memory secret name for one private live remote source. */
+export function liveSecretName(id) {
+ return `featherbi_live_${id}`;
+}
+
+/** Temporary config-provider secret SQL for one private live remote source. */
+export function liveSecretSql(id, credentials, remote) {
+ const options = [
+  `KEY_ID ${stringLiteral(credentials.keyId)}`,
+  `SECRET ${stringLiteral(credentials.secret)}`,
+ ];
+ if (credentials.sessionToken) {
+  options.push(`SESSION_TOKEN ${stringLiteral(credentials.sessionToken)}`);
+ }
+ if (remote.region) options.push(`REGION ${stringLiteral(remote.region)}`);
+ if (remote.endpoint) {
+  options.push(`ENDPOINT ${stringLiteral(remote.endpoint)}`);
+  // ponytail: path-style for explicit endpoints; add a URL_STYLE override if a virtual-hosted S3-compatible endpoint appears.
+  options.push("URL_STYLE 'path'");
+ }
+ return `CREATE OR REPLACE TEMP SECRET ${identifier(liveSecretName(id))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
+}
+
+/** Classify a failed live read: "credentials", "network", or "other". */
+export function classifyLiveError(error) {
+ const text = String(error?.message ?? error);
+ if (
+  /HTTP[^\n]*\b40[13]\b|\b401 Unauthorized\b|\b403 Forbidden\b|InvalidAccessKeyId|SignatureDoesNotMatch|ExpiredToken|token has expired|credential/i.test(
+   text,
+  )
+ ) {
+  return "credentials";
+ }
+ if (
+  /CORS|Failed to fetch|NetworkError|Network request failed|Unable to connect|Connection refused|getaddrinfo|ENOTFOUND|name or service not known/i.test(
+   text,
+  )
+ ) {
+  return "network";
+ }
+ return "other";
+}
+
+/** Load httpfs once and create the temporary secret for private live reads. */
+async function prepareRemoteSource(engine, source, id, liveCredentials) {
+ await runSql(engine.connection, "LOAD httpfs");
+ if (source.remote.auth !== "s3") return;
+ const credentials =
+  (liveCredentials instanceof Map
+   ? liveCredentials.get(id)
+   : liveCredentials?.[id]) ?? null;
+ if (!credentials?.keyId || !credentials?.secret) {
+  throw sourceError(
+   id,
+   "requires S3 credentials for the live read",
+   "sources.credentials-required",
+  );
+ }
+ await runSql(
+  engine.connection,
+  liveSecretSql(id, credentials, source.remote),
  );
+}
+
+async function describe(connection, name) {
+ return describeReader(connection, `read_parquet(${stringLiteral(name)})`);
+}
+
+/** Column names for one reader fragment (registered file or remote URI). */
+async function describeReader(connection, reader) {
+ const table = await runSql(connection, `DESCRIBE SELECT * FROM ${reader}`);
  return table.toArray().map((row) => String(row.column_name));
 }
 
@@ -479,7 +576,7 @@ function readerSql(type, name, payload) {
   return `read_csv_auto(${path}, HEADER = TRUE, ALL_VARCHAR = TRUE)`;
  if (type === "ndjson")
   return `read_json_auto(${path}, FORMAT = 'newline_delimited')`;
- return payload.headers.length
+ return payload.remote || payload.headers.length
   ? `read_json_auto(${path}, FORMAT = 'array')`
   : null;
 }

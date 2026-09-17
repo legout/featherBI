@@ -1,5 +1,6 @@
 import { validateConfig } from "../contract/config.mjs";
 import { createEngine } from "./bootstrap.mjs";
+import { classifyLiveError } from "./sources.mjs";
 import { RESULT_MAX_BYTES, RESULT_MAX_ROWS, RESULT_TIMEOUT_MS, runPlaygroundQuery, runQuery, runQueryArrow } from "./queries.mjs";
 import { registerSources } from "./sources.mjs";
 
@@ -9,7 +10,7 @@ const TABLE_PAGE_SIZE = 100;
 let nextDashboardGeneration = 1;
 
 /** Create one serialized dashboard runtime and publish only coherent snapshots. */
-export async function createDashboard({ config, inputs, onState = () => {} }) {
+export async function createDashboard({ config, inputs, onState = () => {}, liveCredentials = null }) {
  const validation = validateConfig(config);
  if (!validation.ok) {
   throw new Error(
@@ -20,6 +21,9 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
  }
  const sourceIds = config.data.sources.map(({ id }) => id);
  const inputMap = mapInputs(config, inputs);
+ const sessionCredentials = new Map();
+ const priorLiveErrors = new Map();
+ const live = { getCredentials: liveCredentials, sessionCredentials };
  onState({ status: "loading", error: null });
  const engine = await createEngine();
  let queue = Promise.resolve();
@@ -39,7 +43,26 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
  };
 
  try {
-  active = await stageGeneration(engine, config, inputMap, sourceIds);
+  let attempt = 0;
+  while (true) {
+   attempt += 1;
+   try {
+    active = await stageGeneration(engine, config, inputMap, sourceIds, live, priorLiveErrors);
+    break;
+   } catch (error) {
+    const credentialFailure =
+     attempt < 2 &&
+     error?.sourceId &&
+     config.data.sources.some(
+      ({ id, remote }) => id === error.sourceId && remote?.auth === "s3",
+     ) &&
+     classifyLiveError(error) === "credentials";
+    if (!credentialFailure) throw liveReadError(config, error);
+    // Authentication failure re-prompts once with the error visible.
+    priorLiveErrors.set(error.sourceId, error.message);
+    sessionCredentials.delete(error.sourceId);
+   }
+  }
   state = snapshot(active, 0, "ready");
   requestedFilterValues = { ...state.filterValues };
   playgroundConnection = config.playground ? await engine.db.connect() : null;
@@ -198,7 +221,7 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
       if (!source) throw new Error(`unknown replacement source ${JSON.stringify(id)}`);
       candidateInputs.set(id, { source, file });
      }
-     candidate = await stageGeneration(engine, config, candidateInputs, sourceIds);
+     candidate = await stageGeneration(engine, config, candidateInputs, sourceIds, live, priorLiveErrors);
      if (revision !== latestRevision) {
       await retireGeneration(engine, candidate);
       return state;
@@ -212,8 +235,15 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
      return state;
     } catch (error) {
      if (candidate) await retireGeneration(engine, candidate);
+     if (
+      error?.sourceId &&
+      classifyLiveError(error) === "credentials"
+     ) {
+      // Force a fresh prompt on the next replacement attempt.
+      sessionCredentials.delete(error.sourceId);
+     }
      if (revision === latestRevision) {
-      state = retainedSnapshot(prior, error);
+      state = retainedSnapshot(prior, liveReadError(config, error));
       requestedFilterValues = { ...prior.filterValues };
       emit(state);
      }
@@ -250,12 +280,51 @@ export async function createDashboard({ config, inputs, onState = () => {} }) {
  };
 }
 
-async function stageGeneration(engine, config, inputs, sourceIds) {
+async function stageGeneration(engine, config, inputs, sourceIds, live = null, priorLiveErrors = new Map()) {
  const number = nextDashboardGeneration++;
  const schema = `featherbi_gen_${number}`;
- const orderedInputs = config.data.sources.map(({ id }) => inputs.get(id));
+ const orderedInputs = [];
+ for (const source of config.data.sources) {
+  const input = inputs.get(source.id);
+  if (input) {
+   orderedInputs.push(input);
+   continue;
+  }
+  if (!source.remote) {
+   throw new Error(`missing input for source ${JSON.stringify(source.id)}`);
+  }
+  let credentials;
+  if (source.remote.auth === "s3") {
+   if (!live?.getCredentials) {
+    throw new Error(
+     `source ${JSON.stringify(source.id)} reads live and needs credentials; no credential prompt is available for this dashboard`,
+    );
+   }
+   credentials = live.sessionCredentials.get(source.id);
+   if (!credentials) {
+    credentials = await live.getCredentials(
+     source,
+     priorLiveErrors.get(source.id) ?? null,
+    );
+    if (!credentials) {
+     throw new Error(
+      `source ${JSON.stringify(source.id)} needs credentials for the live read; enter them to load the dashboard`,
+     );
+    }
+    live.sessionCredentials.set(source.id, credentials);
+   }
+  }
+  orderedInputs.push({ source, credentials });
+ }
  const loadStarted = performance.now();
- const registered = await registerSources(engine, orderedInputs, { schema });
+ const registered = await registerSources(engine, orderedInputs, {
+  schema,
+  liveCredentials: Object.fromEntries(
+   orderedInputs
+    .filter(({ credentials }) => credentials)
+    .map(({ source, credentials }) => [source.id, credentials]),
+  ),
+ });
  const generation = { number, schema, inputs, sources: registered.sources };
  try {
   const loadMs = performance.now() - loadStarted;
@@ -557,11 +626,31 @@ function mapInputs(config, inputs) {
   if (id) result.set(id, input.source ? input : { source: input });
  }
  for (const source of config.data.sources) {
-  if (!result.has(source.id)) {
+  // Live remote sources read their URI in the browser; no local file exists.
+  if (!result.has(source.id) && !source.remote) {
    throw new Error(`missing input for source ${JSON.stringify(source.id)}`);
   }
  }
  return result;
+}
+
+/** Decorate failed live reads with the source name and the actionable remedy. */
+function liveReadError(config, error) {
+ if (!error?.sourceId) return error;
+ const source = config.data.sources.find(({ id }) => id === error.sourceId);
+ if (!source?.remote) return error;
+ const kind = classifyLiveError(error);
+ const remedy = kind === "credentials"
+  ? "the remote host rejected the credentials; if they are wrong or expired, the source will ask for them again"
+  : kind === "network"
+   ? "the browser could not reach the source host (a CORS block looks the same); ask the author for a packaged build or check the network"
+   : "the live remote read failed; ask the author for a packaged build if it persists";
+ const wrapped = new Error(
+  `source ${JSON.stringify(error.sourceId)}: ${remedy} (${error.message})`,
+  { cause: error },
+ );
+ wrapped.sourceId = error.sourceId;
+ return wrapped;
 }
 
 async function retireGeneration(engine, generation) {

@@ -31,6 +31,19 @@ node bin/featherbi.mjs build \
 
 The result is one ZIP bundle containing `dashboard.html` plus each data file; dataset bytes never become part of the HTML.
 
+## Remote sources (read-only)
+
+Projects may declare read-only remote sources next to local ones. A remote declaration carries a read-only `s3://` or `https://` URI, an explicit `format`, `auth: none` (public read) or `auth: s3`, and optional non-secret `region`, `endpoint`, and `filename` (the ZIP member name, derived from the URI basename when omitted).
+
+`delivery: packaged` (the default) materializes the source at build time into the ZIP as an ordinary data file, so recipients keep the unchanged local-file flow and the artifact carries no remote metadata or credentials. `delivery: live` keeps the source's `{uri, format, auth, region?, endpoint?}` in the compiled runtime config: public sources are read directly in the browser on first use; private (`auth: s3`) sources prompt the recipient once per session for key id, secret, and optional session token, held only as a temporary in-memory DuckDB secret — never persisted — and a reloaded dashboard asks again. Rejected credentials re-prompt once with the error visible; CORS-blocked or unreachable hosts surface a visible error recommending packaged delivery.
+
+For `auth: s3`, featherBI resolves credentials through the AWS credential chain first (environment, profiles, SSO), then a gitignored `.env` created from [`.env.example`](.env.example) naming `FTHR_S3_KEY_ID`, `FTHR_S3_SECRET`, and optional `FTHR_S3_SESSION_TOKEN`, `FTHR_S3_REGION`, `FTHR_S3_ENDPOINT`, `FTHR_S3_USE_SSL`. Missing credentials fail with an error naming the source and the required secret. The first remote read installs DuckDB's `httpfs` extension into the local DuckDB cache. Profile output keeps its bounded shape with no URIs, credentials, or raw values.
+
+```sh
+node bin/featherbi.mjs profile --input s3://example-bucket/inspections.parquet \
+  --source-id inspections --format parquet --auth s3
+```
+
 An existing output is preserved unless `--overwrite` is supplied. Packaging writes local artifacts only; it does not publish, deploy, or upload data. Agents should follow [`skill/featherbi/SKILL.md`](skill/featherbi/SKILL.md): edit the project source, compile, and invoke the packager rather than generating HTML.
 
 ## Recipient use

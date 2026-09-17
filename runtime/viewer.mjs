@@ -32,6 +32,8 @@ export async function mountDashboard({
     config,
     inputs: assignments,
     onState: render,
+    liveCredentials: (source, priorError) =>
+     promptLiveCredentials(root, source, priorError),
    });
    root.querySelector("#replace-files").textContent = "Replace selected files";
    return controller;
@@ -153,21 +155,21 @@ export async function mountDashboard({
    await controller.applyFilters(readFilters(root, config.filters));
  });
  root.querySelector("#replace-files").addEventListener("click", async () => {
+  const localCount = config.data.sources.filter(({ remote }) => !remote).length;
   const replacements = selectedFiles(root, config.data.sources);
   if (controller) {
    if (Object.keys(replacements).length)
     await controller.replaceFiles(replacements);
-  } else if (Object.keys(replacements).length === config.data.sources.length) {
+  } else if (Object.keys(replacements).length === localCount) {
    await start(
-    config.data.sources.map((source) => ({
-     source,
-     file: replacements[source.id],
-    })),
+    config.data.sources
+     .filter(({ remote }) => !remote)
+     .map((source) => ({ source, file: replacements[source.id] })),
    );
   } else {
    render({
     status: "error",
-    error: "Select one file for every declared source.",
+    error: "Select one file for every declared local source.",
    });
   }
  });
@@ -210,6 +212,10 @@ export async function mountDashboard({
  );
 
  if (inputs?.length) return start(inputs);
+ if (config.data.sources.every(({ remote }) => remote)) {
+  // Live-only dashboards need no local files; start reads immediately.
+  return start([]);
+ }
  render({ status: "waiting", error: null });
  return {
   runPlayground(...args) {
@@ -297,6 +303,17 @@ function optionPageButton(id, action, label) {
 function buildSources(container, sources) {
  container.replaceChildren();
  for (const source of sources) {
+  if (source.remote) {
+   const note = document.createElement("p");
+   note.className = "remote-source";
+   note.dataset.remoteSource = source.id;
+   note.textContent =
+    source.remote.auth === "s3"
+     ? `${source.id} (remote; asks for credentials on first use)`
+     : `${source.id} (remote; reads live)`;
+   container.append(note);
+   continue;
+  }
   const label = document.createElement("label");
   label.textContent = `${source.id} `;
   const input = document.createElement("input");
@@ -310,6 +327,89 @@ function buildSources(container, sources) {
  replace.type = "button";
  replace.textContent = "Load selected files";
  container.append(replace);
+}
+
+/**
+ * Ask the recipient once per session for one private live source's
+ * credentials. Values resolve through the controller into a temporary
+ * in-memory DuckDB secret and are never persisted or logged.
+ */
+function promptLiveCredentials(root, source, priorError) {
+ return new Promise((resolve) => {
+  const dialog = document.createElement("dialog");
+  const heading = Object.assign(document.createElement("h2"), {
+   textContent: `Credentials for ${source.id}`,
+  });
+  const note = Object.assign(document.createElement("p"), {
+   textContent:
+    "Used only for this session's reads; never stored or included in the dashboard.",
+  });
+  const errorLine = Object.assign(document.createElement("p"), {
+   textContent: priorError ? `Last attempt failed: ${priorError}` : "",
+  });
+  errorLine.setAttribute("role", "alert");
+  errorLine.dataset.credentialError = "";
+  const keyField = credentialField("Key ID", "text", "keyId", true);
+  const secretField = credentialField("Secret", "password", "secret", true);
+  const tokenField = credentialField(
+   "Session token (optional)",
+   "password",
+   "sessionToken",
+   false,
+  );
+  const submit = Object.assign(document.createElement("button"), {
+   type: "submit",
+   textContent: "Read source",
+  });
+  const cancel = Object.assign(document.createElement("button"), {
+   type: "button",
+   textContent: "Cancel",
+  });
+  const done = (value) => {
+   dialog.close();
+   dialog.remove();
+   resolve(value);
+  };
+  cancel.addEventListener("click", () => done(null));
+  dialog.addEventListener("close", () => {
+   dialog.remove();
+   resolve(null);
+  });
+  const form = document.createElement("form");
+  form.append(
+   heading,
+   note,
+   errorLine,
+   keyField.label,
+   secretField.label,
+   tokenField.label,
+   submit,
+   cancel,
+  );
+  form.addEventListener("submit", (event) => {
+   event.preventDefault();
+   done({
+    keyId: keyField.input.value,
+    secret: secretField.input.value,
+    sessionToken: tokenField.input.value || undefined,
+   });
+  });
+  dialog.append(form);
+  (root.body ?? root).append(dialog);
+  dialog.showModal();
+ });
+}
+
+function credentialField(text, type, name, required) {
+ const label = document.createElement("label");
+ label.textContent = ` ${text}`;
+ const input = document.createElement("input");
+ input.type = type;
+ input.name = name;
+ input.required = required;
+ input.setAttribute("aria-label", text);
+ label.prepend(input);
+ return { label, input };
 }
 
 function buildPlayground(root, config, editorCapability) {
@@ -1106,6 +1206,7 @@ function readFilters(root, filters) {
 function selectedFiles(root, sources) {
  return Object.fromEntries(
   sources
+   .filter((source) => !source.remote)
    .map((source) => [
     source.id,
     root.querySelector(`#source-${source.id}`).files[0],

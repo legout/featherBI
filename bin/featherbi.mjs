@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +26,14 @@ try {
    "--format",
    required(options.format, "--format"),
   ];
+  if (options.auth) {
+   if (!["none", "s3"].includes(options.auth)) {
+    throw new Error(`--auth must be none or s3, found ${JSON.stringify(options.auth)}`);
+   }
+   profileArgs.push("--auth", options.auth);
+  }
+  if (options.region) profileArgs.push("--region", options.region);
+  if (options.endpoint) profileArgs.push("--endpoint", options.endpoint);
   if (options.includeValues) profileArgs.push("--include-values");
   if (options.output) {
    await mkdir(path.dirname(path.resolve(options.output)), { recursive: true });
@@ -44,6 +52,17 @@ try {
   );
   await mkdir(path.dirname(output), { recursive: true });
   await writeFile(output, result.json, "utf8");
+  const remotePath = path.join(path.dirname(output), "remote-sources.json");
+  if (result.remoteSources.length > 0) {
+   await writeFile(
+    remotePath,
+    `${JSON.stringify(result.remoteSources, null, 2)}\n`,
+    "utf8",
+   );
+   console.log(`wrote ${remotePath}`);
+  } else {
+   await rm(remotePath, { force: true });
+  }
   console.log(`wrote ${output}`);
  } else if (command === "validate") {
   const options = parseArgs(args, { sources: false, build: false });
@@ -64,6 +83,22 @@ try {
   console.log(
    `wrote ${result.outPath} (${result.bytes} bytes, sha256 ${result.artifactSha256})`,
   );
+ } else if (command === "setup") {
+  const { runSetup } = await import("../scripts/setup.mjs");
+  const readline = await import("node:readline/promises");
+  const rl = readline.createInterface({
+   input: process.stdin,
+   output: process.stderr,
+  });
+  try {
+   const result = await runSetup(args, {
+    cwd: process.cwd(),
+    prompt: (question) => rl.question(question),
+   });
+   process.exitCode = result.exitCode;
+  } finally {
+   rl.close();
+  }
  } else {
   throw new Error(
    `unknown command ${JSON.stringify(command)}; run featherbi --help`,
@@ -111,6 +146,9 @@ function parseSimpleArgs(args, booleans = new Set()) {
   "--input": "input",
   "--source-id": "sourceId",
   "--format": "format",
+  "--auth": "auth",
+  "--region": "region",
+  "--endpoint": "endpoint",
   "--project": "project",
   "--output": "output",
   "--include-values": "includeValues",
@@ -154,10 +192,11 @@ async function ensureValidator() {
 }
 
 function printHelp() {
- console.log(`featherbi profile --input FILE --source-id ID --format csv|json|ndjson|parquet [--output FILE] [--include-values]
+ console.log(`featherbi setup [--yes|--no] [--agent ID]
+featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--output FILE] [--include-values]
 featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config.json]
 featherbi validate --config CONFIG
 featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]
 
-Profiles, compiles, and builds local artifacts only. It never publishes or uploads dashboard data.`);
+setup checks Node, uv, and desktop Chrome, then offers the official DuckDB agent skills install. Profiles, compiles, and builds local artifacts only; it never publishes or uploads dashboard data.`);
 }

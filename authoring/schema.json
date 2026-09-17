@@ -381,8 +381,6 @@
       "additionalProperties": false,
       "required": [
         "id",
-        "type",
-        "file",
         "schema"
       ],
       "properties": {
@@ -401,6 +399,82 @@
         },
         "schema": {
           "$ref": "#/definitions/sourceSchema"
+        },
+        "remote": {
+          "$ref": "#/definitions/remoteSource"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "remote"
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": false,
+              "file": false
+            }
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "required": [
+                "remote"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "type",
+              "file"
+            ]
+          }
+        }
+      ]
+    },
+    "remoteSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uri",
+        "format",
+        "auth"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "pattern": "^(?:s3|https)://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+$"
+        },
+        "format": {
+          "enum": [
+            "csv",
+            "parquet",
+            "json"
+          ]
+        },
+        "auth": {
+          "enum": [
+            "none",
+            "s3"
+          ]
+        },
+        "region": {
+          "$ref": "#/definitions/plainText"
+        },
+        "endpoint": {
+          "$ref": "#/definitions/plainText"
+        },
+        "filename": {
+          "$ref": "#/definitions/file"
+        },
+        "delivery": {
+          "enum": [
+            "packaged",
+            "live"
+          ]
         }
       }
     },

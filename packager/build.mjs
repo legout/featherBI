@@ -14,44 +14,50 @@ export async function buildArtifact({
  outPath,
  overwrite = false,
 }) {
- const { config, inputs } = await preflightBuild({ configPath, sources });
+ const { config, inputs, cleanup } = await preflightBuild({ configPath, sources });
  const resolvedOut = path.resolve(outPath);
- if (
-  path.resolve(configPath) === resolvedOut ||
-  inputs.some((input) => input.path === resolvedOut)
- ) {
-  throw new Error("output must not replace the config or a source file");
- }
- // ponytail: buffer complete artifacts for atomic publication; stream to the sibling temp file if measured authoring memory becomes the bottleneck.
- const bytesBySource = new Map();
- for (const input of inputs) {
-  bytesBySource.set(input.source.id, await readFile(input.path));
- }
+ try {
+  if (
+   path.resolve(configPath) === resolvedOut ||
+   inputs.some((input) => input.path === resolvedOut)
+  ) {
+   throw new Error("output must not replace the config or a source file");
+  }
+  // ponytail: buffer complete artifacts for atomic publication; stream to the sibling temp file if measured authoring memory becomes the bottleneck.
+  const bytesBySource = new Map();
+  for (const input of inputs) {
+   bytesBySource.set(input.source.id, await readFile(input.path));
+  }
 
- const rendered = await renderDashboard({ config });
- const members = [
-  "dashboard.html",
-  ...config.data.sources.map(({ file }) => file),
- ];
- assertSafeZipMembers(members);
- const entries = [
-  { name: "dashboard.html", input: rendered.html, lastModified: ZIP_MTIME },
-  ...config.data.sources.map((source) => ({
-   name: source.file,
-   input: bytesBySource.get(source.id),
-   lastModified: ZIP_MTIME,
-  })),
- ];
- const artifact = Buffer.from(await downloadZip(entries).arrayBuffer());
+  const rendered = await renderDashboard({ config });
+  // Live remote sources read in the browser; only packaged sources are members.
+  const packagedSources = config.data.sources.filter(({ remote }) => !remote);
+  const members = [
+   "dashboard.html",
+   ...packagedSources.map(({ file }) => file),
+  ];
+  assertSafeZipMembers(members);
+  const entries = [
+   { name: "dashboard.html", input: rendered.html, lastModified: ZIP_MTIME },
+   ...packagedSources.map((source) => ({
+    name: source.file,
+    input: bytesBySource.get(source.id),
+    lastModified: ZIP_MTIME,
+   })),
+  ];
+  const artifact = Buffer.from(await downloadZip(entries).arrayBuffer());
 
- await publishFile(resolvedOut, artifact, overwrite);
- return {
-  outPath: resolvedOut,
-  artifactSha256: createHash("sha256").update(artifact).digest("hex"),
-  bytes: artifact.length,
-  duckdbWasm: rendered.duckdbWasm,
-  echarts: rendered.echarts,
- };
+  await publishFile(resolvedOut, artifact, overwrite);
+  return {
+   outPath: resolvedOut,
+   artifactSha256: createHash("sha256").update(artifact).digest("hex"),
+   bytes: artifact.length,
+   duckdbWasm: rendered.duckdbWasm,
+   echarts: rendered.echarts,
+  };
+ } finally {
+  await cleanup?.();
+ }
 }
 
 /** Reject unsafe, absolute, traversing, empty, backslash, control, and duplicate members. */

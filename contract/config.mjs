@@ -30,6 +30,8 @@
 
 import validateV2 from "../.generated/validate-config-v2.mjs";
 
+const SECRET_PARAMETER = /(?:^|[^a-z])(?:x[-_]?amz[-_]?(?:credential|signature|security[-_]?token)|access[-_]?key|secret(?:[-_]?access[-_]?key)?|session[-_]?token|credential|password|private[-_]?key)(?:$|[^a-z])/i;
+
 /** @typedef {{path: string, code: string, message: string}} ConfigIssue */
 
 /**
@@ -154,6 +156,30 @@ function collectSemanticIssues(config, issues) {
         "source.content-not-allowed",
         "sources cannot contain content",
       );
+    }
+    if (source.remote) {
+      const query = source.remote.uri.match(/[?#](.*)$/)?.[1] ?? "";
+      if (
+        /^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.uri) ||
+        SECRET_PARAMETER.test(query)
+      ) {
+        issue(
+          `${basePath}.remote.uri`,
+          "remote.credentials-in-uri",
+          "remote uri must not contain credentials or secret-looking query parameters",
+        );
+      }
+      if (
+        source.remote.endpoint &&
+        (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.endpoint) ||
+          SECRET_PARAMETER.test(source.remote.endpoint))
+      ) {
+        issue(
+          `${basePath}.remote.endpoint`,
+          "remote.credentials-in-endpoint",
+          "remote endpoint must not contain credentials or secret-looking values",
+        );
+      }
     }
     const lowerToOriginal = new Map();
     for (const name of Object.keys(source.schema)) {

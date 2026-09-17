@@ -9,6 +9,7 @@ import { scopeThemeCss } from "./css.mjs";
 const validateProject = new Ajv({ allErrors: true }).compile(projectSchema);
 const FORBIDDEN_SQL = /\b(?:ALTER|ATTACH|CALL|COPY|CREATE|DELETE|DETACH|DROP|EXPORT|IMPORT|INSERT|INSTALL|LOAD|MERGE|PRAGMA|TRUNCATE|UPDATE|VACUUM)\b/i;
 const FILE_READER = /\b(?:read_csv|read_csv_auto|read_json|read_json_auto|read_ndjson|read_parquet|parquet_scan|csv_scan)\s*\(/i;
+const SECRET_PARAMETER = /(?:^|[^a-z])(?:x[-_]?amz[-_]?(?:credential|signature|security[-_]?token)|access[-_]?key|secret(?:[-_]?access[-_]?key)?|session[-_]?token|credential|password|private[-_]?key)(?:$|[^a-z])/i;
 
 /** Compile one dashboard project into deterministic strict runtime contract 2. */
 export async function compileProject(projectPath) {
@@ -160,6 +161,29 @@ function validateRemoteSources(project, filename, document, lineCounter) {
     lineCounter,
     ["sources", index, "remote", "uri"],
     "remote uri must not embed credentials; declare auth and keep credentials in the gitignored .env",
+   );
+  }
+  const query = source.remote.uri.match(/[?#](.*)$/)?.[1] ?? "";
+  if (SECRET_PARAMETER.test(query)) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", "uri"],
+    "remote uri must not contain credential or secret-looking query parameters",
+   );
+  }
+  if (
+   source.remote.endpoint &&
+   (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.endpoint) ||
+    SECRET_PARAMETER.test(source.remote.endpoint))
+  ) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", "endpoint"],
+    "remote.endpoint must not contain credentials or secret-looking values",
    );
   }
   if (!remoteMemberName(source)) {

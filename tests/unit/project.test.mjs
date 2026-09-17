@@ -258,6 +258,14 @@ test("invalid or leak-prone remote declarations fail with precise locations", as
    match: /dashboard\.yaml:\d+:\d+.*remote uri must not embed credentials/i,
   },
   {
+   remote: `{uri: "https://example.com/a.parquet?X-Amz-Credential=key&X-Amz-Signature=sig", format: parquet, auth: none}`,
+   match: /dashboard\.yaml:\d+:\d+.*credential or secret-looking query parameters/i,
+  },
+  {
+   remote: `{uri: https://example.com/a.parquet, format: parquet, auth: none, endpoint: "https://user:pass@example.com"}`,
+   match: /dashboard\.yaml:\d+:\d+.*remote\.endpoint.*credentials/i,
+  },
+  {
    yamlOverride: `project: 1\ntitle: Remote dashboard\nsources:\n  - id: inspections\n    type: parquet\n    schema:\n      station: {type: string, nullable: false}\n    remote:\n      uri: https://example.com/a.parquet\n      format: parquet\n      auth: none\nfilters: []\nrelationships: []\nqueries: {}\nlayout: []\n`,
    match: /dashboard\.yaml:\d+:\d+.*sources\.0\.(type|file).*must not be declared together with remote/i,
   },

@@ -68,6 +68,17 @@ test("runtime remote metadata stays minimal and consistent", () => {
  assert.equal(validateConfig(withFile).ok, false);
 });
 
+test("runtime rejects credential-bearing remote declarations", () => {
+ for (const remote of [
+  { ...LIVE_SOURCE.remote, uri: `${LIVE_SOURCE.remote.uri}?X-Amz-Credential=key&X-Amz-Signature=sig` },
+  { ...LIVE_SOURCE.remote, endpoint: "https://user:pass@example.com" },
+ ]) {
+  const config = structuredClone(BASE_CONFIG);
+  config.data.sources[0] = { ...config.data.sources[0], remote };
+  assert.equal(validateConfig(config).ok, false);
+ }
+});
+
 test("private live secrets build temporary config-provider SQL", () => {
  const sql = liveSecretSql(
   "bucket",

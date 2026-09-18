@@ -15,7 +15,8 @@
     ".generated/",
     "README.md",
     "LICENSE",
-    ".env.example"
+    ".env.example",
+    "!skill/featherbi/scripts/__pycache__"
   ],
   "description": "Contract-first serverless BI dashboards: runtime config contract validator",
   "bin": {

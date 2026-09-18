@@ -2,6 +2,18 @@
 
 featherBI turns a declarative dashboard project (YAML, SQL, and optional CSS) and local CSV, Parquet, or JSON files into a portable dashboard. Authors build artifacts; recipients open and filter them in desktop Google Chrome without a local server.
 
+## Install
+
+Install globally and set up once:
+
+```sh
+npm i -g featherbi
+featherbi setup --global            # checks prerequisites, links the skill into your agent's global skills dir, installs the DuckDB skills
+featherbi setup --global --design   # also installs the optional design skill (opt-in, never default)
+```
+
+Prerequisites: Node.js 24 or newer, [uv](https://docs.astral.sh/uv/getting-started/installation/), and desktop Google Chrome — `featherbi setup` reports exactly what is missing and how to install it. Working from a repository checkout with `npm ci` remains the developer path (see below).
+
 ## Author prerequisites
 
 - Node.js 24 or newer and npm

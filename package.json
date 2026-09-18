@@ -1,8 +1,22 @@
 {
   "name": "featherbi",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
+  "files": [
+    "bin/",
+    "authoring/",
+    "packager/",
+    "contract/",
+    "scripts/",
+    "runtime/",
+    "skill/",
+    "shells/",
+    ".generated/",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
   "description": "Contract-first serverless BI dashboards: runtime config contract validator",
   "bin": {
     "featherbi": "bin/featherbi.mjs"
@@ -11,6 +25,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "prepare": "node scripts/build-contract.mjs",
     "generate:contract": "node scripts/build-contract.mjs",
     "fixtures": "uv run tests/fixtures/generate.py",
     "build": "npm run generate:contract && node scripts/build.mjs",
@@ -19,7 +34,7 @@
     "test:browser": "npm run build:harness && playwright test --project=chrome --grep-invert @private",
     "check": "npm run generate:contract && npm run fixtures && npm run test:unit"
   },
-  "devDependencies": {
+  "dependencies": {
     "@codemirror/autocomplete": "6.20.3",
     "@codemirror/lang-sql": "6.10.0",
     "@codemirror/state": "6.5.2",
@@ -29,7 +44,6 @@
     "@finos/perspective-viewer": "3.8.0",
     "@finos/perspective-viewer-d3fc": "3.8.0",
     "@finos/perspective-viewer-datagrid": "3.8.0",
-    "@playwright/test": "1.63.0",
     "@siemens/ix": "5.2.1",
     "@tailwindcss/cli": "4.3.3",
     "ag-grid-community": "35.3.1",
@@ -43,6 +57,9 @@
     "postcss-prefix-selector": "2.1.1",
     "tailwindcss": "4.3.3",
     "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
   },
   "overrides": {
     "@finos/perspective-viewer-d3fc": {

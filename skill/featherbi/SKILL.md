@@ -9,11 +9,13 @@ Turn local sample data into an editable dashboard project, verify it in desktop 
 
 ## Start safely
 
-Work from a featherBI checkout with the `featherbi` CLI available, keep the project's own files, and use Git as the iteration history:
+Work anywhere with `featherbi` on PATH, keep the project's own files, and use Git as the iteration history:
 
 ```sh
-test -f bin/featherbi.mjs && npm ci
+command -v featherbi || npm link   # once, from a featherBI checkout
 ```
+
+Without a global link, run from a checkout: `npm ci`, then `node bin/featherbi.mjs <command> ...`.
 
 ## Workflow
 
@@ -22,7 +24,7 @@ test -f bin/featherbi.mjs && npm ci
 2. **Profile without copying.** Create the project workspace (an ignored `.featherbi/` directory) and profile each source:
 
    ```sh
-   node bin/featherbi.mjs profile --input /absolute/local/file.parquet \
+   featherbi profile --input /absolute/local/file.parquet \
      --source-id inspections --format parquet \
      --output path/to/project/.featherbi/profile.json
    ```
@@ -36,8 +38,8 @@ test -f bin/featherbi.mjs && npm ci
 5. **Compile and preview.** Compile to strict runtime contract 2, fix every reported filename/line/column error, then build and open the extracted ZIP through `file://` in desktop Chrome with each data file explicitly selected:
 
    ```sh
-   node bin/featherbi.mjs compile --project path/to/project/dashboard.yaml
-   node bin/featherbi.mjs build \
+   featherbi compile --project path/to/project/dashboard.yaml
+   featherbi build \
      --config path/to/project/.featherbi/dashboard.config.json \
      --source inspections=/absolute/local/file.parquet \
      --output path/to/project/.featherbi/dashboard.zip

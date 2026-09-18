@@ -192,11 +192,11 @@ async function ensureValidator() {
 }
 
 function printHelp() {
- console.log(`featherbi setup [--yes|--no] [--agent ID]
+console.log(`featherbi setup [--global] [--agent ID] [--yes|--no] [--design]
 featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--output FILE] [--include-values]
 featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config.json]
 featherbi validate --config CONFIG
 featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]
 
-setup checks Node, uv, and desktop Chrome, then offers the official DuckDB agent skills install. Profiles, compiles, and builds local artifacts only; it never publishes or uploads dashboard data.`);
+setup checks Node, uv, and desktop Chrome, then offers the official DuckDB agent skills install. With --global it also verifies the featherbi CLI is on PATH, links this package's skill into the agent's global skills dir, and installs the DuckDB skills with -g; --design adds the opt-in design skill, never by default. Profiles, compiles, and builds local artifacts only; it never publishes or uploads dashboard data.`);
 }

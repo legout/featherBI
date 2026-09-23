@@ -66,6 +66,9 @@ _Avoid_: Live filesystem refresh.
 
 **Filter revision**: A coherent filter state whose results belong together; it is distinct from newer requested filters still awaiting results.
 
+**Pending filter edits**: Values changed in the recipient's controls but not yet accepted as the dashboard's active filter revision.
+_Avoid_: Active filters, applied filters.
+
 **Query**: A named authored selection of declared sources with declared filter parameters, consumed by dashboard components.
 
 **Component**: A declared KPI, chart, heatmap, or table bound to a named query's result fields.

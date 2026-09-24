@@ -5,10 +5,16 @@
  * requests, which httpfs issues from the worker; no external network is used.
  */
 
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
+import https from "node:https";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
 import { test } from "@playwright/test";
+import { renderDashboard } from "../../scripts/build.mjs";
 import {
  closeHarness,
  expect,
@@ -16,6 +22,8 @@ import {
  requireInstalledDesktopChrome,
  rootDir,
 } from "./helpers.mjs";
+
+const execFileAsync = promisify(execFile);
 
 async function harnessCall(page, method, ...args) {
  return page.evaluate(
@@ -25,13 +33,24 @@ async function harnessCall(page, method, ...args) {
  );
 }
 
-/** Serve one fixture from 127.0.0.1 with Range support and permissive CORS. */
-async function serveFixture(fileName) {
+/**
+ * Serve one fixture from 127.0.0.1 with Range support and permissive CORS.
+ * `tls` serves the same fixture over https for live dashboard configs (the
+ * runtime contract admits only `s3://` and `https://` URIs); `control.fail`
+ * destroys the connection without a response to simulate network loss.
+ */
+async function serveFixture(fileName, { tls = null, control = null } = {}) {
  const bytes = await readFile(
   path.join(rootDir, ".artifacts", "fixtures", fileName),
  );
- const server = http.createServer((request, response) => {
-  response.setHeader("Access-Control-Allow-Origin", "*");
+ const server = (tls ? https : http).createServer(
+  tls ? { key: tls.key, cert: tls.cert } : {},
+  (request, response) => {
+   if (control?.fail) {
+    request.socket.destroy();
+    return;
+   }
+   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader(
    "Access-Control-Allow-Methods",
    "GET, HEAD, OPTIONS",
@@ -74,9 +93,49 @@ async function serveFixture(fileName) {
  });
  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
  return {
-  origin: `http://127.0.0.1:${server.address().port}`,
+  origin: `${tls ? "https" : "http"}://127.0.0.1:${server.address().port}`,
   close: () => new Promise((resolve) => server.close(resolve)),
  };
+}
+
+/**
+ * Self-signed localhost certificate for the https fixture server. Recipient
+ * contexts open with `ignoreHTTPSErrors`; no certificate is trusted outside
+ * the test.
+ */
+async function selfSignedLocalhostCert() {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-live-tls-"));
+ const keyPath = path.join(dir, "key.pem");
+ const certPath = path.join(dir, "cert.pem");
+ try {
+  await execFileAsync(
+   "openssl",
+   [
+    "req",
+    "-x509",
+    "-newkey",
+    "rsa:2048",
+    "-keyout",
+    keyPath,
+    "-out",
+    certPath,
+    "-days",
+    "1",
+    "-nodes",
+    "-subj",
+    "/CN=127.0.0.1",
+    "-addext",
+    "subjectAltName=IP:127.0.0.1",
+   ],
+   { timeout: 30_000 },
+  );
+  return {
+   key: await readFile(keyPath),
+   cert: await readFile(certPath),
+  };
+ } finally {
+  await rm(dir, { recursive: true, force: true });
+ }
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -138,6 +197,145 @@ test("a public live remote source reads over httpfs from the file:// harness", a
   }
  } finally {
   await closeHarness(context);
+  await fixture.close();
+ }
+});
+
+/**
+ * RI-04 — recoverable option search: after a working public live dashboard,
+ * the fixture stops responding mid option read. The retained error names the
+ * source with its remedy, prior results/options and the recipient's pending
+ * edits survive, and a retry after the source recovers succeeds.
+ */
+test("a failed live option search retains state visibly and recovers on retry", async ({
+ browser,
+}) => {
+ const control = { fail: false };
+ const tls = await selfSignedLocalhostCert();
+ const fixture = await serveFixture("inspections.parquet", { tls, control });
+ const pagePath = path.join(rootDir, ".artifacts", "browser", "live-option-search.html");
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  const { html } = await renderDashboard({
+   config: {
+    contract: 2,
+    app: "grid",
+    title: "Live option search",
+    data: {
+     mode: "upload",
+     sources: [
+      {
+       id: "remote_inspections",
+       schema: {
+        source: { type: "string", nullable: false },
+        order_number: { type: "string", nullable: false },
+        test_station_identifier: { type: "string", nullable: false },
+        inspection_date: { type: "timestamp", nullable: false },
+       },
+       remote: {
+        uri: `${fixture.origin}/inspections.parquet`,
+        format: "parquet",
+        auth: "none",
+       },
+      },
+     ],
+    },
+    filters: [
+     {
+      id: "station",
+      kind: "select",
+      source: "remote_inspections",
+      column: "test_station_identifier",
+      default: null,
+     },
+     {
+      id: "order",
+      kind: "option-search",
+      source: "remote_inspections",
+      column: "order_number",
+      default: null,
+     },
+    ],
+    queries: {
+     records: {
+      sql: "SELECT count(*) AS records FROM remote_inspections WHERE ($station IS NULL OR test_station_identifier = $station) AND ($order IS NULL OR order_number = $order)",
+      params: ["station", "order"],
+     },
+    },
+    layout: [
+     {
+      id: "kpi_records",
+      type: "kpi",
+      query: "records",
+      field: "records",
+      label: "Inspection records",
+      x: 1,
+      y: 1,
+      width: 12,
+      height: 1,
+     },
+    ],
+    theme: "neutral",
+   },
+  });
+  await writeFile(pagePath, html, "utf8");
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "5",
+  );
+  await expect(page.locator("#filter-order option")).toHaveCount(4);
+
+  // Pending edit on one filter, unapplied.
+  await page.locator("#filter-station").selectOption({ label: "SJ" });
+  await expect(page.locator("#active-filter-state")).toContainText(
+   "station: all",
+  );
+
+  // The source stops responding mid option read (debounced search).
+  control.fail = true;
+  await page.locator("#filter-order-search").fill("7007");
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "error",
+  );
+  const status = await page
+   .locator("#dashboard-status")
+   .textContent();
+  expect(status).toContain("remote_inspections");
+  expect(status).toContain("packaged build");
+  expect(status).toContain("Showing prior results");
+
+  // Prior results and options remain; the draft, typed search, and focus stay.
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "5",
+  );
+  await expect(page.locator("#filter-order option")).toHaveCount(4);
+  await expect(page.locator("#filter-station")).toHaveValue('"SJ"');
+  await expect(page.locator("#active-filter-state")).toContainText(
+   "station: all",
+  );
+  await expect(page.locator("#filter-order-search")).toHaveValue("7007");
+  expect(
+   await page.evaluate(() => document.activeElement?.id),
+  ).toBe("filter-order-search");
+
+  // The source recovers and the recipient retries the same search.
+  control.fail = false;
+  await page.locator("#filter-order-search").fill("7009");
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#filter-order option")).toHaveCount(2);
+  await expect(page.locator("#filter-station")).toHaveValue('"SJ"');
+ } finally {
+  await rm(pagePath, { force: true });
+  await context.close();
   await fixture.close();
  }
 });

@@ -252,7 +252,21 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
       config,
       { sql: `SELECT * FROM ${filter.source}` },
      );
-     if (!isCredentialFailure(annotated)) throw annotated;
+     if (!isCredentialFailure(annotated)) {
+      // A non-credential option-read failure publishes a retained,
+      // source-specific error and preserves the recipient's pending edits
+      // (unlike a failed apply, which restores the committed controls); the
+      // rejection still propagates so no caller mistakes it for success.
+      const visible = liveReadError(
+       config,
+       optionReadError(annotated, config, filter),
+      );
+      state = retainedSnapshot(prior, visible, {
+       pendingEditsPreserved: true,
+      });
+      emit(state);
+      throw visible;
+     }
      try {
       await retryLiveGeneration(annotated);
       result = await readOptions();
@@ -265,6 +279,10 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
     }
     state = {
      ...state,
+     status: "ready",
+     error: null,
+     retained: false,
+     pendingEditsPreserved: false,
      filterOptions: { ...state.filterOptions, [filter.id]: result.values },
      filterOptionPages: {
       ...state.filterOptionPages,
@@ -666,12 +684,13 @@ function snapshot(generation, revision, status) {
  };
 }
 
-function retainedSnapshot(prior, error) {
+function retainedSnapshot(prior, error, { pendingEditsPreserved = false } = {}) {
  return {
   ...prior,
   status: "error",
   error: error instanceof Error ? error.message : String(error),
   retained: true,
+  pendingEditsPreserved,
  };
 }
 
@@ -739,6 +758,15 @@ function annotateRemoteError(error, config, query) {
   error.sourceIds = sourceIds;
   error.sourceId = sourceIds[0];
  }
+ return error;
+}
+
+/** Tag option-read failures with the option's live source so the retained
+ * error names it; annotateRemoteError only tags private sources for retry. */
+function optionReadError(error, config, filter) {
+ if (error?.sourceId) return error;
+ const source = config.data.sources.find(({ id }) => id === filter.source);
+ if (source?.remote) error.sourceId = source.id;
  return error;
 }
 

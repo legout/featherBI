@@ -34,10 +34,15 @@ export async function mountDashboard({
  let syncedRevision;
  const render = (state) => {
   // Sync controls from the snapshot only for an accepted revision or a
-  // retained-error rollback; every other render preserves pending edits.
-  const syncControls = Boolean(state.filterValues) &&
+  // retained-error rollback; every other render preserves pending edits. An
+  // option-read failure retains the snapshot without touching the controls,
+  // so its pending edits (and typed search/focus) survive (spec §1, §2).
+  const syncControls =
+   Boolean(state.filterValues) &&
    (state.revision !== syncedRevision ||
-    (state.status === "error" && state.retained));
+    (state.status === "error" &&
+     state.retained &&
+     !state.pendingEditsPreserved));
   renderState(root, config, state, capabilities, { drafts, syncControls, focus });
   if (syncControls) {
    syncedRevision = state.revision;

@@ -96,6 +96,8 @@ async function buildMarkdownDashboard() {
       Disallowed destinations stay plain text:
       [self-destruct](javascript:alert(document.domain)) and
       [packaged file](file:///etc/passwd).
+
+      A code span stays literal: \`[read](https://example.com)\`.
     x: 1
     y: 13
     width: 12
@@ -361,6 +363,7 @@ test("markdown renders the safe subset; unsupported markup and unsafe links stay
   expect(await probe.locator("img, script, iframe, b").count()).toBe(0);
   await expect(probe).toContainText("[self-destruct](javascript:alert(document.domain))");
   await expect(probe).toContainText("[packaged file](file:///etc/passwd)");
+  await expect(probe).toContainText("`[read](https://example.com)`");
   await expect(probe.locator("a")).toHaveCount(0);
 
   // Plain text and heading stay literal escaped content.

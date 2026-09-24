@@ -10,8 +10,9 @@
  *   or `mailto:`; opened isolated from the dashboard
  *
  * Every node is built through `createElement`/text content only; source text
- * is never parsed as HTML. Raw HTML, images, and any other construct stay
- * literal text, and disallowed link destinations stay text with no anchor.
+ * is never parsed as HTML. Raw HTML, images, backtick code spans, and any
+ * other construct stay literal text, and disallowed link destinations stay
+ * text with no anchor.
  */
 
 const LINK_SCHEME = /^(?:https:\/\/|http:\/\/|mailto:)/i;
@@ -62,14 +63,45 @@ export function appendMarkdown(parent, source) {
 }
 
 /**
- * Append `text` to `parent` with emphasis and allowed links applied; every
- * other character (including raw HTML and image/link syntax that is not an
+ * Append `text` to `parent`, keeping backtick code spans literal (a run of
+ * backticks closed by an identical run, delimiters included) and applying
+ * emphasis and allowed links only to the text between them. Every other
+ * character (including raw HTML and image/link syntax that is not an
  * allowed link) becomes a literal text node.
  *
  * @param {HTMLElement} parent
  * @param {string} text
  */
 function appendInline(parent, text) {
+ let start = 0;
+ let index = 0;
+ while (index < text.length) {
+  if (text[index] !== "`") {
+   index += 1;
+   continue;
+  }
+  let length = 0;
+  while (text[index + length] === "`") length += 1;
+  const run = "`".repeat(length);
+  const closer = text.indexOf(run, index + length);
+  if (closer === -1) {
+   index += length; // unclosed run: stays literal via appendMatched
+   continue;
+  }
+  appendMatched(parent, text.slice(start, index));
+  parent.append(text.slice(index, closer + run.length));
+  start = index = closer + run.length;
+ }
+ appendMatched(parent, text.slice(start));
+}
+
+/**
+ * Append `text` to `parent` with emphasis and allowed links applied.
+ *
+ * @param {HTMLElement} parent
+ * @param {string} text
+ */
+function appendMatched(parent, text) {
  let index = 0;
  for (const match of text.matchAll(INLINE_TOKEN)) {
   const [token, strong, emphasis, label, destination] = match;

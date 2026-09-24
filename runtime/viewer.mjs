@@ -1,5 +1,6 @@
 import { createDashboard } from "./controller.mjs";
 import { componentInteractionField, selectableFields } from "../contract/config.mjs";
+import { appendMarkdown } from "./markdown.mjs";
 
 const charts = new WeakMap();
 const debounceTimers = new Map();
@@ -616,11 +617,17 @@ function buildLayout(container, config) {
   heading.textContent = component.label;
   section.append(heading);
   if (["heading", "markdown", "text"].includes(component.type)) {
-   const content = document.createElement(
-    component.type === "heading" ? "h3" : "p",
-   );
-   content.textContent = component.content;
-   section.append(content);
+   if (component.type === "markdown") {
+    const content = document.createElement("div");
+    appendMarkdown(content, component.content);
+    section.append(content);
+   } else {
+    const content = document.createElement(
+     component.type === "heading" ? "h3" : "p",
+    );
+    content.textContent = component.content;
+    section.append(content);
+   }
   } else if (component.type === "divider") {
    section.append(document.createElement("hr"));
   } else if (component.type === "tabs") {

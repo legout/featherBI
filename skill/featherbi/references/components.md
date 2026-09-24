@@ -1,10 +1,10 @@
 # Component, filter, and interaction catalog
 
-Every component has an `id`, `label`, grid placement (`x`, `y`, `width`, `height` on 12 columns), a `query` where applicable, and explicit empty/error behavior. Text is escaped; nothing accepts JavaScript, raw HTML, or raw chart option objects.
+Every component has an `id`, `label`, grid placement (`x`, `y`, `width`, `height` on 12 columns), a `query` where applicable, and explicit empty/error behavior. Content text is escaped — `markdown` renders only the safe subset below — and nothing accepts JavaScript, raw HTML, or raw chart option objects.
 
 ## Components
 
-- **Content:** `heading`, `markdown`, `text` (escaped), `divider`, `tabs`/`section` (containers own their alternatives; members may overlap only within the same tab).
+- **Content:** `heading` and `text` render escaped literal content. `markdown` renders one safe subset: paragraphs (blank-line separated blocks, lines joined by one space), emphasis `*italic*` and `**bold**` (nestable; `_` is not a marker), unordered lists (`- item`, one item per line), ordered lists (`1. item`, numbered from the first item), and links such as `[Insights](https://example.com/insights)` whose destination is `https://`, `http:`, or `mailto:` only, opened isolated from the dashboard. Every other construct — raw HTML, images, code spans, Markdown headings, and any other link destination — stays literal escaped text, never executed or fetched. `divider`; `tabs`/`section` (containers own their alternatives; members may overlap only within the same tab).
 - **Metrics:** `kpi` (`field`, optional `decimals`) and `metric-group` (`fields`, optional `decimals`).
 - **Charts (ECharts, typed fields):** `bar` (`orientation: horizontal` for station-style activity), `line`, `area`, `scatter`, `pie`/`donut` (`name`/`value`), `heatmap` (`xField`/`yField`/`value`), `treemap`, `sankey` (`source`/`target`/`value`), `gauge`, `boxplot` (`xField`, `min`/`q1`/`median`/`q3`/`max`). Charts accept `annotations: [{at: YYYY-MM-DD, label}]` on bar/line and `series` for split-by.
 - **Table:** `table` with `columns: [{field, label}]`; AG Grid Community features only, server-side paging, no Enterprise options such as `rowGroup`.

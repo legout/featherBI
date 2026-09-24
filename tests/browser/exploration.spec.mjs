@@ -19,9 +19,7 @@ async function cli(...args) {
 
 async function setSql(page, sql) {
  const editor = page.locator("[data-playground-editor] .cm-content");
- await editor.click();
- await page.keyboard.press("Meta+A");
- await page.keyboard.insertText(sql);
+ await editor.fill(sql);
 }
 
 async function load(page) {

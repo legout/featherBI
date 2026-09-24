@@ -231,7 +231,17 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
    );
    if (!filter) throw new Error(`unknown select filter ${JSON.stringify(filterId)}`);
    if (!Number.isSafeInteger(page) || page < 0) throw new Error("option page must be a non-negative integer");
-   const prior = state;
+   const requestedRevision = latestRevision;
+   // Publish an option-read failure against the state accepted when the read
+   // failed — never a snapshot captured before a racing apply accepted — and
+   // publish nothing at all when a newer requested revision has superseded
+   // this request (RI-03), so the failure cannot undo newer results or clear
+   // pending edits.
+   const publishFailure = (error, options) => {
+    if (latestRevision !== requestedRevision) return;
+    state = retainedSnapshot(state, error, options);
+    emit(state);
+   };
    return enqueue(async () => {
     let result;
     const readOptions = async () => {
@@ -261,10 +271,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
        config,
        optionReadError(annotated, config, filter),
       );
-      state = retainedSnapshot(prior, visible, {
-       pendingEditsPreserved: true,
-      });
-      emit(state);
+      publishFailure(visible, { pendingEditsPreserved: true });
       throw visible;
      }
      try {
@@ -272,8 +279,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
       result = await readOptions();
      } catch (retryError) {
       const visible = liveReadError(config, retryError);
-      state = retainedSnapshot(prior, visible);
-      emit(state);
+      publishFailure(visible);
       throw visible;
      }
     }

@@ -50,6 +50,7 @@ sources:
       amount: {type: number, nullable: true}
       quantity: {type: integer, nullable: false}
       inspected_at: {type: timestamp, nullable: false}
+filters: []
 queries:
   total:
     sql: queries/total.sql

@@ -50,12 +50,15 @@ function publishMarkSelection(node, viewer, fields) {
     pairs.push({ field: entry[0], value: entry[2] });
    }
   }
+  // Publish the modifier the native click captured, then clear it so a
+  // stale capture never leaks into a later mark click.
+  const held = modifier;
   modifier = false;
   if (!pairs.length) return;
   node.dispatchEvent(
    new CustomEvent("featherbi-chart-select", {
     bubbles: true,
-    detail: { pairs, modifier },
+    detail: { pairs, modifier: held },
    }),
   );
  });

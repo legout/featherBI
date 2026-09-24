@@ -198,36 +198,50 @@ ORDER BY station, region, line, area`,
 /**
  * Click the plotted Y Bar mark for one cross/split combination with a real
  * mouse event. Marks carry typed data (crossValue "station|region", key
- * "line|area|column"); the returned point is the mark's visible center.
+ * "line|area|column"); the clicked point is the mark's visible center. With
+ * `shift`, the modifier is held on the keyboard around the click: Playwright's
+ * raw mouse.click modifiers option never reaches installed desktop Chrome.
+ * The chart re-renders after each committed revision, so the mark is awaited.
  */
-async function clickPerspectiveMark(page, crossValue, key) {
- const point = await page.locator("#component-explore perspective-viewer").evaluate(
-  (viewer, { crossValue, key }) => {
-   let mark = null;
-   const visit = (root) => {
-    for (const element of root.querySelectorAll("*")) {
-     if (element.shadowRoot) visit(element.shadowRoot);
-     const data = element.__data__;
-     if (
-     element.tagName === "path" &&
-     data &&
-     data.crossValue === crossValue &&
-     data.key === key &&
-     !mark
-     )
-      mark = element;
-    }
-   };
-   visit(viewer);
-   if (!mark) return null;
-   mark.scrollIntoView({ block: "center" });
-   const box = mark.getBoundingClientRect();
-   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  },
-  { crossValue, key },
- );
+async function clickPerspectiveMark(page, crossValue, key, shift = false) {
+ const locate = () =>
+  page.locator("#component-explore perspective-viewer").evaluate(
+   (viewer, { crossValue, key }) => {
+    let mark = null;
+    const visit = (root) => {
+     for (const element of root.querySelectorAll("*")) {
+      if (element.shadowRoot) visit(element.shadowRoot);
+      const data = element.__data__;
+      if (
+      element.tagName === "path" &&
+      data &&
+      data.crossValue === crossValue &&
+      data.key === key &&
+      !mark
+      )
+       mark = element;
+     }
+    };
+    visit(viewer);
+    if (!mark) return null;
+    mark.scrollIntoView({ block: "center" });
+    const box = mark.getBoundingClientRect();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+   },
+   { crossValue, key },
+  );
+ let point = null;
+ for (let attempt = 0; attempt < 50 && !point; attempt += 1) {
+  point = await locate();
+  if (!point) await page.waitForTimeout(200);
+ }
  if (!point) throw new Error(`no plotted mark for ${crossValue} / ${key}`);
- await page.mouse.click(point.x, point.y);
+ if (shift) await page.keyboard.down("Shift");
+ try {
+  await page.mouse.click(point.x, point.y);
+ } finally {
+  if (shift) await page.keyboard.up("Shift");
+ }
 }
 
 test("grouped-and-split Perspective mark commits typed selection and pending edits in one revision", async ({ browser }) => {
@@ -281,6 +295,33 @@ test("grouped-and-split Perspective mark commits typed selection and pending edi
   await expect(page.locator("#active-filter-state")).not.toContainText("L1");
 
   // The unmapped region field stays visibly local next to its component.
+  await expect(page.locator("#component-explore")).toHaveAttribute("data-local-selection", "east,L1");
+
+  // Reset the committed revision so every grouped cross is plotted again.
+  await page.locator("#filter-station_filter").selectOption([]);
+  await page.locator("#filter-area_filter").selectOption([]);
+  await page.locator("#filter-line_filter_a").selectOption([]);
+  await page.locator("#apply-filters").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#active-filter-state")).toContainText("station_filter: all");
+  await expect(page.locator("#component-rows .ag-row")).toHaveCount(8);
+
+  // A keyboard-held Shift click ADDS the clicked value to a pending control
+  // edit instead of replacing it: pending S2 plus clicked S1 keeps both.
+  await page.locator("#filter-station_filter").selectOption(["S2"]);
+  await clickPerspectiveMark(page, "S1|east", "L1|north|amount", true);
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#active-filter-state")).toContainText("station_filter: S2, S1");
+  await expect(page.locator("#active-filter-state")).toContainText("area_filter: north");
+  await expect(page.locator("#component-rows .ag-row")).toHaveCount(4);
+
+  // The same Shift click on the now-selected value removes only that value.
+  await clickPerspectiveMark(page, "S1|east", "L1|north|amount", true);
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#active-filter-state")).toContainText("station_filter: S2; ");
+  await expect(page.locator("#active-filter-state")).toContainText("area_filter: all");
+  await expect(page.locator("#active-filter-state")).not.toContainText("S1");
+  await expect(page.locator("#component-rows .ag-row")).toHaveCount(4);
   await expect(page.locator("#component-explore")).toHaveAttribute("data-local-selection", "east,L1");
  } finally {
   await context.close();

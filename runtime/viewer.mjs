@@ -105,8 +105,8 @@ export async function mountDashboard({
     continue;
    }
    if (filter.kind === "boolean") {
-    if (control.id !== `filter-${filter.id}`) continue;
-    drafts.set(filter.id, control.indeterminate ? null : control.checked);
+    if (control.name !== `filter-${filter.id}`) continue;
+    drafts.set(filter.id, booleanChoice(control.value));
     return;
    }
    if (control.id === `filter-${filter.id}`) {
@@ -374,11 +374,23 @@ function buildFilters(container, filters) {
    through.setAttribute("aria-label", `${filter.id} through`);
    field.append(from, " through ", through);
   } else if (filter.kind === "boolean") {
-   const input = document.createElement("input");
-   input.type = "checkbox";
-   input.id = `filter-${filter.id}`;
-   input.setAttribute("aria-label", filter.label ?? filter.id);
-   field.append(input);
+   // Native three-choice All/Yes/No (null/true/false): a radio group keeps
+   // every choice reachable by keyboard, including back to All (spec §2).
+   for (const [value, label] of [
+    [null, "All"],
+    [true, "Yes"],
+    [false, "No"],
+   ]) {
+    const choice = document.createElement("input");
+    choice.type = "radio";
+    choice.id = `filter-${filter.id}-${label.toLowerCase()}`;
+    choice.name = `filter-${filter.id}`;
+    choice.value = String(value);
+    const choiceLabel = document.createElement("label");
+    choiceLabel.htmlFor = choice.id;
+    choiceLabel.textContent = label;
+    field.append(choice, choiceLabel);
+   }
   } else {
    const all = document.createElement("input");
    all.type = "checkbox";
@@ -876,9 +888,10 @@ function renderFilter(root, filter, state, drafts = new Map(), syncControls = tr
    to == null ? "" : filter.kind === "date-range" ? addDays(to, -1) : to;
  } else if (filter.kind === "boolean") {
   const value = draftValue(filter.id);
-  const input = root.querySelector(`#filter-${filter.id}`);
-  input.indeterminate = value == null;
-  input.checked = value === true;
+  for (const input of root.querySelectorAll(
+   `input[name="filter-${filter.id}"]`,
+  ))
+   input.checked = booleanChoice(input.value) === value;
  } else {
   const value = draftValue(filter.id);
   root.querySelector(`#filter-${filter.id}`).value = value ?? "";
@@ -1484,8 +1497,10 @@ function readFilters(root, filters) {
        ? Number(through)
        : addDays(through, 1);
   } else if (filter.kind === "boolean") {
-   const input = root.querySelector(`#filter-${filter.id}`);
-   values[filter.id] = input.indeterminate ? null : input.checked;
+   const checked = root.querySelector(
+    `input[name="filter-${filter.id}"]:checked`,
+   );
+   values[filter.id] = checked ? booleanChoice(checked.value) : null;
   } else {
    values[filter.id] = root.querySelector(`#filter-${filter.id}-all`).checked
     ? null
@@ -1527,6 +1542,11 @@ function optionKey(value) {
 
 function optionLabel(value) {
  return value === "" ? "(empty)" : String(value);
+}
+
+/** Typed value (null/true/false) of a three-choice boolean control. */
+function booleanChoice(value) {
+ return value === "true" ? true : value === "false" ? false : null;
 }
 
 function formatValue(value, decimals) {

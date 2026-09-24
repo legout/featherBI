@@ -28,22 +28,83 @@ Input digests (sha256): CSV `2f729a9282d240c9972bc9b4c30edcefbe1d5f1b17b735402d3
 
 ## Reproducible commands
 
-Generator (exact spec, byte-reproducible): for row `i`, draw `r = next()` from the LCG `seed = (imul(seed, 1664525) + 1013904223) >>> 0` starting at `0x2a6f2b1`; `station = ST-A..ST-F` by `r % 6`; `amount = ((r >>> 8) % 100000) / 100` with `null` when `r % 128 === 0`; `quantity = r % 99 + 1`; `inspected_at` = `2026-06-01` plus `r % 90` days with time-of-day `r % 86400` seconds, formatted `YYYY-MM-DD HH:MM:SS`; `order_number = ORD-` + zero-padded 7-digit `i`. CSV writes a header row then one row per line; JSON writes `[\n` + comma-joined objects + `\n]`.
+The exact helper scripts (`$TMP/gen.mjs` generator, `$TMP/run-probe.mjs` orchestrator that ran each command below under `/usr/bin/time -v` and recorded the result JSONs, `$TMP/browser-probe.mjs` browser runner) existed only temporarily under the scratch `$TMP` and are **not tracked in this repository**; the specs below are sufficient to reconstruct them once `$TMP` is cleaned.
+
+Generator (exact spec, byte-reproducible; fields in schema order): for row `i`, draw `r = next()` from the LCG `seed = (imul(seed, 1664525) + 1013904223) >>> 0` starting at `0x2a6f2b1`; `station = ST-A..ST-F` by `r % 6`; `amount = ((r >>> 8) % 100000) / 100` with `null` when `r % 128 === 0`; `quantity = r % 99 + 1`; `inspected_at` = `2026-06-01` plus `r % 90` days with time-of-day `r % 86400` seconds, formatted `YYYY-MM-DD HH:MM:SS`; `order_number = ORD-` + zero-padded 7-digit `i`. CSV writes a header row then one row per line, with `amount` rendered at two decimals (empty string for `null`); JSON writes `[\n` + comma-joined objects (fields serialized in schema order) + `\n]` then one trailing newline.
+
+Project shape, one project per case under `$TMP/probe/<case>/`; each `queries/<name>.sql` is `SELECT count(*) AS value FROM <source id>;`:
+
+```yaml
+# csv case. json case: type json, file inspections.json, one query/KPI "total".
+# zip case: sources orders -> orders.csv (csv) and events -> events.json (json),
+# queries/KPIs total_orders and total_events (two KPIs: x:1 width:6, x:7 width:6).
+project: 1
+title: Probe CSV load
+sources:
+  - id: inspections
+    type: csv
+    file: inspections.csv
+    schema:
+      order_number: {type: string, nullable: false}
+      station: {type: string, nullable: false}
+      amount: {type: number, nullable: true}
+      quantity: {type: integer, nullable: false}
+      inspected_at: {type: timestamp, nullable: false}
+queries:
+  total:
+    sql: queries/total.sql
+    params: []
+layout:
+  - id: total
+    type: kpi
+    query: total
+    label: Total records
+    field: value
+    x: 1
+    y: 1
+    width: 12
+    height: 1
+```
+
+Node and browser steps per case (`$TMP/browser-probe.mjs CASE EXTRACTED_DIR RESULT_JSON CASEDEF`):
 
 ```sh
 node $TMP/gen.mjs csv 1500000 $TMP/data/inspections.csv
 node $TMP/gen.mjs json  400000 $TMP/data/inspections.json
-# per case (csv shown; json identical shape; zip assigns both files as two sources):
+
+# csv case
 node bin/featherbi.mjs compile --project $TMP/probe/csv/dashboard.yaml
 /usr/bin/time -v node bin/featherbi.mjs build \
   --config $TMP/probe/csv/.featherbi/dashboard.config.json \
   --source inspections=$TMP/data/inspections.csv \
   --output $TMP/out/csv/dashboard.zip --overwrite
 unzip -q $TMP/out/csv/dashboard.zip -d $TMP/out/csv/extracted
-node $TMP/browser-probe.mjs csv $TMP/out/csv/extracted $TMP/results/browser-csv.json '<case def>'
+node $TMP/browser-probe.mjs csv $TMP/out/csv/extracted $TMP/results/browser-csv.json \
+  '{"sources":[{"id":"inspections","file":"inspections.csv","rows":1500000}],"kpis":[{"id":"total","rows":1500000}]}'
+
+# json case
+node bin/featherbi.mjs compile --project $TMP/probe/json/dashboard.yaml
+/usr/bin/time -v node bin/featherbi.mjs build \
+  --config $TMP/probe/json/.featherbi/dashboard.config.json \
+  --source inspections=$TMP/data/inspections.json \
+  --output $TMP/out/json/dashboard.zip --overwrite
+unzip -q $TMP/out/json/dashboard.zip -d $TMP/out/json/extracted
+node $TMP/browser-probe.mjs json $TMP/out/json/extracted $TMP/results/browser-json.json \
+  '{"sources":[{"id":"inspections","file":"inspections.json","rows":400000}],"kpis":[{"id":"total","rows":400000}]}'
+
+# zip case: both files as two external-data ZIP members
+node bin/featherbi.mjs compile --project $TMP/probe/zip/dashboard.yaml
+/usr/bin/time -v node bin/featherbi.mjs build \
+  --config $TMP/probe/zip/.featherbi/dashboard.config.json \
+  --source orders=$TMP/data/inspections.csv \
+  --source events=$TMP/data/inspections.json \
+  --output $TMP/out/zip/dashboard.zip --overwrite
+unzip -q $TMP/out/zip/dashboard.zip -d $TMP/out/zip/extracted
+node $TMP/browser-probe.mjs zip $TMP/out/zip/extracted $TMP/results/browser-zip.json \
+  '{"sources":[{"id":"orders","file":"orders.csv","rows":1500000},{"id":"events","file":"events.json","rows":400000}],"kpis":[{"id":"total_orders","rows":1500000},{"id":"total_events","rows":400000}]}'
 ```
 
-The browser probe is a temporary Playwright script (untracked): launches desktop Chrome (`channel: 'chrome'`, headless), opens the extracted `dashboard.html` through `pathToFileURL` (`file://`), sets the packaged data file(s) on `#source-<id>` inputs, clicks `#replace-files`, waits for `#dashboard-status[data-state=ready]` and each `#component-<id> [data-value]` to equal the expected formatted count, and samples `/proc` for the whole Chrome process tree every 250 ms while reading `VmHWM` (kernel peak-RSS high-water mark) per process at the end. JS heap comes from CDP `Performance.getMetrics`.
+The browser runner launches desktop Chrome (`channel: 'chrome'`, headless), opens the extracted `dashboard.html` through `pathToFileURL` (`file://`), sets the packaged data file(s) on `#source-<id>` inputs, clicks `#replace-files`, waits for `#dashboard-status[data-state=ready]` and each `#component-<id> [data-value]` to equal the expected formatted count, and samples `/proc` for the whole Chrome process tree every 250 ms, reading each process's `VmHWM` at the end. Reported per-process peak is `max(250 ms sampled RSS, final VmHWM)`; JS heap comes from CDP `Performance.getMetrics`.
 
 ## Observed Node evidence
 
@@ -61,13 +122,13 @@ Compile elapsed 270–400 ms per case. The build buffers each source with `readF
 
 Desktop Chrome, `file://`, DuckDB-WASM booted from the pinned CDN bundle; every case completed with the expected KPI value rendered (`1,500,000` / `400,000`), no page errors, no renderer crash.
 
-| Case | renderer peak RSS (VmHWM) | Chrome tree peak (sum of per-process peaks) | ready after click | KPI rendered | page-main JS heap at end |
+| Case | renderer peak RSS, max(sampled, VmHWM) | Chrome tree peak, upper bound (sum of per-process peaks; not simultaneous) | ready after click | KPI rendered | page-main JS heap at end |
 | --- | --- | --- | --- | --- | --- |
 | csv | 723,800 kB (≈ 10.6× input) | 1,568,856 kB | 5,560 ms | 5,591 ms | 3,477,136 B |
 | json | 839,464 kB (≈ 18.6× input) | 1,688,308 kB | 6,605 ms | 6,648 ms | 45,162,292 B |
 | zip | 842,944 kB (≈ 7.4× members) | 1,694,292 kB | 9,425 ms | 9,482 ms | 45,282,164 B |
 
-Page load of the local `dashboard.html` took 113–173 ms; selecting the input files 234–304 ms. The page renderer (largest of three renderer processes) hosts the DuckDB-WASM worker; its peak includes the WASM heap, which the CDP JS-heap metric does **not** cover — the JS-heap column above is explicitly partial (page main heap only). The combined ZIP case peaks near the JSON-only case, indicating per-source buffering is transient and sequential rather than fully additive.
+Page load of the local `dashboard.html` took 113–173 ms; selecting the input files 234–304 ms. The page renderer (largest of three renderer processes) hosts the DuckDB-WASM worker; its peak includes the WASM heap, which the CDP JS-heap metric does **not** cover — the JS-heap column above is explicitly partial (page main heap only). The per-process numbers need one caveat, seen concretely in the zip run: a utility process sampled 125,828 kB but ended with `VmHWM` 115,164 kB, so a final `VmHWM` is not guaranteed to cover the whole run (process churn; Chrome also resets its own high-water mark), which is why the reported per-process peak is `max(sampled, VmHWM)`. The headline renderer figures are unaffected — the zip renderer ended at 842,944 kB `VmHWM`, consistent with its 841,028 kB sampled maximum. The combined ZIP case peaks near the JSON-only case, indicating per-source buffering is transient and sequential rather than fully additive.
 
 ## Where the memory goes (measured flows, code pointers)
 
@@ -83,7 +144,7 @@ The complete probe ran twice; build peak RSS repeated within 0.2%, renderer peak
 ## Limitations
 
 - One machine class (4-core arm64, 23.4 GiB RAM, Linux); representative sizes were chosen (tens of MiB, millions of rows), not derived from a ceiling, and no SLA is claimed from them.
-- `/proc` sampling is 250 ms; short sub-interval spikes can be missed between samples, but per-process `VmHWM` is the kernel's exact high-water mark. Renderer attribution uses the largest renderer process (Chrome rewrites child argv, so renderers are identified by `--renderer-client-id=`).
+- `/proc` sampling is 250 ms; short sub-interval spikes can be missed between samples. Reported per-process peak is `max(sampled RSS, final VmHWM)`: a final `VmHWM` is the kernel high-water mark at read time but is not guaranteed to cover the whole run (process churn, and Chrome may reset its own high-water mark), so individual subprocess attribution can be inconsistent. The Chrome-tree column sums those per-process peaks into an upper bound, **not** a simultaneous peak. Renderer attribution uses the largest renderer process (Chrome rewrites child argv, so renderers are identified by `--renderer-client-id=`).
 - Headless Chrome matches the supported browser-gate launch mode; headed compositing may add a little GPU-process memory.
 - Parquet is out of scope: its file-handle path is unchanged by the specification.
 - Peak numbers include cold CDN fetch of the ~50 MB DuckDB-WASM module in the browser process tree; this is part of the ordinary supported flow.
@@ -94,4 +155,4 @@ The representative CSV, JSON, and external-data ZIP workflows all completed thro
 
 ## Cleanup
 
-The generator, probe projects, extracted artifacts, and result JSON remain under `$TMP` (untracked, outside the repository) for parent inspection. No repository file other than this document changed.
+The generator, orchestrator, browser runner, probe projects, extracted artifacts, and result JSON remain under `$TMP` (untracked, outside the repository) for parent inspection and are reconstructible from the specifications above once cleaned. No repository file other than this document changed.

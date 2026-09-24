@@ -177,3 +177,30 @@ layout:
     y: 7
     width: 12
     height: 2
+  - id: reading_notes
+    type: markdown
+    label: Reading this dashboard
+    content: |
+      This dashboard summarizes **daily inspection records** by station,
+      product, and outcome. Filter edits stay *pending* until you press
+      Apply filters; clicking a chart commits them together with the
+      clicked value.
+
+      - Station, product, and outcome charts filter on click.
+      - Hold the modifier key to add or remove one station.
+      - The Records by day brush narrows the date window.
+      - Replace a packaged source through the panel above.
+
+      A typical reading order:
+
+      1. Check the Summary KPIs for the active filters.
+      2. Compare stations in Records by station.
+      3. Break outcomes down in Records by outcome.
+
+      Questions about the data or a replacement file? Write
+      [insights@example.com](mailto:insights@example.com) or read
+      the [sharing handbook](https://example.com/featherbi/sharing).
+    x: 1
+    y: 9
+    width: 12
+    height: 3

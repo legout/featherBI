@@ -4,6 +4,11 @@
  * Public API:
  *   validateConfig(input) -> {ok: true, value: input}
  *                          | {ok: false, issues: [{path, code, message}]}
+ *   looksLikeCredentialMaterial(value) -> boolean
+ *
+ * looksLikeCredentialMaterial is the one shared secret-looking
+ * URI/query-parameter detection used by this validator, the authoring
+ * compiler, and the packager preflight.
  *
  * Structural validation uses the build-time generated Ajv 8 standalone
  * validator; no schema compilation happens at runtime. Runtime contract v1
@@ -31,6 +36,20 @@
 import validateV2 from "../.generated/validate-config-v2.mjs";
 
 const SECRET_PARAMETER = /(?:^|[^a-z])(?:x[-_]?amz[-_]?(?:credential|signature|security[-_]?token)|access[-_]?key|secret(?:[-_]?access[-_]?key)?|session[-_]?token|credential|password|private[-_]?key)(?:$|[^a-z])/i;
+
+/**
+ * True when a value carries secret-looking credential material (AWS SigV4
+ * query parameters, access keys, passwords, and friends). Callers pass the
+ * component already in scope: the query/fragment portion of a remote URI
+ * (everything after the first `?` or `#`) for URI admission, or the whole
+ * string for endpoints, so each admission boundary keeps its existing
+ * explicit userinfo check, scan scope, and diagnostics.
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function looksLikeCredentialMaterial(value) {
+  return SECRET_PARAMETER.test(value);
+}
 
 /** @typedef {{path: string, code: string, message: string}} ConfigIssue */
 
@@ -161,7 +180,7 @@ function collectSemanticIssues(config, issues) {
       const query = source.remote.uri.match(/[?#](.*)$/)?.[1] ?? "";
       if (
         /^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.uri) ||
-        SECRET_PARAMETER.test(query)
+        looksLikeCredentialMaterial(query)
       ) {
         issue(
           `${basePath}.remote.uri`,
@@ -172,7 +191,7 @@ function collectSemanticIssues(config, issues) {
       if (
         source.remote.endpoint &&
         (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.endpoint) ||
-          SECRET_PARAMETER.test(source.remote.endpoint))
+          looksLikeCredentialMaterial(source.remote.endpoint))
       ) {
         issue(
           `${basePath}.remote.endpoint`,

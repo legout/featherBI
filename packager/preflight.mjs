@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { validateConfig } from "../contract/config.mjs";
+import { looksLikeCredentialMaterial, validateConfig } from "../contract/config.mjs";
 
 const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(
@@ -14,7 +14,6 @@ const rootDir = path.resolve(
 const REMOTE_SOURCE_ID = /^[a-z][a-z0-9_]*$/;
 const REMOTE_FORMATS = new Set(["csv", "parquet", "json"]);
 const REMOTE_AUTH = new Set(["none", "s3"]);
-const SECRET_PARAMETER = /(?:^|[^a-z])(?:x[-_]?amz[-_]?(?:credential|signature|security[-_]?token)|access[-_]?key|secret(?:[-_]?access[-_]?key)?|session[-_]?token|credential|password|private[-_]?key)(?:$|[^a-z])/i;
 
 /** Load and validate a dashboard config with the shared browser validator. */
 export async function loadConfig(configPath) {
@@ -92,7 +91,7 @@ async function loadRemoteSources(configPath) {
   const query = entry.uri.match(/[?#](.*)$/)?.[1] ?? "";
   if (
    /^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(entry.uri) ||
-   SECRET_PARAMETER.test(query)
+   looksLikeCredentialMaterial(query)
   ) {
    throw invalid("contains credentials or secret-looking URI parameters");
   }
@@ -104,7 +103,7 @@ async function loadRemoteSources(configPath) {
   if (
    entry.endpoint &&
    (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(entry.endpoint) ||
-    SECRET_PARAMETER.test(entry.endpoint))
+    looksLikeCredentialMaterial(entry.endpoint))
   ) {
    throw invalid("contains credentials or secret-looking endpoint values");
   }

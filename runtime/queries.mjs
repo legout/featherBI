@@ -216,16 +216,26 @@ function validateResultColumnNames(names) {
 
 async function readBoundedArrow(reader, maxBytes, cancel) {
  const batches = [];
- let table = new Table(reader.schema, batches);
- let ipc = tableToIPC(table, "stream");
+ // Arrow streams write the schema once, then one encapsulated message per batch, so a
+ // single-batch stream minus the empty stream is exactly that batch's message bytes:
+ // accounting per incoming batch costs one encode per batch instead of re-serializing the
+ // whole accumulated result for every batch.
+ const streamPrefixBytes = tableToIPC(new Table(reader.schema, []), "stream").byteLength;
+ let accountedBytes = streamPrefixBytes;
  for await (const batch of reader) {
   batches.push(batch);
-  table = new Table(reader.schema, batches);
-  ipc = tableToIPC(table, "stream");
-  if (maxBytes && ipc.byteLength > maxBytes) {
-   await Promise.all([reader.cancel(), cancel()]);
-   throw limitError("result exceeds the 8 MiB Arrow limit", "queries.bytes");
+  if (maxBytes) {
+   accountedBytes += tableToIPC(new Table(reader.schema, [batch]), "stream").byteLength - streamPrefixBytes;
+   if (accountedBytes > maxBytes) {
+    await Promise.all([reader.cancel(), cancel()]);
+    throw limitError("result exceeds the 8 MiB Arrow limit", "queries.bytes");
+   }
   }
+ }
+ const table = new Table(reader.schema, batches);
+ const ipc = tableToIPC(table, "stream");
+ if (maxBytes && ipc.byteLength > maxBytes) {
+  throw limitError("result exceeds the 8 MiB Arrow limit", "queries.bytes");
  }
  return { table, ipc };
 }

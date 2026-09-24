@@ -1,4 +1,5 @@
 import { createDashboard } from "./controller.mjs";
+import { componentInteractionField, selectableFields } from "../contract/config.mjs";
 
 const charts = new WeakMap();
 const debounceTimers = new Map();
@@ -25,7 +26,24 @@ export async function mountDashboard({
   : null;
 
  let controller;
- const render = (state) => renderState(root, config, state, capabilities);
+ // Pending filter edits: control values changed by the recipient but not
+ // yet accepted as the active revision (CONTEXT.md "pending filter edits").
+ const drafts = new Map();
+ // Focus restoration across renders that lock and unlock controls.
+ const focus = { restoreId: null };
+ let syncedRevision;
+ const render = (state) => {
+  // Sync controls from the snapshot only for an accepted revision or a
+  // retained-error rollback; every other render preserves pending edits.
+  const syncControls = Boolean(state.filterValues) &&
+   (state.revision !== syncedRevision ||
+    (state.status === "error" && state.retained));
+  renderState(root, config, state, capabilities, { drafts, syncControls, focus });
+  if (syncControls) {
+   syncedRevision = state.revision;
+   drafts.clear();
+  }
+ };
  const start = async (assignments) => {
   try {
    controller = await createDashboard({
@@ -46,9 +64,74 @@ export async function mountDashboard({
   }
  };
 
+ const recordDraft = (control) => {
+  for (const filter of config.filters) {
+   if (
+    ["select", "single-select", "multi-select", "option-search"].includes(
+     filter.kind,
+    )
+   ) {
+    if (control.id !== `filter-${filter.id}`) continue;
+    const selected = [...control.selectedOptions].map(
+     (entry) => entry.featherbiValue,
+    );
+    drafts.set(
+     filter.id,
+     filter.kind === "multi-select" ? selected : (selected[0] ?? null),
+    );
+    return;
+   }
+   if (filter.kind === "date-range" || filter.kind === "numeric-range") {
+    if (control.id === `filter-${filter.id}-from`) {
+     drafts.set(`${filter.id}_from`, control.value === "" ? null : control.value);
+     return;
+    }
+    if (control.id === `filter-${filter.id}-through`) {
+     drafts.set(
+      `${filter.id}_to`,
+      control.value === ""
+       ? null
+       : filter.kind === "numeric-range"
+         ? Number(control.value)
+         : addDays(control.value, 1),
+     );
+     return;
+    }
+    continue;
+   }
+   if (filter.kind === "boolean") {
+    if (control.id !== `filter-${filter.id}`) continue;
+    drafts.set(filter.id, control.indeterminate ? null : control.checked);
+    return;
+   }
+   if (control.id === `filter-${filter.id}`) {
+    drafts.set(
+     filter.id,
+     root.querySelector(`#filter-${filter.id}-all`).checked
+      ? null
+      : control.value,
+    );
+    return;
+   }
+   if (control.id === `filter-${filter.id}-all`) {
+    drafts.set(
+     filter.id,
+     control.checked
+      ? null
+      : root.querySelector(`#filter-${filter.id}`).value,
+    );
+    return;
+   }
+  }
+ };
+
+ filters.addEventListener("focusin", () => {
+  focus.restoreId = null;
+ });
  filters.addEventListener("input", (event) => {
   if (!controller) return;
   const control = event.target;
+  recordDraft(control);
   const textFilter = config.filters.find(
    ({ id, kind }) => kind === "text" && control.id === `filter-${id}`,
   );
@@ -79,6 +162,24 @@ export async function mountDashboard({
     controller.searchFilterOptions(optionFilter.id, control.value, 0),
    );
   }
+ });
+
+ filters.addEventListener("change", (event) => {
+  if (!controller) return;
+  recordDraft(event.target);
+ });
+
+ layout.addEventListener("featherbi-chart-select", async (event) => {
+  if (!controller) return;
+  const section = event.target.closest("section");
+  await applyMarkSelection(
+   root,
+   config,
+   controller,
+   section,
+   event.detail.pairs,
+   event.detail.modifier,
+  );
  });
 
  filters.addEventListener("click", async (event) => {
@@ -141,7 +242,7 @@ export async function mountDashboard({
    return;
   }
   if (event.target.dataset.brushApply !== undefined) {
-   await applyBrush(root, config, controller, event.target.closest("section"));
+   await applyBrush(config, controller, event.target.closest("section"));
    return;
   }
   const action = event.target.dataset.pageAction;
@@ -610,7 +711,8 @@ function tablePageButton(id, action, label) {
  return button;
 }
 
-function renderState(root, config, state, capabilities) {
+function renderState(root, config, state, capabilities, ui = {}) {
+ const { drafts = new Map(), syncControls = true, focus = { restoreId: null } } = ui;
  const status = root.querySelector("#dashboard-status");
  status.dataset.state = state.status;
  status.textContent =
@@ -627,6 +729,8 @@ function renderState(root, config, state, capabilities) {
   status.dataset.loadMs = String(Math.round(state.timings.loadMs));
   status.dataset.queryMs = String(Math.round(state.timings.queryMs));
  }
+ const previouslyFocused = root.activeElement;
+ const focusedId = previouslyFocused?.id;
  root.querySelectorAll("button, input, select").forEach((control) => {
   const sourceControl =
    control.id === "replace-files" || control.closest("#dashboard-sources");
@@ -635,9 +739,25 @@ function renderState(root, config, state, capabilities) {
    state.status === "busy" ||
    (state.status === "waiting" && !sourceControl);
  });
+ // Locking a focused control blurs it; restore the recipient's keyboard
+ // focus once the control is enabled again.
+ if (focusedId && root.activeElement !== previouslyFocused)
+  focus.restoreId = focusedId;
+ if (
+  focus.restoreId &&
+  root.activeElement?.id !== focus.restoreId &&
+  root.activeElement === root.body
+ ) {
+  const restore = root.querySelector(`[id="${focus.restoreId}"]`);
+  if (restore && !restore.disabled) {
+   restore.focus();
+   focus.restoreId = null;
+  }
+ }
  if (!state.filterValues) return;
 
- for (const filter of config.filters) renderFilter(root, filter, state);
+ for (const filter of config.filters)
+  renderFilter(root, filter, state, drafts, syncControls);
  root.querySelector("#active-filter-state").textContent = config.filters
   .map((filter) => activeFilterText(filter, state.filterValues))
   .join("; ");
@@ -701,14 +821,20 @@ function renderState(root, config, state, capabilities) {
  }
 }
 
-function renderFilter(root, filter, state) {
+function renderFilter(root, filter, state, drafts = new Map(), syncControls = true) {
+ // Map membership, not nullish fallback: a recorded null draft (a cleared
+ // control) is a real pending edit and must not resurrect the committed value.
+ const draftValue = (key) =>
+  syncControls || !drafts.has(key)
+   ? state.filterValues[key]
+   : drafts.get(key);
  if (
   ["select", "single-select", "multi-select", "option-search"].includes(
    filter.kind,
   )
  ) {
   const select = root.querySelector(`#filter-${filter.id}`);
-  const selected = state.filterValues[filter.id];
+  const selected = draftValue(filter.id);
   const values = [...(state.filterOptions[filter.id] ?? [])];
   const selectedValues =
    filter.kind === "multi-select" ? (selected ?? []) : [selected];
@@ -719,6 +845,8 @@ function renderFilter(root, filter, state) {
    )
     values.unshift(selectedValue);
   }
+  // Rebuilding the options must not drop keyboard focus on the select.
+  const refocus = root.activeElement === select;
   select.replaceChildren();
   if (filter.kind !== "multi-select") select.append(option(null, "all"));
   for (const value of values) select.append(option(value, optionLabel(value)));
@@ -726,6 +854,7 @@ function renderFilter(root, filter, state) {
    item.selected = selectedValues.some(
     (value) => optionKey(value) === item.value,
    );
+  if (refocus) select.focus();
   const page = state.filterOptionPages[filter.id];
   const locked = state.status === "loading" || state.status === "busy";
   root.querySelector(
@@ -735,17 +864,18 @@ function renderFilter(root, filter, state) {
    `[data-option-page="next"][data-filter-id="${filter.id}"]`,
   ).disabled = locked || !page.hasNext;
  } else if (filter.kind === "date-range" || filter.kind === "numeric-range") {
-  root.querySelector(`#filter-${filter.id}-from`).value =
-   state.filterValues[`${filter.id}_from`] ?? "";
-  const to = state.filterValues[`${filter.id}_to`];
+  const from = draftValue(`${filter.id}_from`);
+  const to = draftValue(`${filter.id}_to`);
+  root.querySelector(`#filter-${filter.id}-from`).value = from ?? "";
   root.querySelector(`#filter-${filter.id}-through`).value =
    to == null ? "" : filter.kind === "date-range" ? addDays(to, -1) : to;
  } else if (filter.kind === "boolean") {
+  const value = draftValue(filter.id);
   const input = root.querySelector(`#filter-${filter.id}`);
-  input.indeterminate = state.filterValues[filter.id] == null;
-  input.checked = state.filterValues[filter.id] === true;
+  input.indeterminate = value == null;
+  input.checked = value === true;
  } else {
-  const value = state.filterValues[filter.id];
+  const value = draftValue(filter.id);
   root.querySelector(`#filter-${filter.id}`).value = value ?? "";
   root.querySelector(`#filter-${filter.id}-all`).checked = value == null;
  }
@@ -810,6 +940,28 @@ function renderChart(root, component, rows, chartCapability) {
  if (!chart) {
   chart = chartCapability.init(chartNode);
   charts.set(chartNode, chart);
+  // A plotted-mark click publishes the typed values carried on the mark's
+  // data item; labels and axis positions are never used to reconstruct them.
+  chart.on("click", (params) => {
+   if (params?.componentType !== "series") return;
+   const selection = params.data?.featherbiSelection;
+   if (!selection) return;
+   const native = params.event?.event ?? params.event;
+   chartNode.dispatchEvent(
+    new CustomEvent("featherbi-chart-select", {
+     bubbles: true,
+     detail: {
+      pairs: Object.entries(selection).map(([field, value]) => ({
+       field,
+       value,
+      })),
+      modifier: Boolean(
+       native?.shiftKey || native?.metaKey || native?.ctrlKey,
+      ),
+     },
+    }),
+   );
+  });
  }
  chart.setOption(chartOptions(component, rows), true);
 }
@@ -882,7 +1034,25 @@ function perspectiveColumns(...fields) {
  return [...new Set(fields.filter(Boolean))];
 }
 
+/** Typed per-row selection payload attached to plotted marks with mappings. */
+function markPayload(component) {
+ const mapping = component.selectionDimensions ?? {};
+ const primary = componentInteractionField(component);
+ const fields = selectableFields(component).filter(
+  (field) =>
+   mapping[field] !== undefined ||
+   (component.interactionDimension && field === primary),
+ );
+ if (!fields.length) return () => undefined;
+ return (row) => Object.fromEntries(fields.map((field) => [field, row[field]]));
+}
+
 function chartOptions(component, rows) {
+ const payload = markPayload(component);
+ const withPayload = (row, item) => {
+  const selection = payload(row);
+  return selection ? { ...item, featherbiSelection: selection } : item;
+ };
  if (component.type === "heatmap") {
   const xField = component.xField ?? component.x;
   const yField = component.yField ?? component.y;
@@ -890,11 +1060,15 @@ function chartOptions(component, rows) {
   const ys = unique(rows.map((row) => category(row[yField])));
   const xIndexes = new Map(xs.map((value, index) => [value, index]));
   const yIndexes = new Map(ys.map((value, index) => [value, index]));
-  const data = rows.map((row) => [
-   xIndexes.get(category(row[xField])),
-   yIndexes.get(category(row[yField])),
-   chartNumber(row[component.value]),
-  ]);
+  const data = rows.map((row) =>
+   withPayload(row, {
+    value: [
+     xIndexes.get(category(row[xField])),
+     yIndexes.get(category(row[yField])),
+     chartNumber(row[component.value]),
+    ],
+   }),
+  );
   return {
    animation: false,
    aria: { enabled: true },
@@ -904,7 +1078,7 @@ function chartOptions(component, rows) {
    yAxis: { type: "category", data: ys },
    visualMap: {
     min: 0,
-    max: Math.max(0, ...data.map((entry) => entry[2] ?? 0)),
+    max: Math.max(0, ...data.map((entry) => entry.value[2] ?? 0)),
     calculable: true,
     orient: "horizontal",
    },
@@ -921,10 +1095,12 @@ function chartOptions(component, rows) {
     {
      type: "pie",
      radius: component.type === "donut" ? ["45%", "70%"] : undefined,
-     data: rows.map((row) => ({
-      name: category(row[component.name]),
-      value: chartNumber(row[component.value]),
-     })),
+     data: rows.map((row) =>
+      withPayload(row, {
+       name: category(row[component.name]),
+       value: chartNumber(row[component.value]),
+      }),
+     ),
     },
    ],
   };
@@ -936,10 +1112,12 @@ function chartOptions(component, rows) {
    series: [
     {
      type: "treemap",
-     data: rows.map((row) => ({
-      name: category(row[component.name]),
-      value: chartNumber(row[component.value]),
-     })),
+     data: rows.map((row) =>
+      withPayload(row, {
+       name: category(row[component.name]),
+       value: chartNumber(row[component.value]),
+      }),
+     ),
     },
    ],
   };
@@ -957,11 +1135,13 @@ function chartOptions(component, rows) {
        category(row[component.target]),
       ]),
      ).map((name) => ({ name })),
-     links: rows.map((row) => ({
-      source: category(row[component.source]),
-      target: category(row[component.target]),
-      value: chartNumber(row[component.value]),
-     })),
+     links: rows.map((row) =>
+      withPayload(row, {
+       source: category(row[component.source]),
+       target: category(row[component.target]),
+       value: chartNumber(row[component.value]),
+      }),
+     ),
     },
    ],
   };
@@ -992,13 +1172,15 @@ function chartOptions(component, rows) {
     {
      type: "boxplot",
      data: rows.map((row) =>
-      [
-       component.min,
-       component.q1,
-       component.median,
-       component.q3,
-       component.max,
-      ].map((field) => chartNumber(row[field])),
+      withPayload(row, {
+       value: [
+        component.min,
+        component.q1,
+        component.median,
+        component.q3,
+        component.max,
+       ].map((field) => chartNumber(row[field])),
+      }),
      ),
     },
    ],
@@ -1024,7 +1206,9 @@ function chartOptions(component, rows) {
    type: component.type === "area" ? "line" : component.type,
    data: xs.map((x) => {
     const row = points.get(JSON.stringify([x, name]));
-    return row ? chartNumber(row[yField]) : null;
+    return row
+     ? withPayload(row, { value: chartNumber(row[yField]) })
+     : null;
    }),
   };
   if (component.type === "line" || component.type === "area")
@@ -1103,30 +1287,124 @@ async function selectDimension(
  emittedAction,
 ) {
  const component = config.layout.find(
-  ({ id }) => section.id === `component-${id}`,
+  ({ id }) => section?.id === `component-${id}`,
  );
- const dimension = emittedDimension ?? component.interactionDimension;
- const filter = config.filters.find(
-  (entry) => entry.dimension && entry.dimension === dimension,
+ if (!component) return;
+ await applyMarkSelection(
+  root,
+  config,
+  controller,
+  section,
+  [{ field: interactionField(component), value, dimension: emittedDimension }],
+  modifier,
+  emittedAction,
  );
- if (!filter) {
-  section.dataset.localSelection =
-   section.dataset.localSelection === value ? "" : value;
-  applyTypedAction(root, emittedAction ?? component.action, value);
-  return;
+}
+
+/**
+ * Commit one clicked mark's typed field values together with all pending
+ * filter control edits in a single requested revision. Only declared,
+ * compatible dimension mappings update shared filters; everything else
+ * stays local with a visible indication next to its component.
+ */
+async function applyMarkSelection(
+ root,
+ config,
+ controller,
+ section,
+ pairs,
+ modifier,
+ action,
+) {
+ const component = config.layout.find(
+  ({ id }) => section?.id === `component-${id}`,
+ );
+ if (!component || !pairs?.length) return;
+ const pending = readFilters(root, config.filters);
+ const byDimension = new Map();
+ const unmatched = [];
+ for (const pair of pairs) {
+  const dimension =
+   pair.dimension ??
+   component.selectionDimensions?.[pair.field] ??
+   (pair.field === interactionField(component)
+    ? component.interactionDimension
+    : undefined);
+  const candidates = dimension
+   ? config.filters.filter(
+      (entry) => entry.dimension && entry.dimension === dimension,
+     )
+   : [];
+  const filter =
+   candidates.length === 1 && filterAcceptsValue(config, candidates[0], pair.value)
+    ? candidates[0]
+    : null;
+  if (!filter) {
+   unmatched.push(pair);
+   continue;
+  }
+  const entry = byDimension.get(dimension);
+  if (entry) entry.pairs.push(pair);
+  else byDimension.set(dimension, { filter, pairs: [pair] });
  }
- const current = controller.state.filterValues[filter.id];
- let next;
+ const changes = {};
+ for (const { filter, pairs: dimensionPairs } of byDimension.values()) {
+  // Duplicate or contradictory values for one dimension never silently
+  // change its shared filter; every pair of that dimension stays local.
+  if (dimensionPairs.length !== 1) {
+   unmatched.push(...dimensionPairs);
+   continue;
+  }
+  changes[filter.id] = nextFilterValue(
+   filter,
+   pending[filter.id],
+   dimensionPairs[0].value,
+   modifier,
+  );
+ }
+ const committed = Object.keys(changes).length > 0;
+ if (committed) await controller.applyFilters({ ...pending, ...changes });
+ if (!committed || unmatched.length) setLocalSelection(section, unmatched);
+ applyTypedAction(root, action ?? component.action, pairs[0].value);
+}
+
+/** A mark value may drive a shared filter only when exactly one filter owns
+ * the dimension and the value has the filter column's declared type. */
+function filterAcceptsValue(config, filter, value) {
+ if (value == null) return false;
+ if (filter.kind === "date-range" || filter.kind === "numeric-range")
+  return false;
+ const source = config.data.sources.find(({ id }) => id === filter.source);
+ const columnType = source?.schema?.[filter.column]?.type;
+ const valueType =
+  value instanceof Date ? "date" : typeof value === "bigint" ? "number" : typeof value;
+ return (
+  (columnType === "string" && valueType === "string") ||
+  (columnType === "boolean" && valueType === "boolean") ||
+  ((columnType === "integer" || columnType === "number") &&
+   valueType === "number") ||
+  ((columnType === "date" || columnType === "timestamp") &&
+   valueType === "date")
+ );
+}
+
+function nextFilterValue(filter, current, value, modifier) {
  if (filter.kind === "multi-select") {
   const selected = current ?? [];
   if (modifier)
-   next = selected.includes(value)
+   return selected.includes(value)
     ? selected.filter((item) => item !== value)
     : [...selected, value];
-  else next = selected.length === 1 && selected[0] === value ? [] : [value];
- } else next = current === value ? null : value;
- await controller.applyFilters({ [filter.id]: next });
- applyTypedAction(root, emittedAction ?? component.action, value);
+  return selected.length === 1 && selected[0] === value ? [] : [value];
+ }
+ return current === value ? null : value;
+}
+
+/** Toggle the visible local-only indication next to a component. */
+function setLocalSelection(section, pairs) {
+ const text = pairs.map(({ value }) => formatScalar(value)).join(",");
+ section.dataset.localSelection =
+  section.dataset.localSelection === text ? "" : text;
 }
 
 function openTab(root, id) {
@@ -1159,7 +1437,7 @@ function applyTypedAction(root, action, value) {
   dashboard.dataset.drilldown = `${action.drilldown}:${value}`;
 }
 
-async function applyBrush(root, config, controller, section) {
+async function applyBrush(config, controller, section) {
  const component = config.layout.find(
   ({ id }) => section.id === `component-${id}`,
  );
@@ -1232,6 +1510,11 @@ function option(value, label) {
  return node;
 }
 
+/**
+ * Stable per-value option key; null (the "all" option) and bigints are
+ * distinguishable and never collide with JSON-stringified values.
+ * @param {string | number | boolean | bigint | Date | null | undefined} value
+ */
 function optionKey(value) {
  if (value == null) return "null";
  return typeof value === "bigint" ? `bigint:${value}` : JSON.stringify(value);

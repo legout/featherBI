@@ -3,7 +3,7 @@ import path from "node:path";
 import Ajv from "ajv";
 import { LineCounter, parseDocument } from "yaml";
 import projectSchema from "./schema.json" with { type: "json" };
-import { looksLikeCredentialMaterial, validateConfig } from "../contract/config.mjs";
+import { looksLikeCredentialMaterial, componentInteractionField, selectableFields, validateConfig } from "../contract/config.mjs";
 import { scopeThemeCss } from "./css.mjs";
 
 const validateProject = new Ajv({ allErrors: true }).compile(projectSchema);
@@ -55,6 +55,7 @@ export async function compileProject(projectPath) {
 
  validateRelationships(project, displayProject, document, lineCounter);
  validateCatalog(project, displayProject, document, lineCounter);
+ validateSelectionBindings(project, displayProject, document, lineCounter);
  validateRemoteSources(project, displayProject, document, lineCounter);
  validateLayout(project.layout, displayProject, document, lineCounter);
  const sourceIds = new Set(project.sources.map(({ id }) => id));
@@ -317,6 +318,32 @@ function validateCatalog(project, filename, document, lineCounter) {
   for (const filterId of query.filters ?? []) {
    const filter = filters.get(filterId);
    if (!filter || !filter.dimension || dimensions[filter.dimension]?.model !== query.model) throw yamlError(filename, document, lineCounter, ["queries", id, "filters"], `filter ${JSON.stringify(filterId)} is not compatible with model ${JSON.stringify(query.model)}`);
+  }
+ }
+}
+
+/** Validate optional selectionDimensions mappings against the dimension catalog, the component's selectable fields, and its query's emitted fields. */
+function validateSelectionBindings(project, filename, document, lineCounter) {
+ const dimensions = project.dimensions ?? {};
+ for (const [index, component] of project.layout.entries()) {
+  const mapping = component.selectionDimensions;
+  if (!mapping) continue;
+  const fields = selectableFields(component);
+  const primary = componentInteractionField(component);
+  const query = project.queries[component.query];
+  const emitted = query?.model
+   ? new Set([...(query.dimensions ?? []), ...(query.measures ?? [])])
+   : null;
+  for (const [field, dimensionId] of Object.entries(mapping)) {
+   const at = ["layout", index, "selectionDimensions", field];
+   if (!fields.includes(field))
+    throw yamlError(filename, document, lineCounter, at, `field ${JSON.stringify(field)} is not a selectable field of ${component.type} component ${JSON.stringify(component.id)}`);
+   if (!dimensions[dimensionId])
+    throw yamlError(filename, document, lineCounter, at, `references undeclared dimension ${JSON.stringify(dimensionId)}`);
+   if (field === primary && component.interactionDimension && component.interactionDimension !== dimensionId)
+    throw yamlError(filename, document, lineCounter, at, `conflicts with interactionDimension ${JSON.stringify(component.interactionDimension)}`);
+   if (emitted && !emitted.has(field))
+    throw yamlError(filename, document, lineCounter, at, `query ${JSON.stringify(component.query)} does not emit field ${JSON.stringify(field)}`);
   }
  }
 }

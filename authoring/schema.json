@@ -726,6 +726,16 @@
         "interactionDimension": {
           "$ref": "#/definitions/id"
         },
+        "selectionDimensions": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "$ref": "#/definitions/bindingField"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/id"
+          }
+        },
         "brushDimension": {
           "$ref": "#/definitions/id"
         },

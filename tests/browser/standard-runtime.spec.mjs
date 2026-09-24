@@ -193,7 +193,7 @@ test("chart mark click commits pending filter edits and typed selection in one r
   await ready(derived);
   await expect(derived.locator("#active-filter-state")).toContainText("successful_only: true");
   await expect(derived.locator("#active-filter-state")).toContainText("stations: SJ");
-  await expect(derived.locator("#filter-successful_only")).toBeChecked();
+  await expect(derived.locator("#filter-successful_only-yes")).toBeChecked();
   await expect(derived.locator("#component-summary [data-metric=records]")).toHaveText("3");
 
   // Two fields of one mark mapped to the same dimension with different
@@ -206,6 +206,52 @@ test("chart mark click commits pending filter edits and typed selection in one r
   await expect(derived.locator("#component-conflicting_pairs")).toHaveAttribute("data-local-selection", "SJ,P2");
   await expect(derived.locator("#active-filter-state")).toContainText("stations: SJ");
   await expect(derived.locator("#component-summary [data-metric=records]")).toHaveText("3");
+ } finally {
+  await context.close();
+ }
+});
+
+test("boolean filter moves All to Yes to No and back to All with keyboard", async ({ browser }) => {
+ const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+ const page = await context.newPage();
+ try {
+  await page.goto(pathToFileURL(dashboardPath).href, { waitUntil: "load" });
+  await ready(page);
+
+  // Default null renders as the checked All choice (typed "all").
+  await expect(page.locator("#filter-successful_only-all")).toBeChecked();
+  await expect(page.locator("#active-filter-state")).toContainText("successful_only: all");
+  await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("6");
+
+  // Keyboard All -> Yes stays a pending draft until Apply commits it.
+  await page.locator("#filter-successful_only-all").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#filter-successful_only-yes")).toBeChecked();
+  await expect(page.locator("#active-filter-state")).toContainText("successful_only: all");
+  await page.locator("#apply-filters").click();
+  await ready(page);
+  await expect(page.locator("#active-filter-state")).toContainText("successful_only: true");
+  await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("4");
+  await expect(page.locator("#filter-successful_only-yes")).toBeChecked();
+
+  // From the committed non-null Yes, keyboard moves to No (typed false).
+  await page.locator("#filter-successful_only-yes").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#filter-successful_only-no")).toBeChecked();
+  await page.locator("#apply-filters").click();
+  await ready(page);
+  await expect(page.locator("#active-filter-state")).toContainText("successful_only: false");
+  await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("2");
+
+  // The named failure: the group wraps No -> All without a reload, and the
+  // null typed value restores the unfiltered result.
+  await page.locator("#filter-successful_only-no").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#filter-successful_only-all")).toBeChecked();
+  await page.locator("#apply-filters").click();
+  await ready(page);
+  await expect(page.locator("#active-filter-state")).toContainText("successful_only: all");
+  await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("6");
  } finally {
   await context.close();
  }

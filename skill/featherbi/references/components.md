@@ -13,7 +13,7 @@ Every component has an `id`, `label`, grid placement (`x`, `y`, `width`, `height
 
 ## Filters (shared, typed)
 
-`select`, `single-select`, `multi-select`, `option-search`, `text`, `date-range`, `numeric-range` (inclusive `from`/`through` display), `boolean`. Each filter binds one source column with a compatible type and declares a `default` (`null`, list, `{kind: latest-days, days}`, or `{kind: fixed, from, through}`).
+`select`, `single-select`, `multi-select`, `option-search`, `text`, `date-range`, `numeric-range` (inclusive `from`/`through` display), `boolean` (a native All / Yes / No choice standing for `null` / `true` / `false`, keyboard-operable in that cycle and back to All). Each filter binds one source column with a compatible type and declares a `default` (`null`, list, `{kind: latest-days, days}`, or `{kind: fixed, from, through}`).
 
 ## Interactions
 

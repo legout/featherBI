@@ -1,15 +1,215 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { test } from "@playwright/test";
 import { expect, requireInstalledDesktopChrome, rootDir } from "./helpers.mjs";
+import { compileProject } from "../../authoring/compiler.mjs";
+import { buildDashboard } from "../../scripts/build.mjs";
 
 const dashboardPath = path.join(rootDir, ".artifacts/browser/standard-runtime.html");
+const derivedProjectDir = path.join(rootDir, ".artifacts/browser/derived-standard");
+const derivedDashboardPath = path.join(rootDir, ".artifacts/browser/standard-derived.html");
+
+/**
+ * Test-local dashboard derived from the standard example, adding the
+ * explicit selectionDimensions bindings the shipped fixture cannot carry:
+ * a category+series mark with a boolean category, and a mark whose two
+ * fields map to one dimension with different values.
+ */
+async function buildDerivedDashboard() {
+ const exampleDir = path.join(rootDir, "examples/standard-dashboard");
+ const source = await readFile(path.join(exampleDir, "dashboard.yaml"), "utf8");
+ const derived = source.replace(
+  "layout:",
+  `  by_success_station:
+    model: inspection_model
+    dimensions: [successful, station, product]
+    measures: [records]
+    filters: [window]
+    orderBy: [successful, station, product]
+layout:`,
+ ) + `
+  - id: success_station
+    type: bar
+    query: by_success_station
+    label: Success by station
+    xField: successful
+    series: station
+    yField: records
+    selectionDimensions: {successful: successful, station: station}
+    x: 1
+    y: 9
+    width: 12
+    height: 2
+  - id: conflicting_pairs
+    type: bar
+    query: by_success_station
+    label: Conflicting pairs
+    xField: station
+    series: product
+    yField: records
+    selectionDimensions: {station: station, product: station}
+    x: 1
+    y: 11
+    width: 12
+    height: 2
+`;
+ await mkdir(path.join(derivedProjectDir, "models"), { recursive: true });
+ await writeFile(path.join(derivedProjectDir, "dashboard.yaml"), derived, "utf8");
+ await writeFile(
+  path.join(derivedProjectDir, "models/inspection_model.sql"),
+  await readFile(path.join(exampleDir, "models/inspection_model.sql"), "utf8"),
+  "utf8",
+ );
+ await writeFile(
+  path.join(derivedProjectDir, "theme.css"),
+  await readFile(path.join(exampleDir, "theme.css"), "utf8"),
+  "utf8",
+ );
+ const project = await compileProject(path.join(derivedProjectDir, "dashboard.yaml"));
+ const rows = [
+  { station: "SJ", product: "P1", inspected_on: "2026-09-01", amount: 10, successful: true },
+  { station: "SJ", product: "P2", inspected_on: "2026-09-02", amount: 20, successful: true },
+  { station: "SD", product: "P1", inspected_on: "2026-09-03", amount: 30, successful: false },
+  { station: "SJ", product: "P2", inspected_on: "2026-09-04", amount: 40, successful: true },
+  { station: "SD", product: "P3", inspected_on: "2026-09-05", amount: 50, successful: false },
+  { station: "NY", product: "P1", inspected_on: "2026-09-06", amount: 60, successful: true },
+ ];
+ await buildDashboard({
+  config: project.config,
+  outPath: derivedDashboardPath,
+  inputs: [
+   { id: "inspections", value: Buffer.from(JSON.stringify(rows)).toString("base64") },
+  ],
+ });
+ return derivedDashboardPath;
+}
+
+let derivedDashboard;
+
+/** X centers of the visible plotted bars in one canvas row, left to right. */
+async function barCenters(page, selector, y) {
+ return page.locator(selector).evaluate(
+  (canvas, y) => {
+   const ctx = canvas.getContext("2d");
+   const { width } = canvas;
+   const img = ctx.getImageData(0, 0, width, canvas.height).data;
+   const runs = [];
+   let run = null;
+   for (let x = 0; x < width; x += 1) {
+    const i = (y * width + x) * 4;
+    const max = Math.max(img[i], img[i + 1], img[i + 2]);
+    const min = Math.min(img[i], img[i + 1], img[i + 2]);
+    const colored = img[i + 3] > 30 && (max - min > 40 || max < 200);
+    if (colored && run) run.end = x;
+    else if (colored) run = { start: x, end: x };
+    else if (run) {
+     runs.push(run);
+     run = null;
+    }
+   }
+   if (run) runs.push(run);
+   return runs
+    .filter((entry) => entry.end - entry.start >= 20) // bars, not tick text
+    .map((entry) => Math.round((entry.start + entry.end) / 2));
+  },
+  y,
+ );
+}
 
 async function ready(page) {
  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "ready");
 }
 
 test.beforeAll(async ({ browser }) => requireInstalledDesktopChrome(browser));
+
+test("chart mark click commits pending filter edits and typed selection in one revision", async ({ browser }) => {
+ const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+ const page = await context.newPage();
+ try {
+  await page.goto(pathToFileURL(dashboardPath).href, { waitUntil: "load" });
+  await ready(page);
+
+  // Pending edit without Apply: numeric range narrowed in the control only.
+  await page.locator("#filter-amount_range-through").fill("30");
+  await expect(page.locator("#active-filter-state")).toContainText("amount_range: 0 through 100");
+  await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("6");
+
+  // Pending single-select edit on the option-search filter.
+  await page.locator("#filter-station_lookup").selectOption({ label: "NY" });
+  await expect(page.locator("#active-filter-state")).toContainText("station_lookup: all");
+
+  // An option search refreshes that filter's options; drafts, the off-page
+  // selected value, typed search text, and focus must survive the re-render.
+  await page.locator("#filter-station_lookup-search").fill("D");
+  await page.locator("#filter-station_lookup").focus();
+  await expect
+   .poll(() => page.locator("#filter-station_lookup option").allTextContents())
+   .toEqual(["all", "NY", "SD"]);
+  await expect(page.locator("#filter-amount_range-through")).toHaveValue("30");
+  await expect(page.locator("#filter-station_lookup-search")).toHaveValue("D");
+  expect(await page.evaluate(() => document.activeElement.id)).toBe("filter-station_lookup");
+  await expect(page.locator("#active-filter-state")).toContainText("amount_range: 0 through 100");
+
+  // Unmapped plotted mark: typed selection stays local with visible feedback.
+  await page.locator("#component-local_product .chart canvas").click({ position: { x: 350, y: 63 } });
+  await expect(page.locator("#component-local_product")).toHaveAttribute("data-local-selection", "P1");
+  await expect(page.locator("#active-filter-state")).toContainText("amount_range: 0 through 100");
+
+  // Mapped plotted mark (bar, station SJ): the typed selection and BOTH
+  // pending control edits land in one accepted revision. Only stations=SJ
+  // gives 3 records, only amount<=30 gives 3; together they give 2.
+  await page.locator("#component-by_station .chart canvas").click({ position: { x: 610, y: 230 } });
+  await ready(page);
+  await expect(page.locator("#active-filter-state")).toContainText("amount_range: 0 through 30");
+  await expect(page.locator("#active-filter-state")).toContainText("stations: SJ");
+  await expect(page.locator("#active-filter-state")).toContainText("station_lookup: NY");
+  await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("2");
+  await expect(page.locator("#filter-station_lookup-search")).toHaveValue("D");
+
+  // A cleared (null) draft must also survive an option refresh: selecting
+  // "all" after the committed NY must not resurrect NY on the next render.
+  await page.locator("#filter-station_lookup").selectOption({ label: "all" });
+  await page.locator("#filter-station_lookup-search").fill("N");
+  await expect
+   .poll(() => page.locator("#filter-station_lookup option").allTextContents())
+   .toEqual(["all", "NY"]);
+  await expect(page.locator("#filter-station_lookup")).toHaveValue("null");
+  await expect(page.locator("#active-filter-state")).toContainText("station_lookup: NY");
+
+  // Derived dashboard: explicit selectionDimensions on a category+series
+  // mark. The category is boolean (typed true), displayed as the text label
+  // "true"; the click must commit both dimensions atomically with the typed
+  // values, not the labels.
+  derivedDashboard ??= await buildDerivedDashboard();
+  const derived = await context.newPage();
+  await derived.goto(pathToFileURL(derivedDashboard).href, { waitUntil: "load" });
+  await ready(derived);
+  const seriesCenters = await barCenters(derived, "#component-success_station .chart canvas", 200);
+  expect(seriesCenters.length).toBe(3); // false:SD, true:NY, true:SJ
+  await derived
+   .locator("#component-success_station .chart canvas")
+   .click({ position: { x: seriesCenters[2], y: 200 } });
+  await ready(derived);
+  await expect(derived.locator("#active-filter-state")).toContainText("successful_only: true");
+  await expect(derived.locator("#active-filter-state")).toContainText("stations: SJ");
+  await expect(derived.locator("#filter-successful_only")).toBeChecked();
+  await expect(derived.locator("#component-summary [data-metric=records]")).toHaveText("3");
+
+  // Two fields of one mark mapped to the same dimension with different
+  // values (station=SJ, product=P2 -> dimension station) stay local.
+  const conflictCenters = await barCenters(derived, "#component-conflicting_pairs .chart canvas", 200);
+  expect(conflictCenters.length).toBe(5); // SD:P1, SD:P3, NY:P1, SJ:P1, SJ:P2
+  await derived
+   .locator("#component-conflicting_pairs .chart canvas")
+   .click({ position: { x: conflictCenters[4], y: 200 } });
+  await expect(derived.locator("#component-conflicting_pairs")).toHaveAttribute("data-local-selection", "SJ,P2");
+  await expect(derived.locator("#active-filter-state")).toContainText("stations: SJ");
+  await expect(derived.locator("#component-summary [data-metric=records]")).toHaveText("3");
+ } finally {
+  await context.close();
+ }
+});
 
 test("standard dashboard stays coherent across layout, theme, interactions, and stale revisions", async ({ browser }) => {
  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });

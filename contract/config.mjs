@@ -54,6 +54,42 @@ export function looksLikeCredentialMaterial(value) {
 /** @typedef {{path: string, code: string, message: string}} ConfigIssue */
 
 /**
+ * Selectable result fields a chart component family can supply from one
+ * clicked plotted mark. Gauge has none; scalar marks are not selections.
+ * Shared by the runtime validator, the authoring compiler, and the viewer
+ * path that resolves mark clicks, so every layer agrees on one field set.
+ * @param {object} component
+ * @returns {string[]}
+ */
+export function selectableFields(component) {
+  if (["pie", "donut", "treemap"].includes(component.type))
+    return [component.name].filter(Boolean);
+  if (component.type === "sankey")
+    return [component.source, component.target].filter(Boolean);
+  if (component.type === "heatmap")
+    return [component.xField ?? component.x, component.yField ?? component.y].filter(Boolean);
+  if (component.type === "boxplot") return [component.xField].filter(Boolean);
+  if (["bar", "line", "area", "scatter"].includes(component.type))
+    return [
+      component.xField ?? component.x,
+      ...(component.series ? [component.series] : []),
+    ].filter(Boolean);
+  return [];
+}
+
+/**
+ * The primary emitted field an `interactionDimension` applies to.
+ * @param {object} component
+ * @returns {string | undefined}
+ */
+export function componentInteractionField(component) {
+  if (["pie", "donut", "treemap"].includes(component.type))
+    return component.name;
+  if (component.type === "sankey") return component.source;
+  return component.xField ?? component.x;
+}
+
+/**
  * Validate a runtime config document.
  * @param {unknown} input
  * @returns {{ok: true, value: object} | {ok: false, issues: ConfigIssue[]}}
@@ -398,6 +434,33 @@ function collectSemanticIssues(config, issues) {
         "placement exceeds the 12-column grid",
       );
     }
+    if (component.selectionDimensions) {
+      const fields = selectableFields(component);
+      const primary = componentInteractionField(component);
+      for (const [field, dimensionId] of Object.entries(
+        component.selectionDimensions,
+      )) {
+        const at = `layout[${index}].selectionDimensions.${field}`;
+        if (!fields.includes(field)) {
+          issue(
+            at,
+            "component.selection-field",
+            `field ${JSON.stringify(field)} is not a selectable field of ${component.type} component ${JSON.stringify(component.id)}`,
+          );
+        }
+        if (
+          field === primary &&
+          component.interactionDimension &&
+          component.interactionDimension !== dimensionId
+        ) {
+          issue(
+            at,
+            "component.selection-conflict",
+            `field ${JSON.stringify(field)} is already bound to interactionDimension ${JSON.stringify(component.interactionDimension)}`,
+          );
+        }
+      }
+    }
     for (let earlier = 0; earlier < index; earlier += 1) {
       const other = config.layout[earlier];
       const currentAlternative = alternatives.get(component.id);
@@ -423,7 +486,7 @@ function collectSemanticIssues(config, issues) {
     }
   }
 
-  // Owner-approved clarification: each table has an exclusive query ID.
+    // Owner-approved clarification: each table has an exclusive query ID.
   const tableQueryOwner = new Map();
   for (const component of config.layout) {
     if (

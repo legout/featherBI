@@ -12,6 +12,58 @@ export const PERSPECTIVE_MAX_ROWS = 10_000;
 export const PERSPECTIVE_MAX_BYTES = 8 * 1024 * 1024;
 export const PERSPECTIVE_TIMEOUT_MS = 30_000;
 
+/**
+ * Publish one clicked mark's typed grouped/split values on the viewer-owned
+ * selection path. Perspective's `perspective-click` carries the mark's own
+ * `config.filter` equalities for its group/split fields plus unrelated
+ * filter entries; only `[field, "==", value]` entries for the rendered
+ * group/split fields are translated, and the values are already typed by
+ * the plugin. The shared viewer path resolves the source-controlled
+ * dimension mapping, not this adapter.
+ * @param {Element} node the perspective host element inside its component
+ * @param {Element} viewer the `perspective-viewer` element
+ * @param {string[]} fields selectable groupBy/splitBy result fields
+ */
+function publishMarkSelection(node, viewer, fields) {
+ if (!fields.length) return;
+ let modifier = false;
+ // The published click event carries no native modifier state, so capture
+ // it while the native click is still travelling down to the mark.
+ viewer.addEventListener(
+  "click",
+  (event) => {
+   modifier = Boolean(event.shiftKey || event.metaKey || event.ctrlKey);
+  },
+  { capture: true },
+ );
+ viewer.addEventListener("perspective-click", (event) => {
+  const entries = event.detail?.config?.filter;
+  if (!Array.isArray(entries)) return;
+  const pairs = [];
+  for (const entry of entries) {
+   if (
+    Array.isArray(entry) &&
+    entry.length === 3 &&
+    entry[1] === "==" &&
+    fields.includes(entry[0])
+   ) {
+    pairs.push({ field: entry[0], value: entry[2] });
+   }
+  }
+  // Publish the modifier the native click captured, then clear it so a
+  // stale capture never leaks into a later mark click.
+  const held = modifier;
+  modifier = false;
+  if (!pairs.length) return;
+  node.dispatchEvent(
+   new CustomEvent("featherbi-chart-select", {
+    bubbles: true,
+    detail: { pairs, modifier: held },
+   }),
+  );
+ });
+}
+
 let initialized;
 const loaded = new Map();
 const renderQueues = new WeakMap();
@@ -43,6 +95,12 @@ export const perspectiveCapability = {
    if (!viewer) {
     viewer = document.createElement("perspective-viewer");
     node.replaceChildren(viewer);
+    // The selection listeners live on the viewer element and are disposed
+    // with it; they are attached once when the viewer is created.
+    publishMarkSelection(node, viewer, [
+     ...(config.groupBy ?? []),
+     ...(config.splitBy ?? []),
+    ]);
    }
    const prior = loaded.get(node);
    await loadPerspectiveTable(viewer, table, config);

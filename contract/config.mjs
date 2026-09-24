@@ -54,14 +54,21 @@ export function looksLikeCredentialMaterial(value) {
 /** @typedef {{path: string, code: string, message: string}} ConfigIssue */
 
 /**
- * Selectable result fields a chart component family can supply from one
+ * Selectable result fields a component family can supply from one
  * clicked plotted mark. Gauge has none; scalar marks are not selections.
  * Shared by the runtime validator, the authoring compiler, and the viewer
  * path that resolves mark clicks, so every layer agrees on one field set.
+ * Perspective supplies its grouped and split fields; aggregated columns and
+ * other Perspective fields are not mark selections.
  * @param {object} component
  * @returns {string[]}
  */
 export function selectableFields(component) {
+  if (component.type === "perspective")
+    return [
+      ...(component.perspective?.groupBy ?? []),
+      ...(component.perspective?.splitBy ?? []),
+    ];
   if (["pie", "donut", "treemap"].includes(component.type))
     return [component.name].filter(Boolean);
   if (component.type === "sankey")

@@ -10,6 +10,7 @@ import {
  designSkillsCommand,
  globalSkillsDir,
  parseSetupArgs,
+ projectSkillsDir,
  runSetup,
  skillsCommand,
  verifySkillsLock,
@@ -55,14 +56,15 @@ function deps(overrides = {}) {
    cwd: "/tmp/project",
    platform: "linux",
    out: (line) => lines.push(line),
+   ...fakeFs(),
    ...overrides.deps,
   },
  };
 }
 
-/** Fake fs effects for the global skill-link install; records operations. */
+/** Fake fs effects for the skill install; records operations. */
 function fakeFs(existing = null) {
- const ops = { mkdir: [], rm: [], symlink: [] };
+ const ops = { mkdir: [], rm: [], symlink: [], cp: [] };
  return {
   ops,
   lstat: async () => {
@@ -82,6 +84,9 @@ function fakeFs(existing = null) {
   },
   symlink: async (target, linkPath) => {
    ops.symlink.push([target, linkPath]);
+  },
+  cp: async (src, dest) => {
+   ops.cp.push([src, dest]);
   },
  };
 }
@@ -184,12 +189,15 @@ test("the skills command matches the official invocation; global adds -g only th
  ]);
 });
 
-test("global skills dir resolution maps supported agents under home", () => {
+test("global and project skills dir resolution maps supported agents", () => {
  assert.equal(globalSkillsDir("pi", "/home/u"), "/home/u/.pi/agent/skills/featherbi");
  assert.equal(globalSkillsDir("claude", "/home/u"), "/home/u/.claude/skills/featherbi");
  assert.equal(globalSkillsDir("cursor", "/home/u"), "/home/u/.cursor/skills/featherbi");
  assert.equal(globalSkillsDir("gemini", "/home/u"), "/home/u/.gemini/skills/featherbi");
+ assert.equal(projectSkillsDir("pi", "/tmp/project"), "/tmp/project/.pi/skills/featherbi");
+ assert.equal(projectSkillsDir("claude", "/tmp/project"), "/tmp/project/.claude/skills/featherbi");
  assert.throws(() => globalSkillsDir("codex", "/home/u"), /supported agents/);
+ assert.throws(() => projectSkillsDir("codex", "/tmp/project"), /supported agents/);
 });
 
 test("setup reports every check without aborting when tools are missing", async () => {
@@ -252,15 +260,16 @@ test("global --yes links the package skill, runs the -g install, and --design is
  const { deps: injected, runner } = deps({
   deps: { home: "/home/u", ...fs },
  });
- const { accepted, skillLink, design } = await runSetup(
+ const { accepted, skill, design } = await runSetup(
   ["--global", "--yes", "--design", "--agent", "claude"],
   injected,
  );
  assert.equal(accepted, true);
- assert.equal(skillLink.installed, true);
- assert.equal(skillLink.linkPath, "/home/u/.claude/skills/featherbi");
- assert.match(skillLink.target, /skill[/\\]featherbi$/);
- assert.deepEqual(fs.ops.symlink, [[skillLink.target, skillLink.linkPath]]);
+ assert.equal(skill.installed, true);
+ assert.equal(skill.installPath, "/home/u/.claude/skills/featherbi");
+ assert.match(skill.target, /skill[/\\]featherbi$/);
+ assert.deepEqual(fs.ops.symlink, [[skill.target, skill.installPath]]);
+ assert.deepEqual(fs.ops.cp, [], "global mode links; it must not copy");
 
  const npxCalls = runner.calls.filter(([command]) => command === "npx");
  const duckdb = npxCalls.find(([, , , repo]) => repo === "duckdb/duckdb-skills");
@@ -302,7 +311,7 @@ test("global --design --no installs design but never the DuckDB skills", async (
  );
 });
 
-test("a real directory at the global skills path is never clobbered; a symlink is replaced", async () => {
+test("a real directory at the destination is never clobbered; a symlink is replaced", async () => {
  const refused = fakeFs("dir");
  const { deps: refusedDeps, lines: refusedLines } = deps({
   deps: { home: "/home/u", ...refused },
@@ -311,13 +320,26 @@ test("a real directory at the global skills path is never clobbered; a symlink i
   ["--global", "--yes", "--agent", "pi"],
   refusedDeps,
  );
- assert.equal(refusedResult.skillLink.installed, false);
+ assert.equal(refusedResult.skill.installed, false);
  assert.equal(refusedResult.exitCode, 1);
- assert.match(refusedResult.skillLink.error, /not a featherbi symlink/);
+ assert.match(refusedResult.skill.error, /not a featherbi symlink/);
  assert.deepEqual(refused.ops.symlink, []);
  assert.ok(
   refusedLines.some((line) => line.includes("not a featherbi symlink")),
  );
+
+ const projectRefused = fakeFs("dir");
+ const { deps: projectRefusedDeps } = deps({
+  deps: { ...projectRefused },
+ });
+ const projectResult = await runSetup(
+  ["--no", "--agent", "claude"],
+  projectRefusedDeps,
+ );
+ assert.equal(projectResult.skill.installed, false);
+ assert.equal(projectResult.exitCode, 1);
+ assert.match(projectResult.skill.error, /not a featherbi skill copy/);
+ assert.deepEqual(projectRefused.ops.cp, [], "a project-owned skill dir must never be overwritten");
 
  const replaced = fakeFs("symlink");
  const { deps: replacedDeps } = deps({
@@ -327,8 +349,35 @@ test("a real directory at the global skills path is never clobbered; a symlink i
   ["--global", "--yes", "--agent", "pi"],
   replacedDeps,
  );
- assert.equal(replacedResult.skillLink.installed, true);
+ assert.equal(replacedResult.skill.installed, true);
  assert.deepEqual(replaced.ops.rm, ["/home/u/.pi/agent/skills/featherbi"]);
+
+ const projectReplaced = fakeFs("symlink");
+ const { deps: projectReplacedDeps } = deps({
+  deps: { ...projectReplaced },
+ });
+ await runSetup(["--no", "--agent", "gemini"], projectReplacedDeps);
+ assert.deepEqual(projectReplaced.ops.rm, ["/tmp/project/.gemini/skills/featherbi"], "an existing project symlink is replaced, analogous to global mode");
+ assert.ok(projectReplaced.ops.cp.length === 1);
+});
+
+test("plain setup --no still installs the project-local featherbi skill copy", async () => {
+ const fs = fakeFs();
+ const { deps: injected, lines } = deps({ deps: { ...fs } });
+ const { accepted, skill, exitCode } = await runSetup(["--no"], injected);
+ assert.equal(accepted, false, "--no declines only the DuckDB skills");
+ assert.equal(exitCode, 0, "the skill install must not fail setup");
+ assert.equal(skill.installed, true);
+ assert.equal(skill.installPath, "/tmp/project/.pi/skills/featherbi");
+ assert.deepEqual(fs.ops.cp, [
+  [skill.source, "/tmp/project/.pi/skills/featherbi"],
+ ]);
+ assert.deepEqual(
+  fs.ops.symlink,
+  [],
+  "project-local install must copy; never symlink the installed package",
+ );
+ assert.ok(lines.some((line) => line.includes("copied the featherbi skill")));
 });
 
 test("a default-Yes prompt accepts an empty answer and EOF declines", async () => {

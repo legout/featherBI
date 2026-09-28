@@ -190,6 +190,8 @@ test("the skills command matches the official invocation; global adds -g only th
 });
 
 test("global and project skills dir resolution maps supported agents", () => {
+ assert.equal(globalSkillsDir("universal", "/home/u"), "/home/u/.agents/skills/featherbi");
+ assert.equal(projectSkillsDir("universal", "/tmp/project"), "/tmp/project/.agents/skills/featherbi");
  assert.equal(globalSkillsDir("pi", "/home/u"), "/home/u/.pi/agent/skills/featherbi");
  assert.equal(globalSkillsDir("claude", "/home/u"), "/home/u/.claude/skills/featherbi");
  assert.equal(globalSkillsDir("cursor", "/home/u"), "/home/u/.cursor/skills/featherbi");
@@ -222,7 +224,7 @@ test("setup reports every check without aborting when tools are missing", async 
  assert.ok(lines.some((line) => line.includes("Skipped the DuckDB skills install")));
 });
 
-test("declining prints the manual command; --yes runs it for the detected agent", async () => {
+test("declining prints the manual command; --yes runs it for the default agent", async () => {
  const { deps: declined, lines: declinedLines } = deps();
  await runSetup(["--no"], declined);
  assert.ok(
@@ -235,7 +237,7 @@ test("declining prints the manual command; --yes runs it for the detected agent"
  const install = runner.calls.find(([command]) => command === "npx");
  assert.ok(install, "npx skills add must run on acceptance");
  assert.equal(install.includes("--agent"), true);
- assert.equal(install[install.indexOf("--agent") + 1], "pi");
+ assert.equal(install[install.indexOf("--agent") + 1], "universal");
 });
 
 test("global setup checks featherbi on PATH with an install remedy; local does not", async () => {
@@ -368,9 +370,9 @@ test("plain setup --no still installs the project-local featherbi skill copy", a
  assert.equal(accepted, false, "--no declines only the DuckDB skills");
  assert.equal(exitCode, 0, "the skill install must not fail setup");
  assert.equal(skill.installed, true);
- assert.equal(skill.installPath, "/tmp/project/.pi/skills/featherbi");
+ assert.equal(skill.installPath, "/tmp/project/.agents/skills/featherbi");
  assert.deepEqual(fs.ops.cp, [
-  [skill.source, "/tmp/project/.pi/skills/featherbi"],
+  [skill.source, "/tmp/project/.agents/skills/featherbi"],
  ]);
  assert.deepEqual(
   fs.ops.symlink,
@@ -378,6 +380,31 @@ test("plain setup --no still installs the project-local featherbi skill copy", a
   "project-local install must copy; never symlink the installed package",
  );
  assert.ok(lines.some((line) => line.includes("copied the featherbi skill")));
+});
+
+test("no-agent --global writes into ~/.agents/skills and DuckDB --agent universal, never pi", async () => {
+ const fs = fakeFs();
+ const { deps: injected, runner } = deps({
+  deps: { home: "/home/u", ...fs },
+ });
+ const { agent, skill } = await runSetup(["--global", "--yes"], injected);
+ assert.equal(agent, "universal", "no --agent must default to universal even when .pi exists");
+ assert.equal(
+  skill.installPath,
+  "/home/u/.agents/skills/featherbi",
+  "the bundled skill must link into the shared ~/.agents/skills, not ~/.pi/agent/skills",
+ );
+ assert.deepEqual(fs.ops.symlink, [
+  [skill.target, "/home/u/.agents/skills/featherbi"],
+ ]);
+ const install = runner.calls.find(([command]) => command === "npx");
+ assert.ok(install, "npx skills add must run on acceptance");
+ assert.equal(
+  install[install.indexOf("--agent") + 1],
+  "universal",
+  "the DuckDB install must pass --agent universal, not pi",
+ );
+ assert.ok(install.includes("-g"), "global DuckDB install must pass -g");
 });
 
 test("a default-Yes prompt accepts an empty answer and EOF declines", async () => {

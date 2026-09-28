@@ -198,5 +198,5 @@ featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config
 featherbi validate --config CONFIG
 featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]
 
-setup checks Node, uv, and desktop Chrome, then offers the official DuckDB agent skills install. With --global it also verifies the featherbi CLI is on PATH, links this package's skill into the agent's global skills dir, and installs the DuckDB skills with -g; --design adds the opt-in design skill, never by default. Profiles, compiles, and builds local artifacts only; it never publishes or uploads dashboard data.`);
+setup checks Node, uv, and desktop Chrome, then offers the official DuckDB agent skills install. Without --agent it targets the shared universal directories (.agents/skills in the project, ~/.agents/skills with --global) for both the bundled featherbi skill and the DuckDB skills; --agent pi|claude|cursor|gemini installs into that agent's own directories instead. With --global it also verifies the featherbi CLI is on PATH, links this package's skill into the global skills dir, and installs the DuckDB skills with -g; --design adds the opt-in design skill, never by default. Profiles, compiles, and builds local artifacts only; it never publishes or uploads dashboard data.`);
 }

@@ -8,7 +8,15 @@
  * are deliberately no npm lifecycle hooks: setup runs only when invoked.
  */
 
-import { access, lstat, mkdir, readFile, rm, symlink } from "node:fs/promises";
+import {
+ access,
+ cp,
+ lstat,
+ mkdir,
+ readFile,
+ rm,
+ symlink,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +52,14 @@ const AGENT_MARKERS = [
 /** Global skills directory holding the agent's per-skill subdirectories. */
 const AGENT_SKILL_DIRS = {
  pi: ".pi/agent/skills",
+ claude: ".claude/skills",
+ cursor: ".cursor/skills",
+ gemini: ".gemini/skills",
+};
+
+/** Project-local skills directory beside the project-scoped DuckDB skills. */
+const AGENT_PROJECT_SKILL_DIRS = {
+ pi: ".pi/skills",
  claude: ".claude/skills",
  cursor: ".cursor/skills",
  gemini: ".gemini/skills",
@@ -124,6 +140,17 @@ export function globalSkillsDir(agent, home = homedir()) {
   );
  }
  return path.join(home, dir, "featherbi");
+}
+
+/** Where this agent's project-local skills live; throws for unknown agents. */
+export function projectSkillsDir(agent, cwd = process.cwd()) {
+ const dir = AGENT_PROJECT_SKILL_DIRS[agent];
+ if (!dir) {
+  throw new Error(
+   `no project skills directory known for ${JSON.stringify(agent)}; supported agents: ${Object.keys(AGENT_PROJECT_SKILL_DIRS).join(", ")}`,
+  );
+ }
+ return path.join(cwd, dir, "featherbi");
 }
 
 /** Best-effort agent detection from marker directories; pi is the default. */
@@ -263,37 +290,44 @@ export async function verifySkillsLock(lockPath, readText) {
 }
 
 /**
- * Symlink this package's skill/featherbi into the agent's global skills dir.
- * Replaces an existing symlink; never touches a real directory.
+ * Install this package's skill/featherbi for one agent: a project-local copy
+ * by default, or a symlink into the agent's global skills dir with --global.
+ * Replaces an existing symlink; never touches a real directory or file.
  */
 async function installFeatherbiSkill({
- linkPath,
+ installPath,
  sourceDir,
+ link = false,
  lstat: statLink = lstat,
  mkdir: makeDir = mkdir,
  symlink: makeLink = symlink,
  rm: removePath = rm,
+ cp: copyTree = cp,
 }) {
  let existing = null;
  try {
-  existing = await statLink(linkPath);
+  existing = await statLink(installPath);
  } catch {
   // absent: create it below
  }
  if (existing && !existing.isSymbolicLink()) {
   return {
    installed: false,
-   linkPath,
-   error: `${linkPath} already exists and is not a featherbi symlink; remove or rename it, then rerun featherbi setup --global`,
+   installPath,
+   error: `${installPath} already exists and is not a featherbi ${link ? "symlink" : "skill copy"}; remove or rename it, then rerun featherbi setup${link ? " --global" : ""}`,
   };
  }
  if (existing) {
-  await removePath(linkPath);
+  await removePath(installPath);
  } else {
-  await makeDir(path.dirname(linkPath), { recursive: true });
+  await makeDir(path.dirname(installPath), { recursive: true });
  }
- await makeLink(sourceDir, linkPath);
- return { installed: true, linkPath, target: sourceDir };
+ if (link) {
+  await makeLink(sourceDir, installPath);
+  return { installed: true, installPath, target: sourceDir };
+ }
+ await copyTree(sourceDir, installPath, { recursive: true });
+ return { installed: true, installPath, source: sourceDir };
 }
 
 /**
@@ -316,6 +350,7 @@ export async function runSetup(argv = [], deps = {}) {
   mkdir: makeDir,
   symlink: makeLink,
   rm: removePath,
+  cp: copyTree,
   out = (line) => console.log(line),
  } = deps;
  const run =
@@ -347,23 +382,29 @@ export async function runSetup(argv = [], deps = {}) {
  const agent = options.agent ?? (await detectAgent(cwd, exists));
 
  let exitCode = 0;
- let skillLink = null;
+ let skill = null;
  let design = null;
- if (options.global) {
-  skillLink = await installFeatherbiSkill({
-   linkPath: globalSkillsDir(agent, home),
-   sourceDir: fileURLToPath(new URL("../skill/featherbi", import.meta.url)),
-   lstat: statLink,
-   mkdir: makeDir,
-   symlink: makeLink,
-   rm: removePath,
-  });
-  if (skillLink.installed) {
-   out(`\nlinked the featherbi skill for ${agent}: ${skillLink.linkPath} -> ${skillLink.target}`);
-  } else {
-   out(`\nfeatherbi skill link failed: ${skillLink.error}`);
-   exitCode = 1;
-  }
+ skill = await installFeatherbiSkill({
+  installPath: options.global
+   ? globalSkillsDir(agent, home)
+   : projectSkillsDir(agent, cwd),
+  sourceDir: fileURLToPath(new URL("../skill/featherbi", import.meta.url)),
+  link: options.global,
+  lstat: statLink,
+  mkdir: makeDir,
+  symlink: makeLink,
+  rm: removePath,
+  cp: copyTree,
+ });
+ if (skill.installed) {
+  const verb = options.global ? "linked" : "copied";
+  const detail = options.global
+   ? `${skill.installPath} -> ${skill.target}`
+   : `${skill.source} -> ${skill.installPath}`;
+  out(`\n${verb} the featherbi skill for ${agent}: ${detail}`);
+ } else {
+  out(`\nfeatherbi skill install failed: ${skill.error}`);
+  exitCode = 1;
  }
  if (options.global && options.design) {
   const designCommand = designSkillsCommand(agent);
@@ -401,7 +442,7 @@ export async function runSetup(argv = [], deps = {}) {
   out(
    `\nSkipped the DuckDB skills install. Run it anytime with:\n  ${duckdbCommand.join(" ")}`,
   );
-  return { accepted: false, agent, checks, skillLink, design, exitCode };
+  return { accepted: false, agent, checks, skill, design, exitCode };
  }
 
  out(`\nInstalling DuckDB skills for ${agent}...`);
@@ -414,11 +455,11 @@ export async function runSetup(argv = [], deps = {}) {
   out(
    `the skills install failed: ${error.message}. Run it manually with:\n  ${duckdbCommand.join(" ")}`,
   );
-  return { accepted: true, agent, checks, skillLink, design, exitCode: 1 };
+  return { accepted: true, agent, checks, skill, design, exitCode: 1 };
  }
  if (options.global) {
   // skills-lock.json is project-scoped; a global install has none to verify.
-  return { accepted: true, agent, checks, skillLink, design, exitCode };
+  return { accepted: true, agent, checks, skill, design, exitCode };
  }
  const lock = await verifySkillsLock(resolvedLockPath, readLock);
  if (lock.missing.length > 0) {
@@ -428,7 +469,7 @@ export async function runSetup(argv = [], deps = {}) {
  } else {
   out(`skills-lock.json records all DuckDB skills: ${lock.recorded.join(", ")}`);
  }
- return { accepted: true, agent, checks, skillLink, design, lock, exitCode };
+ return { accepted: true, agent, checks, skill, design, lock, exitCode };
 }
 
 import { promisify } from "node:util";

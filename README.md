@@ -8,9 +8,12 @@ Install globally and set up once:
 
 ```sh
 npm i -g featherbi
-featherbi setup --global            # checks prerequisites, links the skill into your agent's global skills dir, installs the DuckDB skills
+featherbi setup                  # project setup: checks prerequisites, copies the featherbi skill into the project's agent skills dir, offers the DuckDB skills
+featherbi setup --global         # global setup: links the skill into your agent's global skills dir, installs the DuckDB skills globally
 featherbi setup --global --design   # also installs the optional design skill (opt-in, never default)
 ```
+
+Project setup copies the bundled skill to the detected agent's project-local skills directory — `.pi/skills`, `.claude/skills`, `.cursor/skills`, or `.gemini/skills` — beside the project-scoped DuckDB skills, independent of the DuckDB prompt; `--global` symlinks it under your home directory instead. An existing real directory at the destination is never overwritten.
 
 Prerequisites: Node.js 24 or newer, [uv](https://docs.astral.sh/uv/getting-started/installation/), and desktop Google Chrome — `featherbi setup` reports exactly what is missing and how to install it. Working from a repository checkout with `npm ci` remains the developer path (see below).
 

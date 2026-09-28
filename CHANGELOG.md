@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-09-28
+
+- Added read-only `s3://` and `https://` sources with packaged or live delivery, including session-only credential prompts for private live sources.
+- Added `featherbi setup` for prerequisite checks and optional DuckDB agent skills; project setup now installs the bundled featherBI skill beside them, while `--global` installs globally.
+- Added typed chart-mark and Perspective grouped/split selection, accessible All/Yes/No filter choices, and safe-subset Markdown in content components.
+- Improved live-source authentication errors and retry behavior, preserved drafts after option-load failures, and corrected bounded Arrow result assembly.
+- Excluded Python `__pycache__` files from the npm package.
+
 ## 0.1.0 - 2026-09-17
 
 First release: local-data BI dashboards authored as editable source projects, compiled to a self-contained browser viewer, and shared as external-data ZIP bundles.

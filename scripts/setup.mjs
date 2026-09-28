@@ -42,15 +42,9 @@ const CHROME_PATHS = {
  ],
 };
 
-const AGENT_MARKERS = [
- [".pi", "pi"],
- [".claude", "claude"],
- [".cursor", "cursor"],
- [".gemini", "gemini"],
-];
-
 /** Global skills directory holding the agent's per-skill subdirectories. */
 const AGENT_SKILL_DIRS = {
+ universal: ".agents/skills",
  pi: ".pi/agent/skills",
  claude: ".claude/skills",
  cursor: ".cursor/skills",
@@ -59,6 +53,7 @@ const AGENT_SKILL_DIRS = {
 
 /** Project-local skills directory beside the project-scoped DuckDB skills. */
 const AGENT_PROJECT_SKILL_DIRS = {
+ universal: ".agents/skills",
  pi: ".pi/skills",
  claude: ".claude/skills",
  cursor: ".cursor/skills",
@@ -153,18 +148,8 @@ export function projectSkillsDir(agent, cwd = process.cwd()) {
  return path.join(cwd, dir, "featherbi");
 }
 
-/** Best-effort agent detection from marker directories; pi is the default. */
-export async function detectAgent(cwd, exists = access) {
- for (const [marker, agent] of AGENT_MARKERS) {
-  try {
-   await exists(path.join(cwd, marker));
-   return agent;
-  } catch {
-   // no marker directory; try the next one
-  }
- }
- return "pi";
-}
+/** The default agent when --agent is omitted: the shared universal dirs. */
+const DEFAULT_AGENT = "universal";
 
 function nodeMajor() {
  return Number(process.versions.node.split(".")[0]);
@@ -379,7 +364,7 @@ export async function runSetup(argv = [], deps = {}) {
   }
  }
 
- const agent = options.agent ?? (await detectAgent(cwd, exists));
+ const agent = options.agent ?? DEFAULT_AGENT;
 
  let exitCode = 0;
  let skill = null;

@@ -17,11 +17,12 @@ export async function mountDashboard({
  const filters = root.querySelector("#dashboard-filters");
  const sources = root.querySelector("#dashboard-sources");
  const layout = root.querySelector("#dashboard-layout");
- root.querySelector("#dashboard").dataset.theme = config.theme ?? "neutral";
+ root.querySelector("#dashboard").dataset.theme = bakedThemeName(config) ?? config.theme ?? "neutral";
  buildFilters(filters, config.filters);
  buildSources(sources, config.data.sources);
  buildLayout(layout, config);
  applyThemeClasses(root, config.theme ?? "neutral");
+ applyBakedTheme(root, config.theme, capabilities);
  const playground = config.playground
   ? buildPlayground(root, config, capabilities.editor)
   : null;
@@ -726,6 +727,28 @@ function applyThemeClasses(root, theme) {
   .forEach((node) => node.classList.add("select"));
 }
 
+/** Theme name for a baked token theme; undefined keeps the legacy string path. */
+function bakedThemeName(config) {
+ return typeof config.theme === "object" && config.theme !== null
+  ? config.theme.name
+  : undefined;
+}
+
+/**
+ * Apply a baked token theme (spec 2026-09-28-0003 §4, TT-08): inject the
+ * variable block before the build-time shell styles so scoped author
+ * theme.css still wins conflicts, and register the ECharts theme exactly
+ * once under its baked name.
+ */
+function applyBakedTheme(root, baked, capabilities) {
+ if (typeof baked !== "object" || baked === null) return;
+ const ownerDocument = root.ownerDocument ?? root;
+ const style = ownerDocument.createElement("style");
+ style.textContent = baked.css;
+ ownerDocument.head.prepend(style);
+ capabilities.charts?.registerTheme?.(baked.name, baked.echarts);
+}
+
 function tablePageButton(id, action, label) {
  const button = document.createElement("button");
  button.type = "button";
@@ -840,7 +863,7 @@ function renderState(root, config, state, capabilities, ui = {}) {
       error instanceof Error ? error.message : String(error);
     });
   } else if (component.query) {
-   renderChart(root, component, rows, capabilities.charts);
+   renderChart(root, component, rows, capabilities.charts, bakedThemeName(config));
   }
  }
 }
@@ -943,7 +966,7 @@ function renderTable(
   locked || !page.hasNext;
 }
 
-function renderChart(root, component, rows, chartCapability) {
+function renderChart(root, component, rows, chartCapability, chartTheme) {
  const section = root.querySelector(`#component-${component.id}`);
  const chartNode = section.querySelector(".chart");
  const empty = section.querySelector("[data-empty]");
@@ -963,7 +986,7 @@ function renderChart(root, component, rows, chartCapability) {
  });
  let chart = charts.get(chartNode);
  if (!chart) {
-  chart = chartCapability.init(chartNode);
+  chart = chartCapability.init(chartNode, chartTheme);
   charts.set(chartNode, chart);
   // A plotted-mark click publishes the typed values carried on the mark's
   // data item; labels and axis positions are never used to reconstruct them.

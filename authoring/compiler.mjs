@@ -5,6 +5,7 @@ import { LineCounter, parseDocument } from "yaml";
 import projectSchema from "./schema.json" with { type: "json" };
 import { looksLikeCredentialMaterial, componentInteractionField, selectableFields, validateConfig } from "../contract/config.mjs";
 import { scopeThemeCss } from "./css.mjs";
+import { bakeTheme, validateThemeTokens } from "./theme-tokens.mjs";
 
 const validateProject = new Ajv({ allErrors: true }).compile(projectSchema);
 const FORBIDDEN_SQL = /\b(?:ALTER|ATTACH|CALL|COPY|CREATE|DELETE|DETACH|DROP|EXPORT|IMPORT|INSERT|INSTALL|LOAD|MERGE|PRAGMA|TRUNCATE|UPDATE|VACUUM)\b/i;
@@ -105,11 +106,31 @@ export async function compileProject(projectPath) {
   }
  }
 
+ let theme = project.theme ?? "neutral";
+ if (project.themeTokens) {
+  if (theme !== "neutral") {
+   throw yamlError(
+    displayProject,
+    document,
+    lineCounter,
+    ["themeTokens"],
+    `themeTokens cannot be combined with theme: ${theme}; "themeTokens" is valid only with the default neutral shell, so remove "theme" or "themeTokens"`,
+   );
+  }
+  let tokenSource;
+  try {
+   tokenSource = await readFile(path.join(root, project.themeTokens), "utf8");
+  } catch (error) {
+   throw new Error(`${project.themeTokens}:1:1: cannot read theme tokens: ${error.message}`, { cause: error });
+  }
+  theme = bakeTheme(validateThemeTokens(tokenSource, project.themeTokens));
+ }
+
  const config = {
   contract: 2,
   app: "grid",
   title: project.title,
-  theme: project.theme ?? "neutral",
+  theme,
   rendererPreset: project.rendererPreset ?? "standard",
   data: { mode: "upload", sources: project.sources.map(runtimeSource) },
   filters: project.filters,

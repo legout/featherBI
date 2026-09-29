@@ -11,6 +11,10 @@ export const gridCapability = {
    headerName: column.label ?? column.field,
    sortable: true,
    filter: true,
+   cellClassRules: {
+    "featherbi-numeric-cell": ({ value }) =>
+     typeof value === "number" || typeof value === "bigint",
+   },
    onCellClicked: column.dimension ? (event) => node.dispatchEvent(new CustomEvent("featherbi-grid-select", {
     bubbles: true,
     detail: {

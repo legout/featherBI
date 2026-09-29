@@ -129,6 +129,10 @@
       "type": "string",
       "pattern": "^theme\\.css$"
     },
+    "themeTokens": {
+      "type": "string",
+      "pattern": "^theme\\.tokens\\.yaml$"
+    },
     "models": {
       "type": "object",
       "propertyNames": {

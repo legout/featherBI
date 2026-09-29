@@ -226,6 +226,24 @@ test("TT-03: below-target contrast warns naming the pair and ratio while compili
 		const baked = await compileProject(readable);
 		assert.equal(baked.config.theme.name, "custom");
 		assert.deepEqual(lines, []);
+		// Translucent pair background (spec §5 revision 2): one indeterminate
+		// warning per affected pair, no numeric ratio, compile still succeeds.
+		lines.length = 0;
+		const translucent = await themeProject({
+			yaml: "themeTokens: theme.tokens.yaml",
+			tokens: tokensYaml(
+				['surface: "#000028"', "surface: rgba(120, 120, 120, 0)"],
+				['text: "#e6e9f8"', 'text: "#000000"'],
+			),
+		});
+		const translucentResult = await compileProject(translucent);
+		assert.equal(translucentResult.config.theme.name, "custom");
+		const surfaceWarnings = lines.filter((line) => line.includes("text/surface"));
+		assert.equal(surfaceWarnings.length, 1);
+		assert.ok(surfaceWarnings[0].includes("translucent"), surfaceWarnings[0]);
+		// No pair measured against a translucent background ever prints a ratio.
+		assert.ok(lines.every((line) => line.includes("translucent")), lines.join("\n"));
+		assert.ok(!lines.some((line) => /\d+\.\d+:1/.test(line)), lines.join("\n"));
 	} finally {
 		console.error = originalError;
 	}

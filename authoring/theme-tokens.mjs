@@ -239,6 +239,15 @@ function rgb(color) {
 export function contrastWarnings(tokens, filename = "theme.tokens.yaml") {
  const warnings = [];
  const check = (pair, foreground, background, target) => {
+  // Spec §5 revision 2: a translucent pair background cannot be measured —
+  // the visible contrast depends on the renderer backdrop, which we
+  // deliberately do not assume — so warn once without a numeric ratio.
+  if (channels(background)[3] < 1) {
+   warnings.push(
+    `${filename}: warning: contrast ${pair} cannot be verified because the background is translucent; the ratio depends on the renderer backdrop`,
+   );
+   return;
+  }
   const ratio = contrastRatio(foreground, background);
   if (ratio < target) {
    warnings.push(
@@ -258,9 +267,8 @@ export function contrastWarnings(tokens, filename = "theme.tokens.yaml") {
 
 /** WCAG contrast ratio of two colors (lighter/darker luminance, both + 0.05). */
 function contrastRatio(foreground, background) {
- // ponytail: rgba foregrounds are measured composited over the pair
- // background; a translucent background token is measured as its own rgb —
- // whatever sits beneath the page surface is out of scope.
+ // rgba foregrounds are measured composited over the pair background;
+ // translucent backgrounds never reach here (they warn without a ratio).
  const [red, green, blue, alpha] = channels(foreground);
  const backdrop = channels(background).slice(0, 3);
  const blended = [red, green, blue].map(

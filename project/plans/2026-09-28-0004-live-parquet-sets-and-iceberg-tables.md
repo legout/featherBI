@@ -1,0 +1,24 @@
+# Implementation plan: live Parquet file sets and Iceberg tables
+
+**Status:** approved by owner in chat on 2026-09-28; ticketized in GitHub Issues #30–#35. Ticketization is authorized; probe execution, implementation, integration, pushing, and publication remain separate gates. The issues own canonical task bodies.
+
+**Goal:** one logical source reads a live, unbundled multi-file Parquet set or Iceberg table in the recipient's desktop Chrome browser, pinned per generation and refreshed explicitly.
+
+**Behavior source:** [live Parquet file sets and Iceberg tables](../specs/2026-09-28-0004-live-parquet-sets-and-iceberg-tables.md), approved revision 1 (owner-approved design and written specification 2026-09-28): LT-01–LT-08, including both Parquet selectors, both Iceberg identities, separate memory-only credentials, per-load pinning, Delta deferred. Rationale: [ADR 0009](../adr/0009-browser-only-lakehouse-readers.md). Do not execute the historical [remote-v1 migration plan](2026-09-17-0001-remote-sources-packaged.md).
+
+**Capture checkpoint:** vocabulary = *Parquet file set* and *remote table source* in [CONTEXT.md](../../CONTEXT.md), not dashboard-wide *Dataset*; decision = ADR 0009's browser-only read/no Delta facade; behavior = approved spec revision 1 plus the owner's 2026-09-29 clarification accepting the exact DuckDB v1.5.5 `wasm_eh` Iceberg extension artifact as trusted and requiring resolve-once/pinned-metadata-URI REST reads. T0 passed its synthetic browser capabilities; real AWS/S3-compatible service checks remain unverified because no safe independent credentials were available. The owner resolved the extension trust-source gate on 2026-09-29. No server, bundled fallback, or weaker snapshot semantics are implied.
+
+**Execution constraints:** supervised `orchestrate-implementation`, one sequential writer, no overlap with the theme-token plan's schema/compiler/runtime targets. Keep existing single-file packaged/live behavior, single-worker candidate rollback, no data/secrets/inventory in ZIP, and no authored SQL readers/extensions/mutation/URLs. Runtime is browser DuckDB-WASM in `file://` Chrome; authoring may profile with native DuckDB. External manifest/catalog/S3 responses and recipient credentials touch a real trust boundary: protect memory-only secrets, declared endpoint/prefix, and coherent results. No Delta reader, OAuth, catalog-vended credentials, server, or background polling.
+
+## GitHub issues — canonical task bodies
+
+1. [#30 — T0: Browser feasibility gate](https://github.com/legout/featherBI/issues/30) — LT-02/04/05/06/07; disposable Chrome evidence, `existing-check`; blocks feature code if a required capability fails.
+2. [#31 — T1: Parquet glob + Refresh](https://github.com/legout/featherBI/issues/31) — LT-01/02/06/07; depends on positive #30; `new-test` unit A, immediate contract/secret-lifecycle review.
+3. [#32 — T2: Remote Parquet manifest](https://github.com/legout/featherBI/issues/32) — LT-03/06/07; depends on #31; `new-test` unit B.
+4. [#33 — T3: Iceberg metadata URI](https://github.com/legout/featherBI/issues/33) — LT-01/05/06/07; depends on positive #30 and accepted #31–#32; `new-test` unit C, immediate extension review.
+5. [#34 — T4: Iceberg REST + bearer token](https://github.com/legout/featherBI/issues/34) — LT-04/06/07; depends on #33; `new-test` unit D, immediate auth review.
+6. [#35 — T5: Guidance + final integration](https://github.com/legout/featherBI/issues/35) — LT-01–LT-08; depends on #30–#34; `no-new-test` unit E, one final candidate integration review.
+
+**Global validation:** `npm run check` for code changes; `npm run test:browser` for runtime/browser slices and on the assembled candidate. Documentation-only edits require link/diff inspection. The tasks name focused failure modes; no duplicate test matrix or extra review round. One parent-owned fix pass and delta-only recheck, then hand remaining blockers to the owner.
+
+**Readiness/publishing:** approved spec, ADR and plan are local untracked/unpublished files, not accessible from remote `main`; workers must have the exact approved sources before execution. #30's feasibility outcome is a prerequisite for #31–#34; ticket creation itself authorizes no writer, integration, push, or release. Planning-contract version 1; installed skill revision/provenance `unknown`.

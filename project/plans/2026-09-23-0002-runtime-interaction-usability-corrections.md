@@ -1,6 +1,6 @@
 # Runtime interaction and usability corrections — implementation plan
 
-**Status:** Approved for ticketization by the owner on 2026-09-23 (“appoved.ticketize”). Ticket creation does not authorize implementation, integration, push, or publication.
+**Status:** Partly implemented. Issues #15–#23 are complete in `origin/main`; #15–#21 are now closed as completed and #22–#23 were already closed. This plan remains the record of the approved behavior and evidence mapping.
 
 **Goal:** Complete the observable runtime-v2 corrections without introducing a second source lifecycle or a speculative streaming rewrite.
 

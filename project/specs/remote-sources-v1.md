@@ -4,7 +4,7 @@ Status: owner-approved design captured in the 2026-09-17 shaping session (full-d
 
 ## 1. Purpose and authority
 
-This specification defines read-only remote data sources for featherBI: how authors declare them, how authoring obtains credentials, how they are delivered to recipients, and how the viewer reads them live. It implements the owner's 2026-09-17 decisions: public and private remote support as a near-term requirement, packaged-default delivery, and memory-only recipient credentials.
+This specification defines read-only single-file remote data sources for featherBI: how authors declare them, how authoring obtains credentials, how they are delivered to recipients, and how the viewer reads them live. It implements the owner's 2026-09-17 decisions: public and private remote support as a near-term requirement, packaged-default delivery for these file sources, and memory-only recipient credentials. The [live Parquet file-set and Iceberg specification](2026-09-28-0004-live-parquet-sets-and-iceberg-tables.md) owns the new, live-only multi-file/table source kinds.
 
 Sources and rationale:
 

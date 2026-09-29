@@ -27,6 +27,7 @@ Goal: a simple, fully functional featherBI MVP. Optimize for working user-visibl
 - Test requests are findings: name a real scenario or drop them. Coverage percentage is not a reason.
 - Disposition before repair: parent rejects failed gates in one line, authorizes small in-scope fixes, or hands large/out-of-scope fixes to the human. Reviewers never start fixes or re-reviews.
 - Reviews end when criteria, real risks, and written rules are covered: `pass or fix-first`, then stop. One fix pass, one delta recheck; unresolved findings go to the human, never round three. Candidate review checks integration effects, not settled findings again.
+- Owner-approved exception (2026-09-29): for #24 only, permit one additional parent fix and one fresh-context delta-only recheck of the surviving font-stack CSS-comment finding. No full re-review or further round; if it remains unresolved, hand back.
 - Paste the full reviewer contract from `orchestrate-implementation` into every fresh reviewer prompt, with criteria, conventions, and real-use context; file links alone do not deliver it.
 - After each task: restate it, compare the result, choose `accept / fix / hand back / ask`. Extra ideas get one line, not code. Smallest safe change; one behavior and, for `new-test`, one failing test first. Dependencies and abstractions need a job today. No extra ledgers or sign-off artifacts.
 

@@ -24,7 +24,7 @@ Execute sequentially through `orchestrate-implementation` in supervised mode. Ea
 6. [#8 — Complete the authoring skill and migrate off runtime v1](https://github.com/legout/featherBI/issues/8) — blocked by #7 and #9; V2-02–V2-04/V2-10–V2-12 and final v1 removal.
 7. [#11 — Add remote sources to authoring and packaged delivery](https://github.com/legout/featherBI/issues/11) — blocked by #5; remote declaration, credential resolution, httpfs profiling, packaged materialization; [implementation plan](2026-09-17-0001-remote-sources-packaged.md) approved.
 8. [#12 — Add live remote reads and recipient credential form](https://github.com/legout/featherBI/issues/12) — blocked by #11; RS-03–RS-06 live path.
-9. [#13 — Add featherbi setup checks and duckdb-skills prompt](https://github.com/legout/featherBI/issues/13) — independent bounded CLI slice.
+9. [#13 — Add featherbi setup checks and duckdb-skills prompt](https://github.com/legout/featherBI/issues/13) — **implemented in `origin/main`; closed as completed** (independent bounded CLI slice).
 
 ## Requirement map
 
@@ -34,7 +34,7 @@ Execute sequentially through `orchestrate-implementation` in supervised mode. Ea
 - AG Grid, Perspective, playground, capability-built viewer: #7; complete Perspective-first typed-chart coverage: #9.
 - Full progressive skill loop, AP migration, private acceptance, v1 removal, skill quality: #8.
 - External-data ZIP and path/data secrecy: retained in every browser/package slice, final private proof in #8.
-- Remote sources, delivery modes, and the credential boundary: #11 packaged path; #12 live path and credential form; setup tooling in #13.
+- Remote sources, delivery modes, and the credential boundary: #11 packaged path and #12 live path are **implemented in `origin/main` and closed**; setup tooling in #13 is **implemented and closed**. New Parquet-set/Iceberg source kinds are scoped separately by #30–#35.
 
 ## Assurance and gates
 

@@ -1,6 +1,6 @@
 # Remote sources — authoring and packaged delivery (issue #11)
 
-**Status:** approved. Owner approved the plan on 2026-09-17 and directed commit + ticketization without implementation.
+**Status:** implemented in `origin/main`; issue #11 closed as completed after confirming the packaged remote declaration, authoring profile, materialization, and guidance paths. The historical plan records the original approved scope and sequencing; do not treat it as pending work.
 
 **Goal:** a dashboard project declaring a read-only remote source (`s3://` or `https://`) profiles bounded, compiles, and packages into the standard external-data ZIP with the recipient flow unchanged.
 

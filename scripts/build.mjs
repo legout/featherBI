@@ -106,10 +106,16 @@ export async function renderDashboard({ config, inputs = null }) {
   );
   runtimeCapabilities.push("editor: editorCapability");
  }
- const theme = await themeAdapter(config.theme ?? "neutral");
+ // A baked token theme (object) carries its own css/echarts and uses no
+ // shell adapter; legacy string themes keep their adapter CSS.
+ const themeName =
+  typeof config.theme === "object" && config.theme !== null
+   ? config.theme.name
+   : (config.theme ?? "neutral");
+ const theme = await themeAdapter(themeName);
  const buildMetadata = {
   duckdbWasm: DUCKDB_WASM_VERSION,
-  theme: config.theme ?? "neutral",
+  theme: themeName,
   themeVersion: theme.version,
   capabilities,
  };
@@ -237,7 +243,7 @@ async function themeAdapter(theme) {
    css: `/* featherbi-theme:siemens-ix@${metadata.version} */\n${await readFile(path.join(rootDir, "node_modules/@siemens/ix/dist/siemens-ix/siemens-ix-core.css"), "utf8")}`,
   };
  }
- return { version: "built-in", css: "/* featherbi-theme:neutral@built-in */" };
+ return { version: "built-in", css: `/* featherbi-theme:${theme}@built-in */` };
 }
 
 async function daisyCss() {

@@ -49,10 +49,36 @@
       }
     },
     "theme": {
-      "enum": [
-        "neutral",
-        "daisyui",
-        "siemens-ix"
+      "oneOf": [
+        {
+          "enum": [
+            "neutral",
+            "daisyui",
+            "siemens-ix"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "css",
+            "echarts"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "css": {
+              "type": "string",
+              "minLength": 1
+            },
+            "echarts": {
+              "type": "object"
+            }
+          }
+        }
       ]
     },
     "themeCss": {

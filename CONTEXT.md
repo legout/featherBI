@@ -47,6 +47,12 @@ _Avoid_: Filename as a synonym for source identity.
 **Remote source**: A source declared by a read-only `s3://` (S3-compatible) or `https://` URI rather than a local file; its identity remains the logical source ID.
 _Avoid_: Treating the URI or bucket name as the source identity.
 
+**Parquet file set**: Multiple Parquet objects selected as one logical source by a file pattern or manifest, without table-transaction semantics.
+_Avoid_: Dataset, Delta table.
+
+**Remote table source**: A logical source resolved through table metadata, including snapshot and delete semantics, rather than by directly reading its physical data files.
+_Avoid_: Parquet file set, Dataset.
+
 **Source delivery mode**: Whether a source ships materialized in the ZIP bundle (`packaged`) or is read live from its URI at open time (`live`).
 
 **Authoring credential source**: Where authoring obtains remote credentials — the AWS credential chain or a gitignored `.env` created from `.env.example`; never project files or artifacts.

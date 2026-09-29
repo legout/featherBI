@@ -1,0 +1,11 @@
+---
+status: accepted
+---
+
+# Keep live table reads in the browser and defer Delta until a compatible reader exists
+
+The owner approved this choice in chat on 2026-09-28. Live multi-file Parquet and Iceberg sources remain read-only, unbundled, and browser-owned: trusted, pinned DuckDB-WASM source adapters create logical views, while authored SQL never gains file readers, extension commands, or remote access. A read service would break the current portable, no-server delivery boundary; scanning raw Parquet from Delta or Iceberg would misrepresent table snapshots and deletes. DuckDB documents a browser Iceberg extension, but compatibility with featherBI's pinned build and snapshot pinning is a required feasibility gate. DuckDB's Delta extension does not currently list WASM support, so true Delta tables are deferred rather than silently served through a backend or exported Parquet facade.
+
+**Pinned Iceberg asset trust (owner decision 2026-09-29):** for `@duckdb/duckdb-wasm` 1.33.1-dev64.0 / DuckDB v1.5.5 `wasm_eh`, the exact DuckDB official version/platform artifact `https://extensions.duckdb.org/v1.5.5/wasm_eh/iceberg.duckdb_extension.wasm` is accepted as the product's trusted pinned extension asset. Record that exact artifact/version in the capability manifest; project declarations must never choose the repository or artifact URL. This resolves T0's custom-repository limitation: the WASM build ignores `custom_extension_repository`. Because a REST catalog attachment re-resolves the latest snapshot per scan, trusted runtime code must resolve `metadata-location` once per generation and scan that versioned metadata URI until explicit Refresh.
+
+This is a scoped exception to [ADR 0007](0007-remote-sources-and-recipient-credentials.md)'s packaged-default **single-file** remote delivery: the new file-set/table kinds are explicitly live-only. Existing remote-file behavior and memory-only S3 credentials remain; private Iceberg REST catalogs add a separate recipient-supplied, memory-only bearer token. The observable contract and browser gate are in the [live sources specification](../specs/2026-09-28-0004-live-parquet-sets-and-iceberg-tables.md). No implementation or publication is approved by this decision alone.

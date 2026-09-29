@@ -5,7 +5,7 @@ import { LineCounter, parseDocument } from "yaml";
 import projectSchema from "./schema.json" with { type: "json" };
 import { looksLikeCredentialMaterial, componentInteractionField, selectableFields, validateConfig } from "../contract/config.mjs";
 import { scopeThemeCss } from "./css.mjs";
-import { bakeTheme, validateThemeTokens } from "./theme-tokens.mjs";
+import { bakeTheme, contrastWarnings, validateThemeTokens } from "./theme-tokens.mjs";
 
 const validateProject = new Ajv({ allErrors: true }).compile(projectSchema);
 const FORBIDDEN_SQL = /\b(?:ALTER|ATTACH|CALL|COPY|CREATE|DELETE|DETACH|DROP|EXPORT|IMPORT|INSERT|INSTALL|LOAD|MERGE|PRAGMA|TRUNCATE|UPDATE|VACUUM)\b/i;
@@ -123,7 +123,12 @@ export async function compileProject(projectPath) {
   } catch (error) {
    throw new Error(`${project.themeTokens}:1:1: cannot read theme tokens: ${error.message}`, { cause: error });
   }
-  theme = bakeTheme(validateThemeTokens(tokenSource, project.themeTokens));
+  // Contrast warnings are advisory (spec §5): printed, never fatal.
+  const tokens = validateThemeTokens(tokenSource, project.themeTokens);
+  for (const warning of contrastWarnings(tokens, project.themeTokens)) {
+   console.error(warning);
+  }
+  theme = bakeTheme(tokens);
  }
 
  const config = {

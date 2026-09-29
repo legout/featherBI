@@ -205,6 +205,32 @@ test("themeTokens compiles a baked theme into the strict runtime config", async 
 	assert.equal(typeof escaped.config.themeCss, "string");
 });
 
+test("TT-03: below-target contrast warns naming the pair and ratio while compiling", async () => {
+	const lines = [];
+	const originalError = console.error;
+	console.error = (line) => lines.push(line);
+	try {
+		// text nearly matches surface: far below the 4.5:1 target, all other pairs stay above.
+		const dashboard = await themeProject({
+			yaml: "themeTokens: theme.tokens.yaml",
+			tokens: tokensYaml(['text: "#e6e9f8"', 'text: "#0d0d40"']),
+		});
+		const { config } = await compileProject(dashboard);
+		assert.equal(config.theme.name, "custom"); // the build still succeeds
+		assert.equal(lines.length, 1);
+		assert.ok(lines[0].includes("text/surface"), lines[0]);
+		assert.match(lines[0], /\d+\.\d+:1/);
+		// Above-target tokens compile without any warning.
+		lines.length = 0;
+		const readable = await themeProject({ yaml: "themeTokens: theme.tokens.yaml" });
+		const baked = await compileProject(readable);
+		assert.equal(baked.config.theme.name, "custom");
+		assert.deepEqual(lines, []);
+	} finally {
+		console.error = originalError;
+	}
+});
+
 test("TT-04: themeTokens with a non-neutral legacy theme fails naming both fields", async () => {
 	const dashboard = await themeProject({
 		yaml: "theme: daisyui\nthemeTokens: theme.tokens.yaml",

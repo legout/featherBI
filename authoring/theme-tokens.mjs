@@ -8,6 +8,8 @@
  * bakeTheme(tokens) bakes the validated tokens into the runtime theme
  * bundle `{name, css, echarts}`: scoped CSS variables (including the
  * supported AG Grid `--ag-*` mappings) plus a complete ECharts theme.
+ * contrastWarnings(tokens, filename) checks the spec §5 pairs with WCAG
+ * relative luminance ratios and returns one warning per below-target pair.
  */
 
 import { LineCounter, parseDocument } from "yaml";
@@ -36,6 +38,9 @@ const RGBA_COLOR = /^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0
 const UNSAFE_FONT = /@import|url\s*\(|[a-z][a-z0-9+.-]*:|\/\/|\/\*|\*\/|[;{}]/i;
 const SPLIT_LINE_ALPHA = 0.35;
 const BAKED_THEME_NAME = "custom";
+// Contrast targets per spec §5: text pairs 4.5:1, graphic/chart pairs 3:1.
+const CONTRAST_TARGET_TEXT = 4.5;
+const CONTRAST_TARGET_GRAPHIC = 3;
 
 /**
  * Validate one theme token file and return normalized tokens.
@@ -220,6 +225,67 @@ function rgb(color) {
   Number.parseInt(full.slice(2, 4), 16),
   Number.parseInt(full.slice(4, 6), 16),
  ];
+}
+
+/**
+ * Contrast warnings per spec §5, computed with WCAG relative luminance.
+ * Pairs: text/surface, textDim/surface, accentContrast/accent (4.5:1);
+ * accent/surface and each chart.palette entry/surface (3:1). Returns one
+ * warning per below-target pair; contrast never fails the build.
+ * @param {object} tokens normalized output of validateThemeTokens
+ * @param {string} filename
+ * @returns {string[]}
+ */
+export function contrastWarnings(tokens, filename = "theme.tokens.yaml") {
+ const warnings = [];
+ const check = (pair, foreground, background, target) => {
+  const ratio = contrastRatio(foreground, background);
+  if (ratio < target) {
+   warnings.push(
+    `${filename}: warning: contrast ${pair} is ${ratio.toFixed(2)}:1, below the ${target}:1 target`,
+   );
+  }
+ };
+ check("text/surface", tokens.text, tokens.surface, CONTRAST_TARGET_TEXT);
+ check("textDim/surface", tokens.textDim, tokens.surface, CONTRAST_TARGET_TEXT);
+ check("accentContrast/accent", tokens.accentContrast, tokens.accent, CONTRAST_TARGET_TEXT);
+ check("accent/surface", tokens.accent, tokens.surface, CONTRAST_TARGET_GRAPHIC);
+ tokens.chart.palette.forEach((color, index) => {
+  check(`chart.palette[${index}]/surface`, color, tokens.surface, CONTRAST_TARGET_GRAPHIC);
+ });
+ return warnings;
+}
+
+/** WCAG contrast ratio of two colors (lighter/darker luminance, both + 0.05). */
+function contrastRatio(foreground, background) {
+ // ponytail: rgba foregrounds are measured composited over the pair
+ // background; a translucent background token is measured as its own rgb —
+ // whatever sits beneath the page surface is out of scope.
+ const [red, green, blue, alpha] = channels(foreground);
+ const backdrop = channels(background).slice(0, 3);
+ const blended = [red, green, blue].map(
+  (channel, index) => alpha * channel + (1 - alpha) * backdrop[index],
+ );
+ const lighter = Math.max(luminance(blended), luminance(backdrop));
+ const darker = Math.min(luminance(blended), luminance(backdrop));
+ return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** WCAG relative luminance of an sRGB color. */
+function luminance([red, green, blue]) {
+ const linear = (channel) => {
+  const srgb = channel / 255;
+  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+ };
+ return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
+}
+
+/** @returns {[number, number, number, number]} r, g, b channels plus alpha (1 for hex). */
+function channels(color) {
+ const rgba = color.match(RGBA_COLOR);
+ if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])];
+ const [red, green, blue] = rgb(color);
+ return [red, green, blue, 1];
 }
 
 /** Error carrying filename/line/column for one token key path. */

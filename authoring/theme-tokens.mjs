@@ -128,13 +128,15 @@ export function validateThemeTokens(source, filename = "theme.tokens.yaml") {
 /**
  * Bake validated tokens into the runtime theme bundle.
  * @param {object} tokens normalized output of validateThemeTokens
+ * @param {string} [name] theme name; built-in presets bake under their
+ * preset id, author token files default to "custom"
  * @returns {{name: string, css: string, echarts: object}}
  */
-export function bakeTheme(tokens) {
+export function bakeTheme(tokens, name = BAKED_THEME_NAME) {
  const palette = tokens.chart.palette;
  const heatMin = tokens.chart.heatMin ?? tokens.surface2;
  const fontMono = tokens.fontMono !== undefined ? `\n --fb-font-mono: ${tokens.fontMono};` : "";
- const css = `/* featherbi-theme:${BAKED_THEME_NAME}@tokens-v1 */
+ const css = `/* featherbi-theme:${name}@tokens-v1 */
 :root,
 #dashboard {
  --fb-color-scheme: ${colorScheme(tokens.surface)};
@@ -171,7 +173,7 @@ export function bakeTheme(tokens) {
   splitLine: { lineStyle: { color: splitLineColor(tokens.border) } },
  });
  return {
-  name: BAKED_THEME_NAME,
+  name,
   css,
   echarts: {
    color: [...palette],

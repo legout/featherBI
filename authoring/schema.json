@@ -121,7 +121,8 @@
       "enum": [
         "neutral",
         "daisyui",
-        "siemens-ix"
+        "siemens-ix",
+        "siemens-ix-light"
       ],
       "default": "neutral"
     },

@@ -330,26 +330,29 @@ test("boolean filter moves All to Yes to No and back to All with keyboard", asyn
   await page.goto(pathToFileURL(dashboardPath).href, { waitUntil: "load" });
   await ready(page);
 
-  // Default null renders as the checked All choice (typed "all").
-  await expect(page.locator("#filter-successful_only-all")).toBeChecked();
+  // Default null renders as the checked All choice (typed "all") inside the
+  // segmented All/Yes/No control.
+  const segment = (choice) =>
+   page.locator(`[data-segmented] #filter-successful_only-${choice}`);
+  await expect(segment("all")).toBeChecked();
   await expect(page.locator("#active-filter-state")).toContainText("successful_only: all");
   await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("6");
 
   // Keyboard All -> Yes stays a pending draft until Apply commits it.
-  await page.locator("#filter-successful_only-all").focus();
+  await segment("all").focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.locator("#filter-successful_only-yes")).toBeChecked();
+  await expect(segment("yes")).toBeChecked();
   await expect(page.locator("#active-filter-state")).toContainText("successful_only: all");
   await page.locator("#apply-filters").click();
   await ready(page);
   await expect(page.locator("#active-filter-state")).toContainText("successful_only: true");
   await expect(page.locator("#component-summary [data-metric=records]")).toHaveText("4");
-  await expect(page.locator("#filter-successful_only-yes")).toBeChecked();
+  await expect(segment("yes")).toBeChecked();
 
   // From the committed non-null Yes, keyboard moves to No (typed false).
-  await page.locator("#filter-successful_only-yes").focus();
+  await segment("yes").focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.locator("#filter-successful_only-no")).toBeChecked();
+  await expect(segment("no")).toBeChecked();
   await page.locator("#apply-filters").click();
   await ready(page);
   await expect(page.locator("#active-filter-state")).toContainText("successful_only: false");
@@ -357,9 +360,9 @@ test("boolean filter moves All to Yes to No and back to All with keyboard", asyn
 
   // The named failure: the group wraps No -> All without a reload, and the
   // null typed value restores the unfiltered result.
-  await page.locator("#filter-successful_only-no").focus();
+  await segment("no").focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.locator("#filter-successful_only-all")).toBeChecked();
+  await expect(segment("all")).toBeChecked();
   await page.locator("#apply-filters").click();
   await ready(page);
   await expect(page.locator("#active-filter-state")).toContainText("successful_only: all");

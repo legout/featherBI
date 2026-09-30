@@ -1,0 +1,19 @@
+{
+ "version": 1,
+ "font": "Inter, \"Segoe UI\", sans-serif",
+ "fontMono": "\"JetBrains Mono\", ui-monospace, monospace",
+ "radius": 8,
+ "surface": "#000028",
+ "surface2": "#0d0d40",
+ "text": "#e6e9f8",
+ "textDim": "#8f96c4",
+ "border": "#262660",
+ "accent": "#00e6dc",
+ "accentContrast": "#000028",
+ "success": "#00ffb9",
+ "warning": "#ffb35c",
+ "danger": "#ff6b8a",
+ "chart": {
+  "palette": ["#00e6dc", "#00ffb9", "#009999", "#00b3b3"]
+ }
+}

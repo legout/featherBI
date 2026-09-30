@@ -107,12 +107,13 @@ export async function renderDashboard({ config, inputs = null }) {
   runtimeCapabilities.push("editor: editorCapability");
  }
  // A baked token theme (object) carries its own css/echarts and uses no
- // shell adapter; legacy string themes keep their adapter CSS.
- const themeName =
-  typeof config.theme === "object" && config.theme !== null
-   ? config.theme.name
-   : (config.theme ?? "neutral");
- const theme = await themeAdapter(themeName);
+ // shell adapter; legacy string themes keep their adapter CSS. A baked
+ // preset must never resolve the legacy adapter of the same name.
+ const bakedTheme = typeof config.theme === "object" && config.theme !== null;
+ const themeName = bakedTheme ? config.theme.name : (config.theme ?? "neutral");
+ const theme = bakedTheme
+  ? { version: "tokens-v1", css: `/* featherbi-theme:${themeName}@tokens-v1 */` }
+  : await themeAdapter(themeName);
  const buildMetadata = {
   duckdbWasm: DUCKDB_WASM_VERSION,
   theme: themeName,

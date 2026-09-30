@@ -58,11 +58,14 @@ const rows = [
  { station: "NY", product: "P1", inspected_on: "2026-09-06", amount: 60, successful: true },
 ];
 
-async function buildDerived({ outPath, tokens = TOKENS, authorCss }) {
+async function buildDerived({ outPath, tokens = TOKENS, authorCss, theme }) {
  const exampleDir = path.join(rootDir, "examples/standard-dashboard");
+ // Preset projects get their own directory so they never fight the shared
+ // custom-token project the TT-02/TT-04 mutation tests rewrite.
+ const dir = path.join(derivedDir, theme ?? "custom");
  let source = await readFile(path.join(exampleDir, "dashboard.yaml"), "utf8");
  source = source
-  .replace("theme: daisyui\n", "themeTokens: theme.tokens.yaml\n")
+  .replace("theme: daisyui\n", theme ? `theme: ${theme}\n` : "themeTokens: theme.tokens.yaml\n")
   .replace("themeCss: theme.css\n", authorCss ? "themeCss: theme.css\n" : "");
  // Table queries are exclusive; give the table its own copy of the station rollup.
  source = source.replace(
@@ -76,16 +79,16 @@ async function buildDerived({ outPath, tokens = TOKENS, authorCss }) {
 layout:`,
  );
  source += TABLE_COMPONENT;
- await mkdir(path.join(derivedDir, "models"), { recursive: true });
- await writeFile(path.join(derivedDir, "dashboard.yaml"), source, "utf8");
+ await mkdir(path.join(dir, "models"), { recursive: true });
+ await writeFile(path.join(dir, "dashboard.yaml"), source, "utf8");
  await writeFile(
-  path.join(derivedDir, "models", "inspection_model.sql"),
+  path.join(dir, "models", "inspection_model.sql"),
   await readFile(path.join(exampleDir, "models", "inspection_model.sql"), "utf8"),
   "utf8",
  );
- await writeFile(path.join(derivedDir, "theme.tokens.yaml"), tokens, "utf8");
- if (authorCss) await writeFile(path.join(derivedDir, "theme.css"), authorCss, "utf8");
- const project = await compileProject(path.join(derivedDir, "dashboard.yaml"));
+ if (!theme) await writeFile(path.join(dir, "theme.tokens.yaml"), tokens, "utf8");
+ if (authorCss) await writeFile(path.join(dir, "theme.css"), authorCss, "utf8");
+ const project = await compileProject(path.join(dir, "dashboard.yaml"));
  await buildDashboard({
   config: project.config,
   outPath,
@@ -176,6 +179,11 @@ test("custom theme tokens render baked variables, chart palette, axis, and AG Gr
   expect(
    await numericCell.evaluate((cell) => getComputedStyle(cell).fontFamily),
   ).toContain("Custom Mono");
+  // TT-09: the status affordance stays visible and theme-colored under a
+  // custom token theme as well.
+  const status = page.locator("#dashboard-status");
+  await expect(status).toBeVisible();
+  await expect(status).toHaveCSS("color", "rgb(230, 233, 248)");
   // The registered ECharts theme drives real pixels: bars use the palette
   // head and the axis line uses the border token.
   const [palettePixels, borderPixels] = await colorCounts(
@@ -211,24 +219,89 @@ test("author theme.css applies after the baked theme and wins conflicts (TT-08)"
  }
 });
 
+// Built-in presets (spec 2026-09-28-0003 §2/§4, issue #26): explicit-only
+// token sets from the Siemens mockups, baked through the identical path.
+const PRESETS = [
+ {
+  theme: "siemens-ix",
+  outPath: path.join(derivedDir, "siemens-ix.html"),
+  surface: "rgb(0, 0, 40)",
+  surface2: "rgb(13, 13, 64)",
+  border: "rgb(38, 38, 96)",
+  text: "rgb(230, 233, 248)",
+  paletteHead: "#00e6dc",
+ },
+ {
+  theme: "siemens-ix-light",
+  outPath: path.join(derivedDir, "siemens-ix-light.html"),
+  surface: "rgb(243, 243, 240)",
+  surface2: "rgb(255, 255, 255)",
+  border: "rgb(217, 220, 212)",
+  text: "rgb(0, 0, 40)",
+  paletteHead: "#009999",
+ },
+];
+
+test("siemens-ix and siemens-ix-light presets bake and render under their explicit selection (TT-05, TT-09)", async ({ browser }) => {
+ for (const preset of PRESETS) {
+  const dashboardPath = await buildDerived({ outPath: preset.outPath, theme: preset.theme });
+  // No preset-only theming code: the legacy iX shell adapter must not leak
+  // into a baked preset build.
+  const html = await readFile(dashboardPath, "utf8");
+  expect(html.includes("siemens-ix@5.2.1")).toBe(false);
+  const { page, context } = await openDashboard(browser, dashboardPath);
+  try {
+   await expect(page.locator("#dashboard")).toHaveAttribute("data-theme", preset.theme);
+   const build = await page.evaluate(() => window.__featherbiBuild);
+   expect(build.theme).toBe(preset.theme);
+   expect(build.themeVersion).toBe("tokens-v1");
+   // The baked block reaches the page shell and cards.
+   expect(
+    await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor),
+   ).toBe(preset.surface);
+   const section = page.locator("#component-by_station");
+   await expect(section).toHaveCSS("background-color", preset.surface2);
+   await expect(section).toHaveCSS("border-color", preset.border);
+   // TT-09: the status affordance stays visible and theme-colored.
+   const status = page.locator("#dashboard-status");
+   await expect(status).toBeVisible();
+   await expect(status).toHaveCSS("color", preset.text);
+   // The warning note keeps a readable foreground on its fixed pale background.
+   const note = page.locator("#snapshot-note");
+   await expect(note).toBeVisible();
+   await expect(note).toContainText("Snapshot");
+   await expect(note).toHaveCSS("color", "rgb(24, 33, 43)");
+   // The registered ECharts theme drives real pixels with the palette head.
+   const [palettePixels] = await colorCounts(
+    page,
+    "#component-by_station .chart canvas",
+    [preset.paletteHead],
+   );
+   expect(palettePixels).toBeGreaterThan(200);
+  } finally {
+   await context.close();
+  }
+ }
+});
+
 test("invalid token errors identify the file and key (TT-02)", async () => {
  await buildDerived({ outPath: themeDashboardPath });
- await writeFile(path.join(derivedDir, "theme.tokens.yaml"), TOKENS + "\nserif: Arial\n", "utf8");
+ await writeFile(path.join(derivedDir, "custom", "theme.tokens.yaml"), TOKENS + "\nserif: Arial\n", "utf8");
  await assertCompileError(/theme\.tokens\.yaml:\d+:\d+: unknown theme token key "serif"/);
  await writeFile(
-  path.join(derivedDir, "theme.tokens.yaml"),
+  path.join(derivedDir, "custom", "theme.tokens.yaml"),
   TOKENS.replace('surface: "#000028"', 'surface: "purple"'),
   "utf8",
  );
  await assertCompileError(/theme\.tokens\.yaml:\d+:\d+: theme token "surface" must be/);
  // Restore the valid token file for the TT-04 mutation below.
- await writeFile(path.join(derivedDir, "theme.tokens.yaml"), TOKENS, "utf8");
+ await writeFile(path.join(derivedDir, "custom", "theme.tokens.yaml"), TOKENS, "utf8");
 });
 
 test("themeTokens combined with a non-neutral theme fails naming both fields (TT-04)", async () => {
- const source = await readFile(path.join(derivedDir, "dashboard.yaml"), "utf8");
+ const source = await readFile(path.join(derivedDir, "custom", "dashboard.yaml"), "utf8");
  await writeFile(
-  path.join(derivedDir, "dashboard.yaml"),
+  path.join(derivedDir, "custom", "dashboard.yaml"),
   source.replace(
    "themeTokens: theme.tokens.yaml\n",
    "theme: daisyui\nthemeTokens: theme.tokens.yaml\n",
@@ -241,5 +314,5 @@ test("themeTokens combined with a non-neutral theme fails naming both fields (TT
 });
 
 async function assertCompileError(pattern) {
- await expect(compileProject(path.join(derivedDir, "dashboard.yaml"))).rejects.toThrow(pattern);
+ await expect(compileProject(path.join(derivedDir, "custom", "dashboard.yaml"))).rejects.toThrow(pattern);
 }

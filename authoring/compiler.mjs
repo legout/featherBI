@@ -1,5 +1,6 @@
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Ajv from "ajv";
 import { LineCounter, parseDocument } from "yaml";
 import projectSchema from "./schema.json" with { type: "json" };
@@ -8,6 +9,13 @@ import { scopeThemeCss } from "./css.mjs";
 import { bakeTheme, contrastWarnings, validateThemeTokens } from "./theme-tokens.mjs";
 
 const validateProject = new Ajv({ allErrors: true }).compile(projectSchema);
+// Built-in presets (spec 2026-09-28-0003 §4): shipped token sets baked
+// through the identical themeTokens path; there is no preset-only code.
+const PRESET_TOKEN_FILES = {
+ "siemens-ix": "siemens-ix.tokens.json",
+ "siemens-ix-light": "siemens-ix-light.tokens.json",
+};
+const presetThemesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "themes");
 const FORBIDDEN_SQL = /\b(?:ALTER|ATTACH|CALL|COPY|CREATE|DELETE|DETACH|DROP|EXPORT|IMPORT|INSERT|INSTALL|LOAD|MERGE|PRAGMA|TRUNCATE|UPDATE|VACUUM)\b/i;
 const FILE_READER = /\b(?:read_csv|read_csv_auto|read_json|read_json_auto|read_ndjson|read_parquet|parquet_scan|csv_scan)\s*\(/i;
 
@@ -129,6 +137,19 @@ export async function compileProject(projectPath) {
    console.error(warning);
   }
   theme = bakeTheme(tokens);
+ } else if (PRESET_TOKEN_FILES[theme]) {
+  const presetFile = PRESET_TOKEN_FILES[theme];
+  let presetSource;
+  try {
+   presetSource = await readFile(path.join(presetThemesDir, presetFile), "utf8");
+  } catch (error) {
+   throw new Error(`${presetFile}:1:1: cannot read theme preset: ${error.message}`, { cause: error });
+  }
+  const tokens = validateThemeTokens(presetSource, presetFile);
+  for (const warning of contrastWarnings(tokens, presetFile)) {
+   console.error(warning);
+  }
+  theme = bakeTheme(tokens, theme);
  }
 
  const config = {

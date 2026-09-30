@@ -20,7 +20,7 @@ input, select, button { min-height: 2.25rem; font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 :focus-visible { outline: 3px solid var(--fb-accent, #006b99); outline-offset: 2px; }
-#snapshot-note { padding: .6rem; border-left: .3rem solid #d98200; background: #fff7e8; }
+#snapshot-note { padding: .6rem; border-left: .3rem solid #d98200; background: #fff7e8; color: #18212b; }
 #dashboard-layout { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(4rem, auto); gap: 1rem; }
 #dashboard-layout > section { grid-column: var(--grid-x) / span var(--grid-width); grid-row: var(--grid-y) / span var(--grid-height); min-width: 0; padding: 1rem; border: 1px solid var(--fb-border, #d1d7df); border-radius: var(--fb-radius, .45rem); background: var(--fb-surface-2, white); box-shadow: 0 1px 2px #0001; overflow-wrap: anywhere; }
 h2 { margin-top: 0; font-size: 1rem; }

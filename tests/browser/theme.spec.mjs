@@ -266,6 +266,11 @@ test("siemens-ix and siemens-ix-light presets bake and render under their explic
    const status = page.locator("#dashboard-status");
    await expect(status).toBeVisible();
    await expect(status).toHaveCSS("color", preset.text);
+   // The warning note keeps a readable foreground on its fixed pale background.
+   const note = page.locator("#snapshot-note");
+   await expect(note).toBeVisible();
+   await expect(note).toContainText("Snapshot");
+   await expect(note).toHaveCSS("color", "rgb(24, 33, 43)");
    // The registered ECharts theme drives real pixels with the palette head.
    const [palettePixels] = await colorCounts(
     page,

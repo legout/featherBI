@@ -654,11 +654,21 @@ function buildLayout(container, config) {
    value.textContent = "—";
    section.append(value);
   } else if (component.type === "metric-group") {
+   // Spec 2026-09-28-0003 §6: one label-over-value row per metric, never
+   // bare concatenated outputs. No per-metric label metadata exists in the
+   // runtime config, so the configured field identifier is the label, and
+   // data-metric stays on the value so filler code updates text only.
    for (const field of component.fields) {
+    const row = document.createElement("div");
+    row.dataset.metricRow = "";
+    const label = document.createElement("span");
+    label.dataset.metricLabel = "";
+    label.textContent = field;
     const value = document.createElement("output");
     value.dataset.metric = field;
     value.textContent = "—";
-    section.append(value);
+    row.append(label, value);
+    section.append(row);
    }
   } else if (component.type === "table") {
    const grid = document.createElement("div");

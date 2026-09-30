@@ -14,21 +14,45 @@ const derivedDashboardPath = path.join(rootDir, ".artifacts/browser/standard-der
  * Test-local dashboard derived from the standard example, adding the
  * explicit selectionDimensions bindings the shipped fixture cannot carry:
  * a category+series mark with a boolean category, and a mark whose two
- * fields map to one dimension with different values.
+ * fields map to one dimension with different values. The summary
+ * metric-group gains a third field (avg_amount) to prove TT-06: three
+ * metrics render as three label-over-value rows, never glued outputs.
+ * (successes is unusable here: sum over INTEGER returns HUGEINT, which the
+ * runtime's numeric metric binding rejects — a pre-existing limitation.)
  */
 async function buildDerivedDashboard() {
  const exampleDir = path.join(rootDir, "examples/standard-dashboard");
  const source = await readFile(path.join(exampleDir, "dashboard.yaml"), "utf8");
- const derived = source.replace(
-  "layout:",
-  `  by_success_station:
+ const derived = source
+  .replace(
+   "  success_rate:",
+   `  avg_amount:
+    model: inspection_model
+    aggregation: average
+    field: amount
+    label: Average amount
+    format: decimal
+    empty: "null"
+  success_rate:`,
+  )
+  .replace(
+   "    measures: [records, success_rate]",
+   "    measures: [records, avg_amount, success_rate]",
+  )
+  .replace(
+   "    fields: [records, success_rate]",
+   "    fields: [records, avg_amount, success_rate]",
+  )
+  .replace(
+   "layout:",
+   `  by_success_station:
     model: inspection_model
     dimensions: [successful, station, product]
     measures: [records]
     filters: [window]
     orderBy: [successful, station, product]
 layout:`,
- ) + `
+  ) + `
   - id: success_station
     type: bar
     query: by_success_station
@@ -253,6 +277,26 @@ test("chart mark click commits pending filter edits and typed selection in one r
   const derived = await context.newPage();
   await derived.goto(pathToFileURL(derivedDashboard).href, { waitUntil: "load" });
   await ready(derived);
+
+  // TT-06 named failure — lost labels / glued values: the three-field
+  // summary renders three rows, each its own label-over-value wrapper with
+  // the field identifier as the label and exactly one value output inside.
+  const summaryRows = derived.locator("#component-summary [data-metric-row]");
+  await expect(summaryRows).toHaveCount(3);
+  for (const [index, [field, value]] of [
+   ["records", "6"],
+   ["avg_amount", "35.00"],
+   ["success_rate", "0.67"],
+  ].entries()) {
+   const row = summaryRows.nth(index);
+   await expect(row.locator("[data-metric-label]")).toHaveText(field);
+   await expect(row.locator(`[data-metric=${field}]`)).toHaveText(value);
+   expect(await row.locator("output").count()).toBe(1);
+   const labelBox = await row.locator("[data-metric-label]").boundingBox();
+   const valueBox = await row.locator(`[data-metric=${field}]`).boundingBox();
+   expect(labelBox.y).toBeLessThanOrEqual(valueBox.y);
+  }
+
   const seriesCenters = await barCenters(derived, "#component-success_station .chart canvas", 200);
   expect(seriesCenters.length).toBe(3); // false:SD, true:NY, true:SJ
   await derived

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Breaking:** metric-group markup changed: each metric now renders as one label-over-value row (wrapper `[data-metric-row]`, label `[data-metric-label]`; values keep `[data-metric]`), replacing bare concatenated `<output>` elements. Update scoped `theme.css` selectors targeting the old markup.  #27
+
 ## 0.2.0 - 2026-09-28
 
 - Added read-only `s3://` and `https://` sources with packaged or live delivery, including session-only credential prompts for private live sources.

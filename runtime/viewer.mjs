@@ -346,9 +346,14 @@ function buildFilters(container, filters) {
  for (const filter of filters) {
   const field = document.createElement("div");
   field.dataset.filter = "";
+  field.setAttribute("role", "group");
   const caption = document.createElement("span");
   caption.dataset.filterCaption = "";
+  caption.id = `filter-${filter.id}-caption`;
   caption.textContent = filter.id;
+  // The labelled group keeps filter context for controls without their own
+  // filter-specific name (option-page buttons, the text-filter "All" box).
+  field.setAttribute("aria-labelledby", caption.id);
   const controls = document.createElement("div");
   controls.dataset.filterControls = "";
   field.append(caption, controls);

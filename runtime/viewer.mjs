@@ -344,10 +344,14 @@ export async function mountDashboard({
 function buildFilters(container, filters) {
  container.replaceChildren();
  for (const filter of filters) {
-  const field = document.createElement("fieldset");
-  const legend = document.createElement("legend");
-  legend.textContent = filter.id;
-  field.append(legend);
+  const field = document.createElement("div");
+  field.dataset.filter = "";
+  const caption = document.createElement("span");
+  caption.dataset.filterCaption = "";
+  caption.textContent = filter.id;
+  const controls = document.createElement("div");
+  controls.dataset.filterControls = "";
+  field.append(caption, controls);
   if (
    ["select", "single-select", "multi-select", "option-search"].includes(
     filter.kind,
@@ -364,7 +368,7 @@ function buildFilters(container, filters) {
    select.setAttribute("aria-label", filter.id);
    const previous = optionPageButton(filter.id, "previous", "Previous options");
    const next = optionPageButton(filter.id, "next", "More options");
-   field.append(search, select, previous, next);
+   controls.append(search, select, previous, next);
   } else if (filter.kind === "date-range" || filter.kind === "numeric-range") {
    const from = document.createElement("input");
    from.type = filter.kind === "date-range" ? "date" : "number";
@@ -374,10 +378,15 @@ function buildFilters(container, filters) {
    through.type = filter.kind === "date-range" ? "date" : "number";
    through.id = `filter-${filter.id}-through`;
    through.setAttribute("aria-label", `${filter.id} through`);
-   field.append(from, " through ", through);
+   controls.append(from, " through ", through);
   } else if (filter.kind === "boolean") {
    // Native three-choice All/Yes/No (null/true/false): a radio group keeps
    // every choice reachable by keyboard, including back to All (spec §2).
+   // Styled as one segmented control; the shared name groups the radios.
+   const group = document.createElement("div");
+   group.dataset.segmented = "";
+   group.setAttribute("role", "radiogroup");
+   group.setAttribute("aria-label", filter.id);
    for (const [value, label] of [
     [null, "All"],
     [true, "Yes"],
@@ -391,8 +400,9 @@ function buildFilters(container, filters) {
     const choiceLabel = document.createElement("label");
     choiceLabel.htmlFor = choice.id;
     choiceLabel.textContent = label;
-    field.append(choice, choiceLabel);
+    group.append(choice, choiceLabel);
    }
+   controls.append(group);
   } else {
    const all = document.createElement("input");
    all.type = "checkbox";
@@ -404,7 +414,7 @@ function buildFilters(container, filters) {
    input.type = "text";
    input.id = `filter-${filter.id}`;
    input.setAttribute("aria-label", filter.id);
-   field.append(all, allLabel, input);
+   controls.append(all, allLabel, input);
   }
   container.append(field);
  }

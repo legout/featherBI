@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **Breaking:** metric-group markup changed: each metric now renders as one label-over-value row (wrapper `[data-metric-row]`, label `[data-metric-label]`; values keep `[data-metric]`), replacing bare concatenated `<output>` elements. Update scoped `theme.css` selectors targeting the old markup.  #27
+- **Breaking:** filter markup changed: filters render as one contained bar; each control is a `[data-filter]` column with a small `[data-filter-caption]` above a `[data-filter-controls]` row, replacing `fieldset`/`legend`. Boolean filters render as a `[data-segmented]` All/Yes/No radio group (IDs, names, and values unchanged). Update scoped `theme.css` selectors targeting the old markup.  #28
 
 ## 0.2.0 - 2026-09-28
 

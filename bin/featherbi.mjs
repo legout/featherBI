@@ -15,7 +15,10 @@ try {
  if (!command || command === "--help" || command === "-h") {
   printHelp();
  } else if (command === "profile") {
-  const options = parseSimpleArgs(args, new Set(["--include-values"]));
+  const options = parseSimpleArgs(
+   args,
+   new Set(["--include-values", "--iceberg-metadata"]),
+  );
   const profileArgs = [
    "run",
    "--script",
@@ -36,6 +39,7 @@ try {
   if (options.endpoint) profileArgs.push("--endpoint", options.endpoint);
   if (options.glob) profileArgs.push("--glob", options.glob);
   if (options.manifest) profileArgs.push("--manifest", options.manifest);
+  if (options.icebergMetadata) profileArgs.push("--iceberg-metadata");
   if (options.includeValues) profileArgs.push("--include-values");
   if (options.output) {
    await mkdir(path.dirname(path.resolve(options.output)), { recursive: true });
@@ -153,6 +157,7 @@ function parseSimpleArgs(args, booleans = new Set()) {
   "--endpoint": "endpoint",
   "--glob": "glob",
   "--manifest": "manifest",
+  "--iceberg-metadata": "icebergMetadata",
   "--project": "project",
   "--output": "output",
   "--include-values": "includeValues",
@@ -197,7 +202,7 @@ async function ensureValidator() {
 
 function printHelp() {
 console.log(`featherbi setup [--global] [--agent ID] [--yes|--no] [--design]
-featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--glob PATTERN | --manifest URI] [--output FILE] [--include-values]
+featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--glob PATTERN | --manifest URI | --iceberg-metadata] [--output FILE] [--include-values]
 featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config.json]
 featherbi validate --config CONFIG
 featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]

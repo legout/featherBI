@@ -223,13 +223,13 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "uri",
             "auth"
           ],
           "properties": {
             "kind": {
               "enum": [
-                "parquet-set"
+                "parquet-set",
+                "iceberg"
               ]
             },
             "uri": {
@@ -292,11 +292,20 @@
                   "pattern": "^s3://[A-Za-z0-9._~/-]+\\.json$"
                 }
               }
+            },
+            "metadataUri": {
+              "type": "string",
+              "pattern": "^s3://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*\\.metadata\\.json$"
             }
           },
           "allOf": [
             {
               "if": {
+                "properties": {
+                  "kind": {
+                    "const": "parquet-set"
+                  }
+                },
                 "required": [
                   "kind"
                 ]
@@ -316,7 +325,39 @@
                     "type": "string",
                     "pattern": "^s3://[A-Za-z0-9._~-]+/(?:[A-Za-z0-9._~-]+/)*$"
                   },
-                  "format": false
+                  "format": false,
+                  "metadataUri": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "iceberg"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "kind",
+                  "metadataUri",
+                  "auth"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "iceberg"
+                  },
+                  "metadataUri": {
+                    "type": "string",
+                    "pattern": "^s3://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*\\.metadata\\.json$"
+                  },
+                  "uri": false,
+                  "format": false,
+                  "selector": false
                 }
               }
             },
@@ -335,7 +376,8 @@
                   "auth"
                 ],
                 "properties": {
-                  "selector": false
+                  "selector": false,
+                  "metadataUri": false
                 }
               }
             }

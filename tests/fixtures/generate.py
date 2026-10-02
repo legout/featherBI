@@ -30,6 +30,7 @@ import hashlib
 import json
 import platform
 import re
+import shutil
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -280,6 +281,644 @@ def verify_parquet(
                 )
 
 
+# --- Iceberg v2 table fixture (spec 2026-09-28-0004 §2.2, LT-05/LT-08) -----
+#
+# DuckDB 1.5.5 reads Iceberg but cannot write tables with delete files, so the
+# live-iceberg browser fixture is hand-crafted: one unpartitioned table with a
+# data file holding rows A/B/C and a positional-delete file deleting B. The
+# Avro manifests embed the exact schemas DuckDB itself writes (extracted from
+# a COPY (FORMAT ICEBERG) table on the pinned build), so the pinned iceberg
+# extension parses them. The table is addressed by fixed s3:// URIs; the
+# browser test serves it from a localhost S3-style endpoint.
+
+ICEBERG_BUCKET_TABLE = "s3://reports/orders"
+ICEBERG_SNAPSHOT_DELETED = 555_000_001  # data + positional deletes: rows A, C
+ICEBERG_SNAPSHOT_FULL = 555_000_002  # data only: rows A, B, C ("newer" table)
+
+# Wire schema of one manifest entry, matching the pinned DuckDB build's own
+# COPY (FORMAT ICEBERG) output (content/file_path/file_format/partition/
+# record_count/file_size_in_bytes/lower_bounds/upper_bounds/null_value_counts/
+# equality_ids; Iceberg's logical "map" = array of kv records on the wire).
+ICEBERG_MANIFEST_SCHEMA = {
+    "type": "record",
+    "name": "manifest_entry",
+    "fields": [
+        {"name": "status", "type": {"type": "int"}, "field-id": 0},
+        {"name": "snapshot_id", "type": ["null", {"type": "long"}], "field-id": 1},
+        {"name": "sequence_number", "type": ["null", {"type": "long"}], "field-id": 3},
+        {"name": "file_sequence_number", "type": ["null", {"type": "long"}], "field-id": 4},
+        {
+            "name": "data_file",
+            "type": {
+                "type": "record",
+                "name": "data_file",
+                "fields": [
+                    {
+                        "name": "content",
+                        "type": {"type": "int"},
+                        "field-id": 134,
+                    },
+                    {"name": "file_path", "type": {"type": "string"}, "field-id": 100},
+                    {"name": "file_format", "type": {"type": "string"}, "field-id": 101},
+                    {
+                        "name": "partition",
+                        "type": {
+                            "type": "record",
+                            "name": "partition",
+                            "fields": [],
+                        },
+                        "field-id": 102,
+                    },
+                    {"name": "record_count", "type": {"type": "long"}, "field-id": 103},
+                    {
+                        "name": "file_size_in_bytes",
+                        "type": {"type": "long"},
+                        "field-id": 104,
+                    },
+                    {
+                        "name": "lower_bounds",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "logicalType": "map",
+                                "items": {
+                                    "type": "record",
+                                    "name": "k126_v127",
+                                    "fields": [
+                                        {
+                                            "name": "key",
+                                            "type": {"type": "int"},
+                                            "field-id": 126,
+                                        },
+                                        {
+                                            "name": "value",
+                                            "type": {"type": "bytes"},
+                                            "field-id": 127,
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                        "field-id": 125,
+                    },
+                    {
+                        "name": "upper_bounds",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "logicalType": "map",
+                                "items": {
+                                    "type": "record",
+                                    "name": "k129_v130",
+                                    "fields": [
+                                        {
+                                            "name": "key",
+                                            "type": {"type": "int"},
+                                            "field-id": 129,
+                                        },
+                                        {
+                                            "name": "value",
+                                            "type": {"type": "bytes"},
+                                            "field-id": 130,
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                        "field-id": 128,
+                    },
+                    {
+                        "name": "null_value_counts",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "logicalType": "map",
+                                "items": {
+                                    "type": "record",
+                                    "name": "k121_v122",
+                                    "fields": [
+                                        {
+                                            "name": "key",
+                                            "type": {"type": "int"},
+                                            "field-id": 121,
+                                        },
+                                        {
+                                            "name": "value",
+                                            "type": {"type": "long"},
+                                            "field-id": 122,
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                        "field-id": 110,
+                    },
+                    {
+                        "name": "equality_ids",
+                        "type": [
+                            "null",
+                            {
+                                "type": "array",
+                                "element-id": 136,
+                                "items": {"type": "int"},
+                            },
+                        ],
+                        "field-id": 135,
+                    },
+                ],
+            },
+            "field-id": 2,
+        },
+    ],
+}
+
+ICEBERG_MANIFEST_LIST_SCHEMA = {
+    "type": "record",
+    "name": "manifest_file",
+    "fields": [
+        {"name": "manifest_path", "type": {"type": "string"}, "field-id": 500},
+        {"name": "manifest_length", "type": {"type": "long"}, "field-id": 501},
+        {"name": "partition_spec_id", "type": {"type": "int"}, "field-id": 502},
+        {"name": "content", "type": {"type": "int"}, "field-id": 517},
+        {"name": "sequence_number", "type": {"type": "long"}, "field-id": 515},
+        {"name": "min_sequence_number", "type": {"type": "long"}, "field-id": 516},
+        {"name": "added_snapshot_id", "type": {"type": "long"}, "field-id": 503},
+        {"name": "added_files_count", "type": {"type": "int"}, "field-id": 504},
+        {"name": "existing_files_count", "type": {"type": "int"}, "field-id": 505},
+        {"name": "deleted_files_count", "type": {"type": "int"}, "field-id": 506},
+        {"name": "added_rows_count", "type": {"type": "long"}, "field-id": 512},
+        {"name": "existing_rows_count", "type": {"type": "long"}, "field-id": 513},
+        {"name": "deleted_rows_count", "type": {"type": "long"}, "field-id": 514},
+        {
+            "name": "partitions",
+            "type": [
+                "null",
+                {
+                    "type": "array",
+                    "element-id": 508,
+                    "items": {
+                        "type": "record",
+                        "name": "r508",
+                        "fields": [
+                            {
+                                "name": "contains_null",
+                                "type": {"type": "boolean"},
+                                "field-id": 509,
+                            },
+                            {
+                                "name": "contains_nan",
+                                "type": ["null", {"type": "boolean"}],
+                                "field-id": 518,
+                            },
+                            {
+                                "name": "lower_bound",
+                                "type": ["null", {"type": "bytes"}],
+                                "field-id": 510,
+                            },
+                            {
+                                "name": "upper_bound",
+                                "type": ["null", {"type": "bytes"}],
+                                "field-id": 511,
+                            },
+                        ],
+                    },
+                },
+            ],
+            "field-id": 507,
+        },
+    ],
+}
+
+
+def avro_long(value: int) -> bytes:
+    """Zig-zag varint encoding of one Avro long/int."""
+    if value >= 0:
+        n = (value << 1) & 0xFFFFFFFFFFFFFFFF
+    else:
+        n = ((value << 1) ^ (-value - 1)) & 0xFFFFFFFFFFFFFFFF
+    out = bytearray()
+    while True:
+        byte = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(byte | 0x80)
+        else:
+            out.append(byte)
+            return bytes(out)
+
+
+def avro_string(value: str) -> bytes:
+    raw = value.encode()
+    return avro_long(len(raw)) + raw
+
+
+def avro_bytes(value: bytes) -> bytes:
+    return avro_long(len(value)) + value
+
+
+def avro_map(pairs: list[tuple[int, bytes]] | None) -> bytes:
+    """Iceberg's logical map (array of kv records) as a null-able union."""
+    if pairs is None:
+        return avro_long(0)  # union branch 0: null
+    return (
+        avro_long(1)
+        + avro_long(len(pairs))
+        + b"".join(avro_long(key) + avro_bytes(value) for key, value in pairs)
+        + avro_long(0)
+    )
+
+
+def avro_container(
+    schema: dict, records: list[bytes], metadata: dict[str, str], sync: bytes
+) -> bytes:
+    """One single-block null-codec Avro object container file."""
+    header = {
+        "avro.schema": json.dumps(schema, separators=(",", ":")).encode(),
+        "avro.codec": b"null",
+        **{key: value.encode() for key, value in metadata.items()},
+    }
+    out = bytearray(b"Obj\x01")
+    out += avro_long(len(header))
+    for key, value in header.items():
+        out += avro_string(key)
+        out += avro_bytes(value)
+    out += avro_long(0) + sync
+    body = b"".join(records)
+    out += avro_long(len(records)) + avro_long(len(body)) + body + sync
+    return bytes(out)
+
+
+def iceberg_manifest_entry(
+    *,
+    content: int,
+    file_path: str,
+    record_count: int,
+    file_size: int,
+    lower: tuple[bytes, bytes],
+    upper: tuple[bytes, bytes],
+) -> bytes:
+    """One ADDED manifest entry for an unpartitioned v2 table.
+
+    `lower`/`upper` are the per-column bound pairs (id bytes, n little-endian
+    int64); DuckDB prunes files by these bounds, so they must bracket the
+    file's real values or scans silently drop rows.
+    """
+    data_file = (
+        avro_long(content)
+        + avro_string(file_path)
+        + avro_string("parquet")
+        + b""  # unpartitioned struct: no fields
+        + avro_long(record_count)
+        + avro_long(file_size)
+        + avro_map([(1, lower[0]), (2, lower[1])])
+        + avro_map([(1, upper[0]), (2, upper[1])])
+        + avro_map([(1, b"\x00" * 8), (2, b"\x00" * 8)])
+    )
+    return (
+        avro_long(1)  # status: ADDED
+        + avro_long(0)  # snapshot_id: null
+        + avro_long(0)  # sequence_number: null
+        + avro_long(0)  # file_sequence_number: null
+        + data_file
+    )
+
+
+def iceberg_manifest_list_entry(
+    *, path: str, length: int, content: int, snapshot_id: int, rows: int
+) -> bytes:
+    return (
+        avro_string(path)
+        + avro_long(length)
+        + avro_long(0)  # partition_spec_id
+        + avro_long(content)
+        + avro_long(1)  # sequence_number
+        + avro_long(0)  # min_sequence_number
+        + avro_long(snapshot_id)
+        + avro_long(1)  # added_files_count
+        + avro_long(0)  # existing_files_count
+        + avro_long(0)  # deleted_files_count
+        + avro_long(rows)  # added_rows_count
+        + avro_long(0)  # existing_rows_count
+        + avro_long(0)  # deleted_rows_count
+        + avro_long(0)  # partitions: null
+    )
+
+
+def iceberg_metadata_document(
+    *, location: str, snapshot_id: int, manifest_list: str, operation_summary: dict[str, str]
+) -> str:
+    """One minimal Iceberg v2 metadata document pinned to one snapshot."""
+    schema = {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [],
+        "fields": [
+            {"id": 1, "name": "id", "required": False, "type": "string"},
+            {"id": 2, "name": "n", "required": False, "type": "long"},
+        ],
+    }
+    timestamp = 1_767_139_200_000
+    return json.dumps(
+        {
+            "format-version": 2,
+            "table-uuid": f"9c12d18a-9f3e-4d92-b6c1-{snapshot_id:012d}",
+            "location": location,
+            "last-sequence-number": 1,
+            "last-updated-ms": timestamp,
+            "last-column-id": 2,
+            "schemas": [schema],
+            "current-schema-id": 0,
+            "partition-specs": [{"spec-id": 0, "fields": []}],
+            "default-spec-id": 0,
+            "last-partition-id": 999,
+            "properties": {},
+            "current-snapshot-id": snapshot_id,
+            "snapshots": [
+                {
+                    "snapshot-id": snapshot_id,
+                    "timestamp-ms": timestamp,
+                    "sequence-number": 1,
+                    "schema-id": 0,
+                    "manifest-list": manifest_list,
+                    "summary": {"operation": "append", **operation_summary},
+                }
+            ],
+            "snapshot-log": [{"snapshot-id": snapshot_id, "timestamp-ms": timestamp}],
+            "metadata-log": [],
+            "sort-orders": [{"order-id": 0, "fields": []}],
+            "default-sort-order-id": 0,
+            "refs": {"main": {"snapshot-id": snapshot_id, "type": "branch"}},
+        }
+    )
+
+
+def write_iceberg_fixture(connection, out_dir: Path) -> dict[str, int]:
+    """Write and natively verify the live-iceberg browser fixture.
+
+    The s3:// fixture is served unchanged from a localhost endpoint for the
+    native verification, proving delete semantics with the same bytes the
+    browser test will read.
+    """
+    iceberg_dir = out_dir / "iceberg"
+    (iceberg_dir / "data").mkdir(parents=True, exist_ok=True)
+    (iceberg_dir / "metadata").mkdir(parents=True, exist_ok=True)
+    data_uri = f"{ICEBERG_BUCKET_TABLE}/data/00001.parquet"
+    delete_uri = f"{ICEBERG_BUCKET_TABLE}/data/00001-delete.parquet"
+    connection.execute(  # noqa: S608 - generator-controlled path
+        "COPY (SELECT * FROM (VALUES ('A', 1::BIGINT), ('B', 2::BIGINT), ('C', 3::BIGINT)) t(id, n)) "
+        f"TO {sql_string(str(iceberg_dir / 'data' / '00001.parquet'))} "
+        "(FORMAT PARQUET, FIELD_IDS {'id': 1, 'n': 2})"
+    )
+    connection.execute(  # noqa: S608 - generator-controlled path
+        f"COPY (SELECT {sql_string(data_uri)} AS path, 1::BIGINT AS pos) "
+        f"TO {sql_string(str(iceberg_dir / 'data' / '00001-delete.parquet'))} "
+        "(FORMAT PARQUET, FIELD_IDS {'path': 2147483546, 'pos': 2147483545})"
+    )
+    data_size = (iceberg_dir / "data" / "00001.parquet").stat().st_size
+    delete_size = (iceberg_dir / "data" / "00001-delete.parquet").stat().st_size
+
+    schema_meta = json.dumps(
+        {
+            "type": "struct",
+            "schema-id": 0,
+            "fields": [
+                {"id": 1, "name": "id", "required": False, "type": "string"},
+                {"id": 2, "name": "n", "required": False, "type": "long"},
+            ],
+        },
+        separators=(",", ":"),
+    )
+    common_meta = {
+        "partition-spec-id": "0",
+        "format-version": "2",
+        "schema": schema_meta,
+        "schema-id": "0",
+        "partition-spec": "[]",
+    }
+    data_manifest_uri = f"{ICEBERG_BUCKET_TABLE}/metadata/00001-m0.avro"
+    delete_manifest_uri = f"{ICEBERG_BUCKET_TABLE}/metadata/00001-m1.avro"
+    data_manifest = avro_container(
+        ICEBERG_MANIFEST_SCHEMA,
+        [
+            iceberg_manifest_entry(
+                content=0,
+                file_path=data_uri,
+                record_count=3,
+                file_size=data_size,
+                lower=(b"A", (1).to_bytes(8, "little")),
+                upper=(b"C", (3).to_bytes(8, "little")),
+            )
+        ],
+        {**common_meta, "content": "data"},
+        b"\x01" * 16,
+    )
+    delete_manifest = avro_container(
+        ICEBERG_MANIFEST_SCHEMA,
+        [
+            iceberg_manifest_entry(
+                content=1,
+                file_path=delete_uri,
+                record_count=1,
+                file_size=delete_size,
+                lower=(delete_uri.encode(), (1).to_bytes(8, "little")),
+                upper=(delete_uri.encode(), (1).to_bytes(8, "little")),
+            )
+        ],
+        {**common_meta, "content": "deletes"},
+        b"\x02" * 16,
+    )
+    (iceberg_dir / "metadata" / "00001-m0.avro").write_bytes(data_manifest)
+    (iceberg_dir / "metadata" / "00001-m1.avro").write_bytes(delete_manifest)
+
+    deleted_list = avro_container(
+        ICEBERG_MANIFEST_LIST_SCHEMA,
+        [
+            iceberg_manifest_list_entry(
+                path=data_manifest_uri,
+                length=len(data_manifest),
+                content=0,
+                snapshot_id=ICEBERG_SNAPSHOT_DELETED,
+                rows=3,
+            ),
+            iceberg_manifest_list_entry(
+                path=delete_manifest_uri,
+                length=len(delete_manifest),
+                content=1,
+                snapshot_id=ICEBERG_SNAPSHOT_DELETED,
+                rows=1,
+            ),
+        ],
+        {},
+        b"\x03" * 16,
+    )
+    full_list = avro_container(
+        ICEBERG_MANIFEST_LIST_SCHEMA,
+        [
+            iceberg_manifest_list_entry(
+                path=data_manifest_uri,
+                length=len(data_manifest),
+                content=0,
+                snapshot_id=ICEBERG_SNAPSHOT_FULL,
+                rows=3,
+            )
+        ],
+        {},
+        b"\x04" * 16,
+    )
+    (iceberg_dir / "metadata" / "snap-555000001-00001.avro").write_bytes(deleted_list)
+    (iceberg_dir / "metadata" / "snap-555000002-00001.avro").write_bytes(full_list)
+    (iceberg_dir / "metadata" / "v1.metadata.json").write_text(
+        iceberg_metadata_document(
+            location=ICEBERG_BUCKET_TABLE,
+            snapshot_id=ICEBERG_SNAPSHOT_DELETED,
+            manifest_list=f"{ICEBERG_BUCKET_TABLE}/metadata/snap-555000001-00001.avro",
+            operation_summary={
+                "added-data-files": "1",
+                "added-records": "3",
+                "added-position-deletes": "1",
+                "total-data-files": "1",
+                "total-records": "3",
+                "total-position-deletes": "1",
+            },
+        ),
+        encoding="utf-8",
+    )
+    (iceberg_dir / "metadata" / "v2.metadata.json").write_text(
+        iceberg_metadata_document(
+            location=ICEBERG_BUCKET_TABLE,
+            snapshot_id=ICEBERG_SNAPSHOT_FULL,
+            manifest_list=f"{ICEBERG_BUCKET_TABLE}/metadata/snap-555000002-00001.avro",
+            operation_summary={
+                "added-data-files": "1",
+                "added-records": "3",
+                "total-data-files": "1",
+                "total-records": "3",
+            },
+        ),
+        encoding="utf-8",
+    )
+    return verify_iceberg_fixture(iceberg_dir)
+
+
+def verify_iceberg_fixture(iceberg_dir: Path) -> dict[str, int]:
+    """Serve the s3:// fixture from localhost and verify it with pinned native
+    DuckDB: the raw data file holds three rows, the v1 snapshot applies the
+    positional delete (two rows, B absent), and the v2 snapshot has no deletes
+    (three rows). A wrong Avro/metadata byte fails the run loudly."""
+    import http.server
+    import threading
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def translate_path(self, path):
+            relative = path.split("?", 1)[0].split("#", 1)[0]
+            prefix = "/reports/orders/"
+            if not relative.startswith(prefix):
+                self.send_error(404)
+                return ""
+            return str(iceberg_dir / relative[len(prefix) :])
+
+        def log_message(self, format, *args):
+            pass
+
+        def do_GET(self):
+            # Minimal range support: DuckDB httpfs sends byte ranges.
+            path = self.translate_path(self.path)
+            if not path:
+                return
+            try:
+                payload = Path(path).read_bytes()
+            except OSError:
+                self.send_error(404)
+                return
+            match = re.match(r"bytes=(\d+)-(\d*)", self.headers.get("Range", ""))
+            if not match:
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            start = int(match.group(1))
+            end = len(payload) - 1 if match.group(2) == "" else int(match.group(2))
+            body = payload[start : end + 1]
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(payload)}")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_HEAD(self):
+            path = self.translate_path(self.path)
+            if not path:
+                return
+            try:
+                size = Path(path).stat().st_size
+            except OSError:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(size))
+            self.end_headers()
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    with server:
+        endpoint = f"127.0.0.1:{server.server_address[1]}"
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        con = duckdb.connect(":memory:")
+        for extension in ("httpfs", "iceberg"):
+            try:
+                con.execute(f"LOAD {extension}")
+            except duckdb.Error:
+                con.execute(f"INSTALL {extension}")
+                con.execute(f"LOAD {extension}")
+        con.execute(
+            "CREATE SECRET fthr_verify (TYPE s3, PROVIDER config, "
+            f"ENDPOINT {sql_string(endpoint)}, URL_STYLE 'path', USE_SSL false)"
+        )
+        base = f"{ICEBERG_BUCKET_TABLE}/metadata"
+        raw = con.execute(
+            "SELECT count(*), bool_or(id = 'B') FROM read_parquet(?)",
+            [f"{ICEBERG_BUCKET_TABLE}/data/00001.parquet"],
+        ).fetchone()
+        deleted = con.execute(
+            "SELECT count(*), bool_or(id = 'B') FROM iceberg_scan(?)",
+            [f"{base}/v1.metadata.json"],
+        ).fetchone()
+        full = con.execute(
+            "SELECT count(*), bool_or(id = 'B') FROM iceberg_scan(?)",
+            [f"{base}/v2.metadata.json"],
+        ).fetchone()
+        # A predicate read proves the manifest bounds bracket the real
+        # values (wrong bounds prune live rows away silently).
+        filtered = con.execute(
+            "SELECT id FROM iceberg_scan(?) WHERE id = 'C'",
+            [f"{base}/v1.metadata.json"],
+        ).fetchall()
+        con.close()
+    if raw != (3, True):
+        fail(f"iceberg fixture data file must hold rows A/B/C, got {raw}")
+    if deleted != (2, False):
+        fail(
+            f"iceberg fixture v1 snapshot must apply the positional delete "
+            f"(2 rows, no B), got {deleted}"
+        )
+    if full != (3, True):
+        fail(f"iceberg fixture v2 snapshot must expose all three rows, got {full}")
+    if filtered != [("C",)]:
+        fail(
+            f"iceberg fixture v1 predicate read must return row C, got {filtered}; "
+            "the manifest bounds do not bracket the data file's values"
+        )
+    return {
+        "rawRows": raw[0],
+        "deletedSnapshotRows": deleted[0],
+        "fullSnapshotRows": full[0],
+    }
+
+
 def create_table(connection, table: str, schema: dict) -> list[tuple[str, str]]:
     check_identifier(table, "table name")
     columns = [(name, spec["type"]) for name, spec in schema.items()]
@@ -398,7 +1037,19 @@ def main() -> None:
         "inspections.parquet",
         "products.parquet",
     ]
+    iceberg_outputs = [
+        "iceberg/data/00001.parquet",
+        "iceberg/data/00001-delete.parquet",
+        "iceberg/metadata/00001-m0.avro",
+        "iceberg/metadata/00001-m1.avro",
+        "iceberg/metadata/snap-555000001-00001.avro",
+        "iceberg/metadata/snap-555000002-00001.avro",
+        "iceberg/metadata/v1.metadata.json",
+        "iceberg/metadata/v2.metadata.json",
+    ]
+    known_outputs += iceberg_outputs
     out_dir.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(out_dir / "iceberg", ignore_errors=True)
     for name in known_outputs:
         (out_dir / name).unlink(missing_ok=True)
 
@@ -556,6 +1207,9 @@ def main() -> None:
         "\n".join(table_lines) + "\n", encoding="utf-8"
     )
 
+    # --- live-iceberg fixture (written and natively verified) -------------
+    iceberg_counts = write_iceberg_fixture(connection, out_dir)
+
     # --- self-checks against expected.json --------------------------------
     chart_expected = next(
         entry
@@ -681,6 +1335,10 @@ def main() -> None:
             },
         },
         "parityVerified": parity_verified,
+        "iceberg": {
+            "files": iceberg_outputs,
+            "nativeVerification": iceberg_counts,
+        },
         "files": files,
     }
     (out_dir / "manifest.json").write_text(
@@ -690,6 +1348,12 @@ def main() -> None:
     connection.close()
     print(f"generate.py: wrote {len(files)} fixtures + manifest.json to {out_dir}")
     print("generate.py: all parity outputs verified against tests/fixtures/rows.json")
+    print(
+        "generate.py: iceberg fixture verified natively: "
+        f"raw rows {iceberg_counts['rawRows']}, deleted snapshot "
+        f"{iceberg_counts['deletedSnapshotRows']}, full snapshot "
+        f"{iceberg_counts['fullSnapshotRows']}"
+    )
 
 
 if __name__ == "__main__":

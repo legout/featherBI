@@ -40,6 +40,22 @@ export const DUCKDB_WASM_BUNDLES = {
  },
 };
 
+/** Pinned trusted Iceberg extension asset (ADR 0009, owner decision
+ * 2026-09-29): the exact DuckDB official version/platform artifact for
+ * DuckDB v1.5.5 `wasm_eh`. `LOAD iceberg` fetches from the pinned build's
+ * default trusted repository — the WASM build ignores
+ * `custom_extension_repository` — so this constant records what that load
+ * resolves to for the capability manifest. Project declarations can never
+ * choose an extension repository or artifact URL; there is no authored
+ * surface for one (schema-unknown fields are compile errors). */
+export const DUCKDB_ICEBERG_CAPABILITY = {
+ id: "iceberg",
+ version: DUCKDB_WASM_VERSION,
+ duckdbVersion: "v1.5.5",
+ platform: "wasm_eh",
+ url: "https://extensions.duckdb.org/v1.5.5/wasm_eh/iceberg.duckdb_extension.wasm",
+};
+
 /** Bounded boot timeout (cold CDN fetch of the ~50 MB EH module included). */
 const DEFAULT_BOOT_TIMEOUT_MS = 120_000;
 

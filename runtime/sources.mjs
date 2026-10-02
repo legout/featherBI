@@ -419,24 +419,45 @@ function remoteFormat(id, remote) {
  return format;
 }
 
-/** In-memory secret name for one private live remote source's generation.
- * Generation 0 keeps the historical single-generation name; later
- * generations count down so the newest generation's secret sorts first in
- * DuckDB's equal-scope selection. */
+/** Generation tag for live secret names: generation 0 keeps the historical
+ * single-generation name; later generations count down so the newest
+ * generation's secret sorts first in DuckDB's equal-scope selection. */
+function secretTag(generation = 0) {
+ return generation > 0
+  ? `_${String(SECRET_TAG_BASE - generation).padStart(SECRET_TAG_WIDTH, "0")}`
+  : "";
+}
+
+/** In-memory secret name for one private live remote source's generation. */
 export function liveSecretName(id, generation = 0) {
- const tag =
-  generation > 0
-   ? `_${String(SECRET_TAG_BASE - generation).padStart(SECRET_TAG_WIDTH, "0")}`
-   : "";
- return `featherbi_live_${id}${tag}`;
+ return `featherbi_live_${id}${secretTag(generation)}`;
+}
+
+/** In-memory secret name for the one-shot manifest fetch of one Parquet
+ * set. Auxiliary fetch secrets live in a namespace disjoint from every
+ * source's storage secret: source ids match ^[a-z][a-z0-9_]*$, so this
+ * name's hyphen can never be part of a source id and a manifest fetch can
+ * never CREATE OR REPLACE or DROP another source's active
+ * `featherbi_live_<id><tag>` secret (spec §4 isolation). */
+export function manifestFetchSecretName(id, generation = 0) {
+ return `featherbi_fetch-manifest_${id}${secretTag(generation)}`;
 }
 
 /** Temporary config-provider secret SQL for one private live remote source.
  * `scope` overrides the derived parquet-set prefix and iceberg table-root
  * scopes (a catalog identity passes the scope of its RESOLVED metadata
  * location; the manifest fetch secret scopes the same credentials to the
- * manifest object itself). */
-export function liveSecretSql(id, credentials, remote, generation = 0, scope = null) {
+ * manifest object itself). `secretName` overrides the derived
+ * `liveSecretName` for auxiliary fetch secrets (the manifest fetch passes
+ * `manifestFetchSecretName`). */
+export function liveSecretSql(
+ id,
+ credentials,
+ remote,
+ generation = 0,
+ scope = null,
+ secretName = null,
+) {
  const options = [];
  if (credentials?.keyId && credentials?.secret) {
   options.push(
@@ -467,7 +488,7 @@ export function liveSecretSql(id, credentials, remote, generation = 0, scope = n
   // source's storage credentials (spec §3/§4 isolation).
   options.push(`SCOPE ${stringLiteral(scope ?? icebergScope(remote.metadataUri))}`);
  }
- return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(liveSecretName(id, generation))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
+ return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(secretName ?? liveSecretName(id, generation))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
 }
 
 /** S3 prefix scope for one Iceberg table's credentials: Iceberg lays out
@@ -581,12 +602,14 @@ async function resolveManifestParquetSet(engine, source, id, liveCredentials, ge
 
 /**
  * Fetch one manifest document once through httpfs. A manifest outside the
- * declared prefix's secret scope gets its own one-shot secret scoped to the
- * manifest object itself — the same credentials and endpoint, so manifest
- * content can never redirect the credential to another authority (spec §4).
+ * declared prefix's secret scope gets its own one-shot secret — named in
+ * the disjoint `manifestFetchSecretName` namespace — scoped to the manifest
+ * object itself with the same credentials and endpoint, so manifest content
+ * can never redirect the credential to another authority and the fetch
+ * secret can never overwrite another source's storage secret (spec §4).
  * @returns {Promise<string>}
  */
-async function fetchManifestText(engine, source, id, manifestUri, liveCredentials, generation) {
+export async function fetchManifestText(engine, source, id, manifestUri, liveCredentials, generation) {
  const remote = source.remote;
  const needsFetchSecret =
   !manifestUri.startsWith(remote.uri) &&
@@ -598,7 +621,14 @@ async function fetchManifestText(engine, source, id, manifestUri, liveCredential
     : liveCredentials?.[id]) ?? null;
   await runSql(
    engine.connection,
-   liveSecretSql(`manifest_${id}`, credentials, { ...remote, uri: manifestUri }, generation),
+   liveSecretSql(
+    id,
+    credentials,
+    { ...remote, uri: manifestUri },
+    generation,
+    null,
+    manifestFetchSecretName(id, generation),
+   ),
   );
  }
  try {
@@ -617,7 +647,7 @@ async function fetchManifestText(engine, source, id, manifestUri, liveCredential
   return row.content;
  } finally {
   if (needsFetchSecret) {
-   await dropLiveSecrets(engine, [liveSecretName(`manifest_${id}`, generation)]);
+   await dropLiveSecrets(engine, [manifestFetchSecretName(id, generation)]);
   }
  }
 }

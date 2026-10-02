@@ -93,6 +93,19 @@ test("a catalog identity compiles live-only with only the declared identity", as
  );
  const anonymousConfig = await compileProject(anonymous);
  assert.equal(validateConfig(anonymousConfig.config).ok, true);
+ // A warehouse is a plain catalog label, not an identifier: the authoring
+ // schema admits plainText warehouses, so a space/hyphen warehouse must
+ // pass compiled-config validation too (the runtime contract's iceberg
+ // conditional overrides warehouse with plainText, never the id pattern).
+ const spaced = await project(
+  `{kind: iceberg, catalog: {endpoint: "https://catalog.example.com", warehouse: "lake analytics-eu", namespace: sales, table: orders}, catalogAuth: bearer, auth: none, delivery: live}`,
+ );
+ const spacedConfig = await compileProject(spaced);
+ assert.equal(
+  spacedConfig.config.data.sources[0].remote.catalog.warehouse,
+  "lake analytics-eu",
+ );
+ assert.equal(validateConfig(spacedConfig.config).ok, true);
 });
 
 test("catalog identity conflicts fail naming the source and field", async () => {

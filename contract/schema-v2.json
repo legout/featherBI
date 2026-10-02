@@ -405,7 +405,7 @@
                         "pattern": "^https://[A-Za-z0-9._~:/-]+$"
                       },
                       "warehouse": {
-                        "$ref": "#/definitions/id"
+                        "$ref": "#/definitions/plainText"
                       },
                       "namespace": {
                         "$ref": "#/definitions/plainText"

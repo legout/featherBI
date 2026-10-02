@@ -3,8 +3,10 @@
  * LT-05, LT-07): `remote: {kind: iceberg, metadataUri}` compiles to a
  * live-only runtime source carrying only the declared non-secret identity,
  * conflicting or file-shaped fields fail naming the source, authored SQL can
- * never invoke `iceberg_scan` (or any reader/extension command), and the
- * trusted Iceberg capability is recorded as the pinned official artifact —
+ * never invoke `iceberg_scan` (or any reader/extension command), a Delta
+ * table declaration is rejected while exported Parquet sets stay honestly
+ * labeled (LT-08), and the trusted Iceberg capability is recorded as the
+ * pinned official artifact —
  * selected only when a dashboard declares an Iceberg source and never
  * influenced by any project-authored location.
  */
@@ -140,6 +142,30 @@ test("legacy single-file remote declarations compile unchanged", async () => {
    filename: "inspections.parquet",
   },
  ]);
+});
+
+test("a delta table declaration is rejected and an exported parquet set stays parquet-set (LT-08)", async () => {
+ // Delta honesty: a Delta table URI is not a table declaration. The
+ // compiler admits only parquet-set and iceberg kinds (ADR 0009 defers
+ // Delta), and the rejection names the source's remote.kind field at its
+ // YAML position.
+ const delta = await project(
+  `{kind: delta, uri: "s3://lake/events/", delivery: live, auth: none}`,
+ );
+ await assert.rejects(
+  () => compileProject(delta),
+  /dashboard\.yaml:\d+:\d+: sources\.0\.remote\.kind must be equal to one of the allowed values/,
+ );
+ // Label honesty: a separately exported Parquet file set compiles as a
+ // parquet-set declaration — its data files cannot be relabeled as Delta
+ // support anywhere in the compiled config.
+ const exported = await project(
+  `{kind: parquet-set, uri: "s3://lake/events-parquet/", selector: {glob: "part-*.parquet"}, auth: none, delivery: live}`,
+ );
+ const { config, json } = await compileProject(exported);
+ assert.equal(config.data.sources[0].remote.kind, "parquet-set");
+ assert.equal(validateConfig(config).ok, true);
+ assert.equal(json.toLowerCase().includes("delta"), false);
 });
 
 test("the runtime contract accepts the iceberg remote shape and nothing wider", () => {

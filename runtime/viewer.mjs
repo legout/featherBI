@@ -266,6 +266,19 @@ export async function mountDashboard({
   if (controller)
    await controller.applyFilters(readFilters(root, config.filters));
  });
+ root.querySelector("#refresh-live")?.addEventListener("click", async () => {
+  if (!controller) return;
+  try {
+   // An empty replacement re-stages the dashboard through the existing
+   // candidate path: every live Parquet set resolves its glob anew and
+   // publishes atomically; on failure the controller retains the active
+   // generation's results with a source-specific error (LT-06).
+   await controller.replaceFiles({});
+  } catch {
+   // Either a replacement is already pending, or the controller has already
+   // published the retained visible error state.
+  }
+ });
  root.querySelector("#replace-files").addEventListener("click", async () => {
   const localCount = config.data.sources.filter(({ remote }) => !remote).length;
   const replacements = selectedFiles(root, config.data.sources);
@@ -466,6 +479,16 @@ function buildSources(container, sources) {
  replace.type = "button";
  replace.textContent = "Load selected files";
  container.append(replace);
+ if (sources.some(({ remote }) => remote?.kind === "parquet-set")) {
+  // Explicit Refresh for pinned live Parquet sets (spec 2026-09-28-0004 §3):
+  // glob membership is fixed per generation, so only this control re-resolves
+  // it. There is no automatic refresh or background polling.
+  const refresh = document.createElement("button");
+  refresh.id = "refresh-live";
+  refresh.type = "button";
+  refresh.textContent = "Refresh live data";
+  container.append(refresh);
+ }
 }
 
 /**
@@ -479,6 +502,19 @@ export function promptLiveCredentials(root, source, priorError) {
   const heading = Object.assign(document.createElement("h2"), {
    textContent: `Credentials for ${source.id}`,
   });
+  // Display the named destination before credential entry (spec
+  // 2026-09-28-0004 §4): private Parquet-set prompts state the declared
+  // storage location and the effective endpoint; single-file prompts stay
+  // exactly as they were.
+  const remote = source.remote ?? null;
+  const destination =
+   remote?.kind === "parquet-set"
+    ? `Reads the Parquet set under ${remote.uri} from ${
+       remote.endpoint
+        ? `S3 endpoint ${remote.endpoint}`
+        : "the default AWS S3 endpoint"
+      }.`
+    : null;
   const note = Object.assign(document.createElement("p"), {
    textContent:
     "Used only for this session's reads; never stored or included in the dashboard.",
@@ -520,8 +556,15 @@ export function promptLiveCredentials(root, source, priorError) {
    resolve(null);
   });
   const form = document.createElement("form");
+  form.append(heading);
+  if (destination) {
+   const destinationLine = Object.assign(document.createElement("p"), {
+    textContent: destination,
+   });
+   destinationLine.dataset.credentialDestination = "";
+   form.append(destinationLine);
+  }
   form.append(
-   heading,
    note,
    errorLine,
    keyField.label,

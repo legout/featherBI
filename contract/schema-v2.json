@@ -224,10 +224,14 @@
           "additionalProperties": false,
           "required": [
             "uri",
-            "format",
             "auth"
           ],
           "properties": {
+            "kind": {
+              "enum": [
+                "parquet-set"
+              ]
+            },
             "uri": {
               "type": "string",
               "pattern": "^(?:s3|https)://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+$"
@@ -250,8 +254,68 @@
             },
             "endpoint": {
               "$ref": "#/definitions/plainText"
+            },
+            "selector": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "glob"
+              ],
+              "properties": {
+                "glob": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!/)(?!\\.\\./)[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+                }
+              }
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "kind",
+                  "uri",
+                  "selector",
+                  "auth"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "parquet-set"
+                  },
+                  "uri": {
+                    "type": "string",
+                    "pattern": "^s3://[A-Za-z0-9._~-]+/(?:[A-Za-z0-9._~-]+/)*$"
+                  },
+                  "format": false
+                }
+              }
+            },
+            {
+              "if": {
+                "not": {
+                  "required": [
+                    "kind"
+                  ]
+                }
+              },
+              "then": {
+                "required": [
+                  "uri",
+                  "format",
+                  "auth"
+                ],
+                "properties": {
+                  "selector": false
+                }
+              }
+            }
+          ]
         }
       },
       "allOf": [

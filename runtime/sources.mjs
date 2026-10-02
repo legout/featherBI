@@ -9,6 +9,14 @@ const SQL_TYPES = {
  timestamp: "TIMESTAMP",
 };
 const INPUT_TYPES = new Set(["csv", "parquet", "json", "ndjson"]);
+/** Upper bound on one live Parquet file set (spec 2026-09-28-0004 §2.1). */
+const PARQUET_SET_MAX_FILES = 10_000;
+/** Per-generation secret tags count down so newer generations sort first in
+ * DuckDB's equal-score secret selection (verified against the pinned
+ * DuckDB-WASM build): a staged candidate must shadow the active generation's
+ * secret while it is staged and release it when the candidate is dropped. */
+const SECRET_TAG_BASE = 1_000_000_000;
+const SECRET_TAG_WIDTH = 9;
 let nextGeneration = 1;
 
 /**
@@ -17,11 +25,14 @@ let nextGeneration = 1;
  * passed directly when they contain base64 `content`. Sources carrying a
  * `remote` declaration are read live through httpfs instead of registered
  * bytes; `options.liveCredentials` maps source IDs to `{keyId, secret,
- * sessionToken?}` for private (`auth: "s3"`) live reads.
+ * sessionToken?}` for private (`auth: "s3"`) live reads. `options.pinnedParquetFiles`
+ * maps source IDs to an already-resolved Parquet-set file list so a re-stage
+ * (e.g. a credential retry) reuses that membership instead of resolving the
+ * glob anew.
  *
  * @param {{db: object, connection: object}} engine
  * @param {Array<object> | {sources: Array<object>}} files
- * @param {{schema?: string, liveCredentials?: Map<string, object> | object}} [options]
+ * @param {{schema?: string, liveCredentials?: Map<string, object> | object, pinnedParquetFiles?: Map<string, string[]> | object}} [options]
  */
 export async function registerSources(engine, files, options = {}) {
  const inputs = Array.isArray(files) ? files : files?.sources;
@@ -35,7 +46,9 @@ export async function registerSources(engine, files, options = {}) {
  const sources = {};
  const generation = nextGeneration++;
  const generationSchema = options.schema ?? null;
+ const pinnedParquetFiles = options.pinnedParquetFiles ?? null;
  const registeredPhysicalNames = [];
+ const createdSecretNames = [];
  if (generationSchema) {
   await runSql(
    engine.connection,
@@ -56,20 +69,52 @@ export async function registerSources(engine, files, options = {}) {
   const schema = source.schema;
   const sqlTypes = schemaTypes(id, schema);
   const remote = source.remote ?? null;
-  const type = remote ? remoteFormat(id, remote) : inputType(source, input);
+  const parquetSet = remote?.kind === "parquet-set";
+  const type = remote ? (parquetSet ? "parquet" : remoteFormat(id, remote)) : inputType(source, input);
   const physicalName = `__featherbi_source_${generation}_${index}.${type}`;
   try {
    let columns;
    let readerName;
    let readerPayload;
+   let secretName = null;
+   let resolvedParquetFiles = null;
    if (remote) {
-    await prepareRemoteSource(engine, source, id, options.liveCredentials);
-    readerName = remote.uri;
-    columns = await describeReader(
-     engine.connection,
-     readerSql(type, readerName, { headers: [] }),
-    );
-    readerPayload = { headers: columns, remote: true };
+    secretName = await prepareRemoteSource(engine, source, id, options.liveCredentials, generation);
+    if (secretName) createdSecretNames.push(secretName);
+    if (parquetSet) {
+     // Membership resolves exactly once per generation (spec §3): the glob
+     // expands to an explicit, capped, sorted file list and the view pins it,
+     // so filter changes never re-resolve membership. A re-stage that passes
+     // the active generation's resolved list as pinned options reuses it
+     // instead of resolving anew.
+     const pinned =
+      pinnedParquetFiles instanceof Map
+       ? pinnedParquetFiles.get(id)
+       : pinnedParquetFiles?.[id];
+     const files = pinned ?? (await resolveParquetSetFiles(engine.connection, id, remote));
+     resolvedParquetFiles = files;
+     for (const file of files) {
+      const fileColumns = await describeReader(
+       engine.connection,
+       `read_parquet(${stringLiteral(file)})`,
+      );
+      uniqueColumns(id, fileColumns, "PARQUET");
+      missingColumns(id, schema, fileColumns);
+     }
+     columns = await describeReader(
+      engine.connection,
+      readerSql("parquet", remote.uri, { parquetFiles: files }),
+     );
+     readerName = remote.uri;
+     readerPayload = { headers: columns, remote: true, parquetFiles: files };
+    } else {
+     readerName = remote.uri;
+     columns = await describeReader(
+      engine.connection,
+      readerSql(type, readerName, { headers: [] }),
+     );
+     readerPayload = { headers: columns, remote: true };
+    }
    } else {
     const payload = await payloadFor(source, input, id, type);
     await registerPayload(engine.db, physicalName, payload);
@@ -113,18 +158,24 @@ export async function registerSources(engine, files, options = {}) {
     `SELECT count(hash(${typedColumns})) FROM ${logicalName}`,
    );
    await validateNullability(engine.connection, id, logicalName, schema);
-   sources[id] = {
+   const registration = {
     physicalName: remote ? null : physicalName,
     view: logicalName,
     schema: generationSchema,
+    secretName,
    };
+   if (resolvedParquetFiles) registration.parquetFiles = resolvedParquetFiles;
+   sources[id] = registration;
   } catch (error) {
    if (generationSchema) {
     await discardGeneration(
      engine,
      generationSchema,
      registeredPhysicalNames,
+     createdSecretNames,
     );
+   } else {
+    await dropLiveSecrets(engine, createdSecretNames);
    }
    if (error?.sourceId) throw error;
    throw sourceError(
@@ -157,7 +208,7 @@ async function validateNullability(connection, id, logicalName, schema) {
  }
 }
 
-async function discardGeneration(engine, schema, physicalNames) {
+async function discardGeneration(engine, schema, physicalNames, secretNames = []) {
  try {
   await runSql(
    engine.connection,
@@ -171,6 +222,18 @@ async function discardGeneration(engine, schema, physicalNames) {
    await engine.db.dropFile(name);
   } catch {
    // A failed registration may not have left a removable file behind.
+  }
+ }
+ await dropLiveSecrets(engine, secretNames);
+}
+
+/** Retire one generation's temporary live secrets (spec §3: only on cleanup). */
+export async function dropLiveSecrets(engine, secretNames) {
+ for (const name of secretNames) {
+  try {
+   await runSql(engine.connection, `DROP SECRET ${identifier(name)}`);
+  } catch {
+   // Cleanup stays best effort; a dropped secret cannot shadow anything.
   }
  }
 }
@@ -281,19 +344,29 @@ function remoteFormat(id, remote) {
  return format;
 }
 
-/** In-memory secret name for one private live remote source. */
-export function liveSecretName(id) {
- return `featherbi_live_${id}`;
+/** In-memory secret name for one private live remote source's generation.
+ * Generation 0 keeps the historical single-generation name; later
+ * generations count down so the newest generation's secret sorts first in
+ * DuckDB's equal-scope selection. */
+export function liveSecretName(id, generation = 0) {
+ const tag =
+  generation > 0
+   ? `_${String(SECRET_TAG_BASE - generation).padStart(SECRET_TAG_WIDTH, "0")}`
+   : "";
+ return `featherbi_live_${id}${tag}`;
 }
 
 /** Temporary config-provider secret SQL for one private live remote source. */
-export function liveSecretSql(id, credentials, remote) {
- const options = [
-  `KEY_ID ${stringLiteral(credentials.keyId)}`,
-  `SECRET ${stringLiteral(credentials.secret)}`,
- ];
- if (credentials.sessionToken) {
-  options.push(`SESSION_TOKEN ${stringLiteral(credentials.sessionToken)}`);
+export function liveSecretSql(id, credentials, remote, generation = 0) {
+ const options = [];
+ if (credentials?.keyId && credentials?.secret) {
+  options.push(
+   `KEY_ID ${stringLiteral(credentials.keyId)}`,
+   `SECRET ${stringLiteral(credentials.secret)}`,
+  );
+  if (credentials.sessionToken) {
+   options.push(`SESSION_TOKEN ${stringLiteral(credentials.sessionToken)}`);
+  }
  }
  if (remote.region) options.push(`REGION ${stringLiteral(remote.region)}`);
  if (remote.endpoint) {
@@ -301,7 +374,65 @@ export function liveSecretSql(id, credentials, remote) {
   // ponytail: path-style for explicit endpoints; add a URL_STYLE override if a virtual-hosted S3-compatible endpoint appears.
   options.push("URL_STYLE 'path'");
  }
- return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(liveSecretName(id))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
+ if (remote.kind === "parquet-set") {
+  // Scope the secret to the declared prefix so the listing and object reads
+  // of this set never pick up another live source's credentials.
+  options.push(`SCOPE ${stringLiteral(remote.uri)}`);
+ }
+ return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(liveSecretName(id, generation))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
+}
+
+/**
+ * Resolve one live Parquet set's glob into the generation's explicit file
+ * list: capped, sorted, and provably below the declared prefix (spec §2.1).
+ * @returns {Promise<string[]>}
+ */
+async function resolveParquetSetFiles(connection, id, remote) {
+ const glob = remote.selector?.glob;
+ if (
+  typeof glob !== "string" ||
+  glob === "" ||
+  glob.startsWith("/") ||
+  glob.split("/").includes("..") ||
+  !glob.endsWith(".parquet")
+ ) {
+  throw sourceError(
+   id,
+   `invalid glob selector ${JSON.stringify(glob)}; use a relative pattern such as "year=*/part-*.parquet"`,
+   "sources.parquet-set-glob",
+  );
+ }
+ const pattern = `${remote.uri}${glob}`;
+ const rows = await runSql(
+  connection,
+  `SELECT file FROM glob(${stringLiteral(pattern)}) LIMIT ${PARQUET_SET_MAX_FILES + 1}`,
+ );
+ const files = rows
+  .toArray()
+  .map((row) => String(row.file))
+  .sort();
+ if (files.length === 0) {
+  throw sourceError(
+   id,
+   `glob ${JSON.stringify(glob)} under ${JSON.stringify(remote.uri)} resolved no Parquet files; check the prefix and pattern, the bucket's list permission, and CORS access for the browser`,
+   "sources.parquet-set-empty",
+  );
+ }
+ if (files.length > PARQUET_SET_MAX_FILES) {
+  throw sourceError(
+   id,
+   `glob matched more than ${PARQUET_SET_MAX_FILES.toLocaleString("en-US")} Parquet files; narrow the selector glob`,
+   "sources.parquet-set-limit",
+  );
+ }
+ if (files.some((file) => !file.startsWith(remote.uri))) {
+  throw sourceError(
+   id,
+   "glob resolution returned files outside the declared prefix",
+   "sources.parquet-set-escape",
+  );
+ }
+ return files;
 }
 
 /** Classify a failed live read: "credentials", "network", or "other". */
@@ -324,25 +455,36 @@ export function classifyLiveError(error) {
  return "other";
 }
 
-/** Load httpfs once and create the temporary secret for private live reads. */
-async function prepareRemoteSource(engine, source, id, liveCredentials) {
+/** Load httpfs and create the per-generation temporary secret for live reads.
+ * Returns the secret name to retire with the generation, or null. */
+async function prepareRemoteSource(engine, source, id, liveCredentials, generation = 0) {
  await runSql(engine.connection, "LOAD httpfs");
- if (source.remote.auth !== "s3") return;
- const credentials =
-  (liveCredentials instanceof Map
-   ? liveCredentials.get(id)
-   : liveCredentials?.[id]) ?? null;
- if (!credentials?.keyId || !credentials?.secret) {
-  throw sourceError(
-   id,
-   "requires S3 credentials for the live read",
-   "sources.credentials-required",
-  );
+ const remote = source.remote;
+ const parquetSet = remote.kind === "parquet-set";
+ let credentials = null;
+ if (remote.auth === "s3") {
+  credentials =
+   (liveCredentials instanceof Map
+    ? liveCredentials.get(id)
+    : liveCredentials?.[id]) ?? null;
+  if (!credentials?.keyId || !credentials?.secret) {
+   throw sourceError(
+    id,
+    "requires S3 credentials for the live read",
+    "sources.credentials-required",
+   );
+  }
+ } else if (!parquetSet) {
+  return null;
  }
+ // A public parquet-set still needs its endpoint/region secret for the
+ // browser to resolve the s3:// prefix; it stays anonymous (no credentials).
+ if (!credentials && !remote.region && !remote.endpoint) return null;
  await runSql(
   engine.connection,
-  liveSecretSql(id, credentials, source.remote),
+  liveSecretSql(id, credentials, remote, generation),
  );
+ return liveSecretName(id, generation);
 }
 
 async function describe(connection, name) {
@@ -570,8 +712,15 @@ function missingColumns(id, schema, columns) {
 }
 
 function readerSql(type, name, payload) {
+ if (type === "parquet") {
+  // A pinned Parquet set reads its explicit resolved list; a single remote
+  // or registered file reads its one URI/name.
+  if (payload?.parquetFiles) {
+   return `read_parquet([${payload.parquetFiles.map(stringLiteral).join(", ")}])`;
+  }
+  return `read_parquet(${stringLiteral(name)})`;
+ }
  const path = stringLiteral(name);
- if (type === "parquet") return `read_parquet(${path})`;
  if (type === "csv")
   return `read_csv_auto(${path}, HEADER = TRUE, ALL_VARCHAR = TRUE)`;
  if (type === "ndjson")

@@ -398,3 +398,73 @@ test("a fixed metadata URI stays pinned across Refresh and failures retain resul
   await fixture.close();
  }
 });
+
+/**
+ * Spec 2026-09-28-0004 §3: on initial open, a failed source setup is a
+ * visible boot error, never a fabricated empty dataset. The trusted Iceberg
+ * capability is fetched by the first `LOAD iceberg` during initial staging;
+ * blocking exactly that pinned artifact (`iceberg.duckdb_extension.wasm`,
+ * not the CDN engine assets) must fail the open with a source-specific
+ * error naming the source and the capability, with no retained-generation
+ * wording and no results — the fixture serves the table's objects the whole
+ * time and none is ever requested, so no raw-Parquet fallback could have
+ * read them (LT-06 source-specific error; the extension loads lazily, so
+ * this initial-open block is the reachable failure case).
+ */
+test("a failed iceberg extension load at initial open is a visible boot error", async ({
+ browser,
+}) => {
+ const tls = await selfSignedLocalhostCert();
+ const control = { failMetadata: false, requests: new Set() };
+ const fixture = await serveIcebergBucket(tls, control);
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  // Route interception is registered before navigation so the first LOAD
+  // attempt is the one blocked; `blocked` records what was aborted and is
+  // asserted below — without an actual abort this test proves nothing.
+  const blocked = [];
+  await context.route("**/iceberg.duckdb_extension.wasm", (route) => {
+   blocked.push(route.request().url());
+   return route.abort();
+  });
+  const config = icebergDashboardConfig({
+   auth: "none",
+   metadataUri: "s3://reports/orders/metadata/v1.metadata.json",
+  });
+  config.data.sources[0].remote.endpoint = new URL(fixture.origin).host;
+  const pagePath = await writeDashboardPage(
+   config,
+   "live-iceberg-extension-failure.html",
+  );
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+
+  // The initial open fails as a visible boot error naming the source and
+  // the trusted Iceberg capability; there is no prior generation to retain.
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "error",
+  );
+  const failure = await page.locator("#dashboard-status").textContent();
+  expect(failure).toContain("orders");
+  expect(failure).toContain("cannot load the trusted Iceberg capability");
+  expect(failure).not.toContain("Showing prior results");
+
+  // No fabricated results: the KPI keeps its unfilled placeholder (the raw
+  // data file alone would show 3, correct snapshot semantics 2).
+  await expect(
+   page.locator("#component-kpi_records [data-value]"),
+  ).toHaveText("—");
+
+  // The fixture served every object the whole time, yet nothing was read:
+  // neither the metadata document nor a raw data file fed a fallback.
+  expect([...control.requests]).toEqual([]);
+
+  // Route-interception evidence: the pinned artifact fetch was aborted.
+  expect(blocked.length).toBeGreaterThan(0);
+  expect(blocked[0]).toContain("iceberg.duckdb_extension.wasm");
+ } finally {
+  await context.close();
+  await fixture.close();
+ }
+});

@@ -214,7 +214,7 @@ async function discardGeneration(engine, schema, physicalNames, secretNames = []
 }
 
 /** Retire one generation's temporary live secrets (spec §3: only on cleanup). */
-async function dropLiveSecrets(engine, secretNames) {
+export async function dropLiveSecrets(engine, secretNames) {
  for (const name of secretNames) {
   try {
    await runSql(engine.connection, `DROP SECRET ${identifier(name)}`);

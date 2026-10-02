@@ -1,9 +1,10 @@
 /**
- * Live Parquet file sets, glob selector (spec 2026-09-28-0004 §2.1, LT-02):
- * a `remote: {kind: parquet-set}` source resolves its S3 prefix glob once per
- * generation through a ListObjectsV2-style endpoint. Membership stays pinned
- * for filtering; only an explicit Refresh resolves anew and can see an object
- * that landed under the prefix after open.
+ * Live Parquet file sets, glob selector (spec 2026-09-28-0004 §2.1, LT-02,
+ * LT-06): a `remote: {kind: parquet-set}` source resolves its S3 prefix glob
+ * once per generation through a ListObjectsV2-style endpoint. Membership
+ * stays pinned for filtering; only the visible Refresh control resolves
+ * anew. A refresh that fails on its objects leaves the prior generation's
+ * results usable with a source-specific error.
  */
 
 import { execFile } from "node:child_process";
@@ -68,9 +69,11 @@ async function selfSignedLocalhostCert() {
  * Serve a minimal S3-style endpoint from 127.0.0.1 over https: ListObjectsV2
  * XML on `?list-type=2` (path-style bucket root) plus object HEAD/GET with
  * Range support and permissive CORS. The served key set is mutable so the test
- * can land a new object under the declared prefix mid-session.
+ * can land a new object under the declared prefix mid-session, and
+ * `control.failObjects` makes object reads fail while listing keeps working
+ * so a refresh can fail after membership resolved.
  */
-async function serveS3StyleBucket(tls, bytes, keys) {
+async function serveS3StyleBucket(tls, bytes, keys, control = { failObjects: false }) {
  const server = https.createServer(
   { key: tls.key, cert: tls.cert },
   (request, response) => {
@@ -109,6 +112,11 @@ async function serveS3StyleBucket(tls, bytes, keys) {
     return;
    }
    const key = url.pathname.replace(/^\/reports\//, "");
+   if (control.failObjects) {
+    response.writeHead(404, { "Content-Length": 0 });
+    response.end();
+    return;
+   }
    if (!keys.has(key)) {
     response.writeHead(404, { "Content-Length": 0 });
     response.end();
@@ -166,8 +174,9 @@ test("a live parquet set pins glob membership until an explicit Refresh", async 
  );
  // Each part serves the same 5-row fixture (3 rows station SJ per part).
  const keys = new Set(["reports/part-1.parquet", "reports/part-2.parquet"]);
+ const control = { failObjects: false };
  const tls = await selfSignedLocalhostCert();
- const fixture = await serveS3StyleBucket(tls, bytes, keys);
+ const fixture = await serveS3StyleBucket(tls, bytes, keys, control);
  const pagePath = path.join(rootDir, ".artifacts", "browser", "live-parquet-set.html");
  const context = await browser.newContext({ ignoreHTTPSErrors: true });
  const page = await context.newPage();
@@ -238,10 +247,12 @@ test("a live parquet set pins glob membership until an explicit Refresh", async 
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
    "10",
   );
-  await expect(page.locator("#filter-station option")).toHaveCount(4);
+  // The station select offers "all" plus the two fixture stations.
+  await expect(page.locator("#filter-station option")).toHaveCount(3);
 
   // Filtering reads the pinned generation: 2 parts x 3 SJ rows.
   await page.locator("#filter-station").selectOption({ label: "SJ" });
+  await page.locator("#apply-filters").click();
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
    "6",
   );
@@ -252,6 +263,7 @@ test("a live parquet set pins glob membership until an explicit Refresh", async 
   // Filtering must not re-resolve membership: clearing the filter still sees
   // only the two pinned parts.
   await page.locator("#filter-station").selectOption({ label: "all" });
+  await page.locator("#apply-filters").click();
   await expect(page.locator("#dashboard-status")).toHaveAttribute(
    "data-state",
    "ready",
@@ -260,8 +272,39 @@ test("a live parquet set pins glob membership until an explicit Refresh", async 
    "10",
   );
 
-  // Explicit Refresh re-resolves the glob: the new part joins the source.
+  // LT-06: a refresh whose objects cannot be read (the listing works, the
+  // object GETs fail) keeps the prior active generation usable with a
+  // source-specific error and never publishes a partial refresh.
+  control.failObjects = true;
   await expect(page.locator("#refresh-live")).toBeVisible();
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "error",
+  );
+  const failure = await page.locator("#dashboard-status").textContent();
+  expect(failure).toContain("sales");
+  expect(failure).toContain("Showing prior results");
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "10",
+  );
+
+  // The retained generation still serves filtered reads after the failed
+  // candidate was retired (its objects readable again): 2 pinned parts x 3
+  // SJ rows. A candidate secret leak would break this read even now.
+  control.failObjects = false;
+  await page.locator("#filter-station").selectOption({ label: "SJ" });
+  await page.locator("#apply-filters").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "6",
+  );
+
+  // Explicit Refresh re-resolves the glob: the new part joins the source.
+  // (Refresh also resets filters to their declared defaults.)
   await page.locator("#refresh-live").click();
   await expect(page.locator("#dashboard-status")).toHaveAttribute(
    "data-state",
@@ -273,6 +316,7 @@ test("a live parquet set pins glob membership until an explicit Refresh", async 
   // The refreshed generation keeps serving filtered reads from its own
   // membership: 3 parts x 3 SJ rows.
   await page.locator("#filter-station").selectOption({ label: "SJ" });
+  await page.locator("#apply-filters").click();
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
    "9",
   );

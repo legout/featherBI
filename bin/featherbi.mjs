@@ -34,6 +34,7 @@ try {
   }
   if (options.region) profileArgs.push("--region", options.region);
   if (options.endpoint) profileArgs.push("--endpoint", options.endpoint);
+  if (options.glob) profileArgs.push("--glob", options.glob);
   if (options.includeValues) profileArgs.push("--include-values");
   if (options.output) {
    await mkdir(path.dirname(path.resolve(options.output)), { recursive: true });
@@ -149,6 +150,7 @@ function parseSimpleArgs(args, booleans = new Set()) {
   "--auth": "auth",
   "--region": "region",
   "--endpoint": "endpoint",
+  "--glob": "glob",
   "--project": "project",
   "--output": "output",
   "--include-values": "includeValues",
@@ -193,7 +195,7 @@ async function ensureValidator() {
 
 function printHelp() {
 console.log(`featherbi setup [--global] [--agent ID] [--yes|--no] [--design]
-featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--output FILE] [--include-values]
+featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--glob PATTERN] [--output FILE] [--include-values]
 featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config.json]
 featherbi validate --config CONFIG
 featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]

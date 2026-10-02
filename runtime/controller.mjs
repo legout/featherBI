@@ -1,8 +1,7 @@
 import { validateConfig } from "../contract/config.mjs";
 import { createEngine } from "./bootstrap.mjs";
-import { classifyLiveError } from "./sources.mjs";
+import { classifyLiveError, dropLiveSecrets, registerSources } from "./sources.mjs";
 import { RESULT_MAX_BYTES, RESULT_MAX_ROWS, RESULT_TIMEOUT_MS, runPlaygroundQuery, runQuery, runQueryArrow } from "./queries.mjs";
-import { registerSources } from "./sources.mjs";
 
 const CHART_LIMIT = 10_000;
 const OPTION_PAGE_SIZE = 100;
@@ -804,12 +803,24 @@ async function retireGeneration(engine, generation) {
   // The active snapshot has already moved; cleanup remains best effort.
  }
  for (const source of Object.values(generation.sources ?? {})) {
-  try {
-   await engine.db.dropFile(source.physicalName);
-  } catch {
-   // Failed candidates can already have removed their physical registrations.
+  if (source.physicalName) {
+   try {
+    await engine.db.dropFile(source.physicalName);
+   } catch {
+    // Failed candidates can already have removed their physical registrations.
+   }
   }
  }
+ // Each generation owns its named temporary secrets: dropping them here
+ // retires exactly this generation's credentials. A failed candidate's
+ // cleanup removes only the candidate's secret, never the active
+ // generation's (spec 2026-09-28-0004 §3).
+ await dropLiveSecrets(
+  engine,
+  Object.values(generation.sources ?? {})
+   .map(({ secretName }) => secretName)
+   .filter(Boolean),
+ );
 }
 
 function useGeneration(connection, schema) {

@@ -1,6 +1,6 @@
 # Implementation plan: live Parquet file sets and Iceberg tables
 
-**Status:** approved by owner in chat on 2026-09-28; ticketized in GitHub Issues #30–#35. Ticketization is authorized; probe execution, implementation, integration, pushing, and publication remain separate gates. The issues own canonical task bodies.
+**Status:** approved by owner in chat on 2026-09-28; ticketized in GitHub Issues #30–#35. T0 (#30) passed its browser feasibility gate and is closed. T1 (#31) was completed and integrated in merge commit `1f74ec0` on 2026-10-02: live `parquet-set` glob sources with per-generation membership pinning, per-generation S3 secrets, explicit Refresh over the candidate path, anonymous/bounded profiling, and a fresh-review fix pass (pinned credential retry, anonymous profiling without key material, live-only failure remedies, credential-destination display) whose delta recheck passed; issue closure and push remain separate actions. Ticketization is authorized; implementation, integration, pushing, and publication remain separate gates. The issues own canonical task bodies.
 
 **Goal:** one logical source reads a live, unbundled multi-file Parquet set or Iceberg table in the recipient's desktop Chrome browser, pinned per generation and refreshed explicitly.
 

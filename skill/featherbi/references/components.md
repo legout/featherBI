@@ -5,7 +5,7 @@ Every component has an `id`, `label`, grid placement (`x`, `y`, `width`, `height
 ## Components
 
 - **Content:** `heading` and `text` render escaped literal content. `markdown` renders one safe subset: paragraphs (blank-line separated blocks, lines joined by one space), emphasis `*italic*` and `**bold**` (nestable; `_` is not a marker), unordered lists (`- item`, one item per line), ordered lists (`1. item`, numbered from the first item), and links such as `[Insights](https://example.com/insights)` whose destination is `https://`, `http:`, or `mailto:` only, opened isolated from the dashboard. Every other construct — raw HTML, images, code spans, Markdown headings, and any other link destination — stays literal escaped text, never executed or fetched. `divider`; `tabs`/`section` (containers own their alternatives; members may overlap only within the same tab).
-- **Metrics:** `kpi` (`field`, optional `decimals`) and `metric-group` (`fields`, optional `decimals`).
+- **Metrics:** `kpi` (`field`, optional `decimals`) and `metric-group` (`fields`, optional `decimals`); each metric-group metric renders as one label-over-value row (`[data-metric-row]` wrapper, `[data-metric-label]` label above the `[data-metric]` value), never concatenated inline.
 - **Charts (ECharts, typed fields):** `bar` (`orientation: horizontal` for station-style activity), `line`, `area`, `scatter`, `pie`/`donut` (`name`/`value`), `heatmap` (`xField`/`yField`/`value`), `treemap`, `sankey` (`source`/`target`/`value`), `gauge`, `boxplot` (`xField`, `min`/`q1`/`median`/`q3`/`max`). Charts accept `annotations: [{at: YYYY-MM-DD, label}]` on bar/line and `series` for split-by.
 - **Table:** `table` with `columns: [{field, label}]`; AG Grid Community features only, server-side paging, no Enterprise options such as `rowGroup`.
 - **Exploration:** `perspective` components or `rendererPreset: perspective-first`; they receive one named bounded query result.
@@ -13,7 +13,9 @@ Every component has an `id`, `label`, grid placement (`x`, `y`, `width`, `height
 
 ## Filters (shared, typed)
 
-`select`, `single-select`, `multi-select`, `option-search`, `text`, `date-range`, `numeric-range` (inclusive `from`/`through` display), `boolean` (a native All / Yes / No choice standing for `null` / `true` / `false`, keyboard-operable in that cycle and back to All). Each filter binds one source column with a compatible type and declares a `default` (`null`, list, `{kind: latest-days, days}`, or `{kind: fixed, from, through}`).
+`select`, `single-select`, `multi-select`, `option-search`, `text`, `date-range`, `numeric-range` (inclusive `from`/`through` display), `boolean` (an All / Yes / No `[data-segmented]` radio group standing for `null` / `true` / `false`, keyboard-operable in that cycle and back to All). Each filter binds one source column with a compatible type and declares a `default` (`null`, list, `{kind: latest-days, days}`, or `{kind: fixed, from, through}`).
+
+Filters render in one contained bar; each filter is a `[data-filter]` column with a `[data-filter-caption]` label above its `[data-filter-controls]` row.
 
 ## Interactions
 

@@ -8,6 +8,7 @@ A dashboard project is the source tree the compiler turns into strict runtime co
 ├── models/<model>.sql      # optional reusable SELECT/CTE definitions
 ├── queries/<query>.sql     # component results (external SQL)
 ├── theme.css               # optional trusted author CSS
+├── theme.tokens.yaml       # optional validated theme tokens
 └── .gitignore              # must ignore .featherbi/ (and *.zip)
 ```
 
@@ -41,7 +42,8 @@ queries:
   total: {sql: queries/total.sql, params: []}
 layout:                        # integer x/y/width/height on a 12-column grid
   - {id: total, type: kpi, query: total, label: Total, field: value, x: 1, y: 1, width: 12, height: 1}
-theme: neutral                 # neutral | daisyui | siemens-ix
+theme: neutral                 # neutral | daisyui | siemens-ix | siemens-ix-light
+themeTokens: theme.tokens.yaml # optional custom theme; valid only with neutral (see themes-and-css.md)
 rendererPreset: standard       # standard | perspective-first
 ```
 

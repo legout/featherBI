@@ -70,6 +70,10 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
   const previous = active;
   let candidate;
   try {
+   // The candidate re-stages the active generation's resolved inputs: a
+   // credential retry must not re-resolve Parquet-set membership, which
+   // changes only on initial open and explicit Refresh (spec
+   // 2026-09-28-0004 §3, LT-02).
    candidate = await stageGeneration(
     engine,
     config,
@@ -77,6 +81,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
     sourceIds,
     live,
     priorLiveErrors,
+    pinnedParquetFilesOf(previous),
    );
   } catch (retryError) {
    throw liveReadError(config, retryError);
@@ -390,7 +395,15 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
  };
 }
 
-async function stageGeneration(engine, config, inputs, sourceIds, live = null, priorLiveErrors = new Map()) {
+async function stageGeneration(
+ engine,
+ config,
+ inputs,
+ sourceIds,
+ live = null,
+ priorLiveErrors = new Map(),
+ pinnedParquetFiles = null,
+) {
  const number = nextDashboardGeneration++;
  const schema = `featherbi_gen_${number}`;
  const orderedInputs = [];
@@ -434,6 +447,7 @@ async function stageGeneration(engine, config, inputs, sourceIds, live = null, p
     .filter(({ credentials }) => credentials)
     .map(({ source, credentials }) => [source.id, credentials]),
   ),
+  pinnedParquetFiles,
  });
  const generation = { number, schema, inputs, sources: registered.sources };
  try {
@@ -775,17 +789,35 @@ function optionReadError(error, config, filter) {
  return error;
 }
 
+/** One live generation's resolved Parquet-set membership, keyed by source
+ * ID, for re-staging without re-resolving the glob. */
+function pinnedParquetFilesOf(generation) {
+ const pinned = {};
+ for (const [id, source] of Object.entries(generation?.sources ?? {})) {
+  if (source.parquetFiles) pinned[id] = source.parquetFiles;
+ }
+ return pinned;
+}
+
 /** Decorate failed live reads with the source name and the actionable remedy. */
 function liveReadError(config, error) {
  if (!error?.sourceId) return error;
  const source = config.data.sources.find(({ id }) => id === error.sourceId);
  if (!source?.remote) return error;
  const kind = classifyLiveError(error);
- const remedy = kind === "credentials"
-  ? "the remote host rejected the credentials; if they are wrong or expired, the source will ask for them again"
-  : kind === "network"
-   ? "the browser could not reach the source host (a CORS block looks the same); ask the author for a packaged build or check the network"
-   : "the live remote read failed; ask the author for a packaged build if it persists";
+ // Live-only kinds point at endpoint/browser access, never packaged delivery
+ // (spec 2026-09-28-0004 §4); single-file remotes keep their guidance.
+ const remedy = source.remote.kind === "parquet-set"
+  ? kind === "credentials"
+   ? "the bucket rejected the credentials; the key needs list and read permission for the Parquet set, and the source will ask for credentials again if they are wrong or expired"
+   : kind === "network"
+    ? "the browser could not reach the bucket endpoint for listing or object reads (a CORS block looks the same); check the endpoint and the bucket's CORS access for this page"
+    : "the live Parquet set read failed; check the bucket's listing and object access, its CORS configuration, and the credentials"
+  : kind === "credentials"
+   ? "the remote host rejected the credentials; if they are wrong or expired, the source will ask for them again"
+   : kind === "network"
+    ? "the browser could not reach the source host (a CORS block looks the same); ask the author for a packaged build or check the network"
+    : "the live remote read failed; ask the author for a packaged build if it persists";
  const wrapped = new Error(
   `source ${JSON.stringify(error.sourceId)}: ${remedy} (${error.message})`,
   { cause: error },

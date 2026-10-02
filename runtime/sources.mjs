@@ -25,11 +25,14 @@ let nextGeneration = 1;
  * passed directly when they contain base64 `content`. Sources carrying a
  * `remote` declaration are read live through httpfs instead of registered
  * bytes; `options.liveCredentials` maps source IDs to `{keyId, secret,
- * sessionToken?}` for private (`auth: "s3"`) live reads.
+ * sessionToken?}` for private (`auth: "s3"`) live reads. `options.pinnedParquetFiles`
+ * maps source IDs to an already-resolved Parquet-set file list so a re-stage
+ * (e.g. a credential retry) reuses that membership instead of resolving the
+ * glob anew.
  *
  * @param {{db: object, connection: object}} engine
  * @param {Array<object> | {sources: Array<object>}} files
- * @param {{schema?: string, liveCredentials?: Map<string, object> | object}} [options]
+ * @param {{schema?: string, liveCredentials?: Map<string, object> | object, pinnedParquetFiles?: Map<string, string[]> | object}} [options]
  */
 export async function registerSources(engine, files, options = {}) {
  const inputs = Array.isArray(files) ? files : files?.sources;
@@ -43,6 +46,7 @@ export async function registerSources(engine, files, options = {}) {
  const sources = {};
  const generation = nextGeneration++;
  const generationSchema = options.schema ?? null;
+ const pinnedParquetFiles = options.pinnedParquetFiles ?? null;
  const registeredPhysicalNames = [];
  const createdSecretNames = [];
  if (generationSchema) {
@@ -73,14 +77,22 @@ export async function registerSources(engine, files, options = {}) {
    let readerName;
    let readerPayload;
    let secretName = null;
+   let resolvedParquetFiles = null;
    if (remote) {
     secretName = await prepareRemoteSource(engine, source, id, options.liveCredentials, generation);
     if (secretName) createdSecretNames.push(secretName);
     if (parquetSet) {
      // Membership resolves exactly once per generation (spec §3): the glob
      // expands to an explicit, capped, sorted file list and the view pins it,
-     // so filter changes never re-resolve membership.
-     const files = await resolveParquetSetFiles(engine.connection, id, remote);
+     // so filter changes never re-resolve membership. A re-stage that passes
+     // the active generation's resolved list as pinned options reuses it
+     // instead of resolving anew.
+     const pinned =
+      pinnedParquetFiles instanceof Map
+       ? pinnedParquetFiles.get(id)
+       : pinnedParquetFiles?.[id];
+     const files = pinned ?? (await resolveParquetSetFiles(engine.connection, id, remote));
+     resolvedParquetFiles = files;
      for (const file of files) {
       const fileColumns = await describeReader(
        engine.connection,
@@ -146,12 +158,14 @@ export async function registerSources(engine, files, options = {}) {
     `SELECT count(hash(${typedColumns})) FROM ${logicalName}`,
    );
    await validateNullability(engine.connection, id, logicalName, schema);
-   sources[id] = {
+   const registration = {
     physicalName: remote ? null : physicalName,
     view: logicalName,
     schema: generationSchema,
     secretName,
    };
+   if (resolvedParquetFiles) registration.parquetFiles = resolvedParquetFiles;
+   sources[id] = registration;
   } catch (error) {
    if (generationSchema) {
     await discardGeneration(

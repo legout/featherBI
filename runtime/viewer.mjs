@@ -502,6 +502,19 @@ export function promptLiveCredentials(root, source, priorError) {
   const heading = Object.assign(document.createElement("h2"), {
    textContent: `Credentials for ${source.id}`,
   });
+  // Display the named destination before credential entry (spec
+  // 2026-09-28-0004 §4): private Parquet-set prompts state the declared
+  // storage location and the effective endpoint; single-file prompts stay
+  // exactly as they were.
+  const remote = source.remote ?? null;
+  const destination =
+   remote?.kind === "parquet-set"
+    ? `Reads the Parquet set under ${remote.uri} from ${
+       remote.endpoint
+        ? `S3 endpoint ${remote.endpoint}`
+        : "the default AWS S3 endpoint"
+      }.`
+    : null;
   const note = Object.assign(document.createElement("p"), {
    textContent:
     "Used only for this session's reads; never stored or included in the dashboard.",
@@ -543,8 +556,15 @@ export function promptLiveCredentials(root, source, priorError) {
    resolve(null);
   });
   const form = document.createElement("form");
+  form.append(heading);
+  if (destination) {
+   const destinationLine = Object.assign(document.createElement("p"), {
+    textContent: destination,
+   });
+   destinationLine.dataset.credentialDestination = "";
+   form.append(destinationLine);
+  }
   form.append(
-   heading,
    note,
    errorLine,
    keyField.label,

@@ -14,12 +14,15 @@ const rootDir = path.resolve(
  "../..",
 );
 
-/** Serve one fixture file from 127.0.0.1 with Range support (httpfs needs it). */
-async function serveFixture(fileName) {
+/** Serve one fixture file from 127.0.0.1 with Range support (httpfs needs it).
+ * `seen.authorization` records each request's Authorization header value
+ * (null when the request was unsigned). */
+async function serveFixture(fileName, seen = null) {
  const bytes = await readFile(
   path.join(rootDir, ".artifacts", "fixtures", fileName),
  );
  const server = http.createServer((request, response) => {
+  seen?.authorization.push(request.headers.authorization ?? null);
   if (request.method === "HEAD") {
    response.writeHead(200, {
     "Content-Length": bytes.length,
@@ -116,6 +119,36 @@ test("auth s3 without credentials fails naming the source and the required secre
     assert.equal(error.stderr.includes("127.0.0.1"), false);
     return true;
    },
+  );
+ } finally {
+  await fixture.close();
+ }
+});
+
+test("anonymous endpoint reads carry no key material from the environment", async () => {
+ // `auth: none` means an anonymous set: even with FTHR_S3_* credentials in
+ // the environment, the secret must carry no key material, so the requests
+ // stay unsigned (spec 2026-09-28-0004 §4).
+ const seen = { authorization: [] };
+ const fixture = await serveFixture("inspections.parquet", seen);
+ try {
+  const env = {
+   ...(await credentiallessEnv()),
+   FTHR_S3_KEY_ID: "AKIAEXAMPLEKEYID",
+   FTHR_S3_SECRET: "topSecretValue",
+   FTHR_S3_USE_SSL: "false",
+  };
+  const { stdout } = await runProfile(
+   "s3://reports/inspections.parquet",
+   ["--endpoint", new URL(fixture.url).host],
+   env,
+  );
+  const value = JSON.parse(stdout);
+  assert.equal(value.row_count, 5);
+  assert.equal(seen.authorization.length > 0, true);
+  assert.equal(
+   seen.authorization.every((header) => header === null),
+   true,
   );
  } finally {
   await fixture.close();

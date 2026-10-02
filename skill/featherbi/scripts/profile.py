@@ -84,10 +84,10 @@ def s3_credentials(source_id, values, auth="s3", region=None, endpoint=None):
         )
     region = region or get("REGION")
     endpoint = endpoint or get("ENDPOINT")
+    options = []
     # Anonymous sets (auth none) on an S3-compatible endpoint still need the
     # endpoint secret; they simply carry no key material.
-    options = []
-    if key_id and secret:
+    if auth == "s3" and key_id and secret:
         options.append(f"KEY_ID {sql_literal(key_id)}")
         options.append(f"SECRET {sql_literal(secret)}")
         session_token = get("SESSION_TOKEN")

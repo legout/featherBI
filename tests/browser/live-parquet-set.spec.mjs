@@ -69,9 +69,11 @@ async function selfSignedLocalhostCert() {
  * Serve a minimal S3-style endpoint from 127.0.0.1 over https: ListObjectsV2
  * XML on `?list-type=2` (path-style bucket root) plus object HEAD/GET with
  * Range support and permissive CORS. The served key set is mutable so the test
- * can land a new object under the declared prefix mid-session, and
+ * can land a new object under the declared prefix mid-session,
  * `control.failObjects` makes object reads fail while listing keeps working
- * so a refresh can fail after membership resolved.
+ * so a refresh can fail after membership resolved, and `control.rejectKeys`
+ * answers 403 for requests signed with one of those SigV4 access key IDs so a
+ * working private source can fail as a credential error on demand.
  */
 async function serveS3StyleBucket(tls, bytes, keys, control = { failObjects: false }) {
  const server = https.createServer(
@@ -90,6 +92,14 @@ async function serveS3StyleBucket(tls, bytes, keys, control = { failObjects: fal
    );
    if (request.method === "OPTIONS") {
     response.writeHead(204);
+    response.end();
+    return;
+   }
+   const signedKey = /Credential=([^/]+)\//.exec(
+    request.headers.authorization ?? "",
+   )?.[1];
+   if (signedKey && control.rejectKeys?.has(signedKey)) {
+    response.writeHead(403, { "Content-Length": 0 });
     response.end();
     return;
    }
@@ -285,6 +295,10 @@ test("a live parquet set pins glob membership until an explicit Refresh", async 
   const failure = await page.locator("#dashboard-status").textContent();
   expect(failure).toContain("sales");
   expect(failure).toContain("Showing prior results");
+  // Live-only sources point at endpoint/CORS access, never packaged delivery
+  // (spec 2026-09-28-0004 §4).
+  expect(failure).toContain("CORS");
+  expect(failure).not.toContain("packaged build");
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
    "10",
   );
@@ -319,6 +333,146 @@ test("a live parquet set pins glob membership until an explicit Refresh", async 
   await page.locator("#apply-filters").click();
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
    "9",
+  );
+ } finally {
+  await rm(pagePath, { force: true });
+  await context.close();
+  await fixture.close();
+ }
+});
+
+/**
+ * LT-02 for private sets: a credential failure during a filtered read
+ * re-prompts and re-stages the ACTIVE generation's pinned membership — the
+ * glob is not re-resolved, so an object added after open stays invisible
+ * until the explicit Refresh resolves anew (spec 2026-09-28-0004 §3). The
+ * private prompt also displays the named destination before credential
+ * entry (spec §4).
+ */
+test("a credential retry re-stages the pinned membership until an explicit Refresh", async ({
+ browser,
+}) => {
+ const bytes = await readFile(
+  path.join(rootDir, ".artifacts", "fixtures", "inspections.parquet"),
+ );
+ const keys = new Set(["reports/part-1.parquet", "reports/part-2.parquet"]);
+ const control = { failObjects: false, rejectKeys: new Set() };
+ const tls = await selfSignedLocalhostCert();
+ const fixture = await serveS3StyleBucket(tls, bytes, keys, control);
+ const pagePath = path.join(
+  rootDir,
+  ".artifacts",
+  "browser",
+  "live-parquet-set-retry.html",
+ );
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  const { html } = await renderDashboard({
+   config: {
+    contract: 2,
+    app: "grid",
+    title: "Live parquet set retry",
+    data: {
+     mode: "upload",
+     sources: [
+      {
+       id: "sales",
+       schema: {
+        order_number: { type: "string", nullable: false },
+        test_station_identifier: { type: "string", nullable: false },
+       },
+       remote: {
+        kind: "parquet-set",
+        uri: "s3://reports/reports/",
+        selector: { glob: "part-*.parquet" },
+        auth: "s3",
+        endpoint: new URL(fixture.origin).host,
+       },
+      },
+     ],
+    },
+    filters: [
+     {
+      id: "station",
+      kind: "select",
+      source: "sales",
+      column: "test_station_identifier",
+      default: null,
+     },
+    ],
+    queries: {
+     records: {
+      sql: "SELECT count(*) AS records FROM sales WHERE ($station IS NULL OR test_station_identifier = $station)",
+      params: ["station"],
+     },
+    },
+    layout: [
+     {
+      id: "kpi_records",
+      type: "kpi",
+      query: "records",
+      field: "records",
+      label: "Sales records",
+      x: 1,
+      y: 1,
+      width: 12,
+      height: 1,
+     },
+    ],
+    theme: "neutral",
+   },
+  });
+  await writeFile(pagePath, html, "utf8");
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+
+  // Initial open prompts once, showing the declared destination and the
+  // effective endpoint before credential entry.
+  await expect(page.locator("dialog [data-credential-destination]")).toContainText(
+   "s3://reports/reports/",
+  );
+  await expect(page.locator("dialog [data-credential-destination]")).toContainText(
+   new URL(fixture.origin).host,
+  );
+  await page.locator('dialog input[aria-label="Key ID"]').fill("key-one");
+  await page.locator('dialog input[aria-label="Secret"]').fill("secret-one");
+  await page.locator('dialog button[type="submit"]').click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "10",
+  );
+
+  // A third object lands under the declared prefix after the generation
+  // opened, and the accepted key starts being rejected.
+  keys.add("reports/part-3.parquet");
+  control.rejectKeys.add("key-one");
+
+  // The next filtered read fails as a credential error; the retry re-prompts
+  // and must re-stage the PINNED membership: still two parts, not three.
+  await page.locator("#filter-station").selectOption({ label: "all" });
+  await page.locator("#apply-filters").click();
+  await page.locator('dialog input[aria-label="Key ID"]').fill("key-two");
+  await page.locator('dialog input[aria-label="Secret"]').fill("secret-two");
+  await page.locator('dialog button[type="submit"]').click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "10",
+  );
+
+  // Explicit Refresh re-resolves the glob: the new part joins the source.
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "15",
   );
  } finally {
   await rm(pagePath, { force: true });

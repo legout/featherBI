@@ -24,6 +24,8 @@ import { validateConfig } from "../../contract/config.mjs";
 import {
  catalogTableUrl,
  classifyLiveError,
+ icebergScope,
+ liveSecretSql,
  resolveCatalogMetadataLocation,
 } from "../../runtime/sources.mjs";
 
@@ -485,6 +487,35 @@ test("a missing bearer token fails as a credential requirement", async () => {
  );
 });
 
+test("a catalog identity's storage secret scopes to the resolved table location", () => {
+ const resolved = "s3://reports/orders/metadata/v1.metadata.json";
+ const sql = liveSecretSql(
+  "orders",
+  { keyId: "key", secret: "secret" },
+  {
+   kind: "iceberg",
+   catalog: {
+    endpoint: "https://catalog.example.com",
+    warehouse: "analytics",
+    namespace: "sales",
+    table: "orders",
+   },
+   catalogAuth: "bearer",
+   auth: "s3",
+   region: "eu-central-1",
+  },
+  1,
+  icebergScope(resolved),
+ );
+ // The scope passed for a catalog identity is its RESOLVED metadata
+ // document's table root (metadata/ and data/ beneath it) — never the
+ // unscoped '' an absent declared metadataUri would derive, which would
+ // compete with every other catalog source's storage secret (spec §3/§4
+ // isolation).
+ assert.match(sql, /SCOPE 's3:\/\/reports\/orders\/'/);
+ assert.equal(sql.includes("SCOPE ''"), false);
+});
+
 test("a 401 catalog response is a credential failure naming the endpoint", async () => {
  const originalFetch = globalThis.fetch;
  globalThis.fetch = async () => fetchResult("", { status: 401 });
@@ -551,7 +582,7 @@ test("a cross-authority catalog redirect fails naming the endpoint, never the to
  globalThis.fetch = async () =>
   fetchResult({ "metadata-location": "s3://reports/orders/metadata/v1.metadata.json" }, {
    redirected: true,
-   url: "https://other-authority.example.com/v1/analytics/namespaces/sales/tables/orders",
+   url: "https://other-authority.example.com/echo/Bearer%20secret-token",
   });
  try {
   await assert.rejects(
@@ -561,7 +592,11 @@ test("a cross-authority catalog redirect fails naming the endpoint, never the to
     assert.equal(error.sourceId, "orders");
     assert.equal(error.message.includes("https://catalog.example.com"), true);
     assert.equal(error.message.includes("different authority"), true);
+    // A compromised catalog can echo the token (or any request detail) into
+    // the followed redirect URL; the error reports the declared endpoint
+    // and a fixed description only — no catalog-controlled URL (spec §4).
     assert.equal(error.message.includes("secret-token"), false);
+    assert.equal(error.message.includes("other-authority.example.com"), false);
     return true;
    },
   );
@@ -574,6 +609,41 @@ test("a cross-authority catalog redirect fails naming the endpoint, never the to
   assert.equal(
    await resolveCatalogMetadataLocation("orders", REMOTE, "secret-token"),
    "s3://reports/orders/metadata/v1.metadata.json",
+  );
+ } finally {
+  globalThis.fetch = originalFetch;
+ }
+});
+
+test("a malformed catalog response fails without the parser's body detail", async () => {
+ const originalFetch = globalThis.fetch;
+ // A compromised catalog echoes the token-bearing Authorization header as
+ // the response body, and the browser's JSON parser quotes body content in
+ // its message; the error must carry the declared endpoint and a fixed
+ // description only (spec §4: no credentials in error details).
+ globalThis.fetch = async () => ({
+  status: 200,
+  ok: true,
+  redirected: false,
+  url: "https://catalog.example.com/v1/analytics/namespaces/sales/tables/orders",
+  json: async () => {
+   throw new SyntaxError(
+    'Unexpected token \'B\', "Bearer secret-token"... is not valid JSON',
+   );
+  },
+ });
+ try {
+  await assert.rejects(
+   () => resolveCatalogMetadataLocation("orders", REMOTE, "secret-token"),
+   (error) => {
+    assert.equal(error.code, "sources.iceberg-catalog");
+    assert.equal(error.sourceId, "orders");
+    assert.equal(error.message.includes("https://catalog.example.com"), true);
+    assert.equal(error.message.includes("unreadable table response"), true);
+    assert.equal(error.message.includes("secret-token"), false);
+    assert.equal(error.message.includes("Unexpected token"), false);
+    return true;
+   },
   );
  } finally {
   globalThis.fetch = originalFetch;

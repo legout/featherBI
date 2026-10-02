@@ -39,11 +39,14 @@ let nextGeneration = 1;
  * that memory-only bearer token — it never reaches DuckDB or any secret.
  * `options.pinnedParquetFiles` maps source IDs to an already-resolved
  * Parquet-set file list so a re-stage (e.g. a credential retry) reuses that
- * membership instead of resolving the glob anew.
+ * membership instead of resolving the glob anew; likewise,
+ * `options.pinnedIcebergMetadataUris` maps source IDs to an already-resolved
+ * Iceberg metadata document so a re-stage reuses the pinned snapshot
+ * instead of resolving the catalog anew.
  *
  * @param {{db: object, connection: object}} engine
  * @param {Array<object> | {sources: Array<object>}} files
- * @param {{schema?: string, liveCredentials?: Map<string, object> | object, liveCatalogTokens?: Map<string, string> | object, pinnedParquetFiles?: Map<string, string[]> | object}} [options]
+ * @param {{schema?: string, liveCredentials?: Map<string, object> | object, liveCatalogTokens?: Map<string, string> | object, pinnedParquetFiles?: Map<string, string[]> | object, pinnedIcebergMetadataUris?: Map<string, string> | object}} [options]
  */
 export async function registerSources(engine, files, options = {}) {
  const inputs = Array.isArray(files) ? files : files?.sources;
@@ -58,6 +61,7 @@ export async function registerSources(engine, files, options = {}) {
  const generation = nextGeneration++;
  const generationSchema = options.schema ?? null;
  const pinnedParquetFiles = options.pinnedParquetFiles ?? null;
+ const pinnedIcebergMetadataUris = options.pinnedIcebergMetadataUris ?? null;
  const registeredPhysicalNames = [];
  const createdSecretNames = [];
  if (generationSchema) {
@@ -90,6 +94,7 @@ export async function registerSources(engine, files, options = {}) {
    let readerPayload;
    let secretName = null;
    let resolvedParquetFiles = null;
+   let resolvedMetadataUri = null;
    if (remote) {
     // An Iceberg catalog identity resolves before its storage secret exists
     // (the resolved location scopes it); every other remote read prepares
@@ -142,14 +147,23 @@ export async function registerSources(engine, files, options = {}) {
      // (ADR 0009: never ATTACH ... TYPE ICEBERG, which re-resolves the
      // latest snapshot per scan) and pins the returned versioned document
      // for the whole generation (spec §2.2, §3; never read_parquet over
-     // the data files).
+     // the data files). A re-stage that passes the active generation's
+     // resolved document as pinned options reuses it instead of resolving
+     // the catalog anew — like Parquet membership, only initial open and
+     // explicit Refresh resolve the catalog.
      let metadataUri = remote.metadataUri;
      if (remote.catalog) {
-      metadataUri = await resolveCatalogMetadataLocation(
-       id,
-       remote,
-       catalogTokenOf(options, id),
-      );
+      const pinnedMetadata =
+       pinnedIcebergMetadataUris instanceof Map
+        ? pinnedIcebergMetadataUris.get(id)
+        : pinnedIcebergMetadataUris?.[id];
+      metadataUri =
+       pinnedMetadata ??
+       (await resolveCatalogMetadataLocation(
+        id,
+        remote,
+        catalogTokenOf(options, id),
+       ));
      }
      // The storage secret scopes to the effective metadata document's table
      // root, so a catalog identity's resolved location (not a declaration
@@ -166,6 +180,7 @@ export async function registerSources(engine, files, options = {}) {
      readerName = metadataUri;
      columns = await describeIceberg(engine.connection, id, readerName);
      readerPayload = { headers: columns, remote: true, iceberg: true };
+     resolvedMetadataUri = metadataUri;
     } else {
      readerName = remote.uri;
      columns = await describeReader(
@@ -224,6 +239,7 @@ export async function registerSources(engine, files, options = {}) {
     secretName,
    };
    if (resolvedParquetFiles) registration.parquetFiles = resolvedParquetFiles;
+   if (resolvedMetadataUri) registration.icebergMetadataUri = resolvedMetadataUri;
    sources[id] = registration;
   } catch (error) {
    if (generationSchema) {
@@ -445,7 +461,11 @@ export function liveSecretSql(id, credentials, remote, generation = 0, scope = n
  if (remote.kind === "iceberg") {
   // Scope the secret to the table location so the metadata and data object
   // reads share the recipient's credentials without covering other tables.
-  options.push(`SCOPE ${stringLiteral(icebergScope(remote.metadataUri))}`);
+  // A catalog identity has no declared metadataUri to derive from: its
+  // resolved metadata document's scope arrives as `scope`, and ignoring it
+  // would create an unscoped secret competing with every other catalog
+  // source's storage credentials (spec §3/§4 isolation).
+  options.push(`SCOPE ${stringLiteral(scope ?? icebergScope(remote.metadataUri))}`);
  }
  return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(liveSecretName(id, generation))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
 }
@@ -866,9 +886,13 @@ export async function resolveCatalogMetadataLocation(id, remote, token) {
   );
  }
  if (response.redirected && new URL(response.url).origin !== new URL(url).origin) {
+  // The followed URL is catalog-controlled and could echo request detail
+  // (including the token-bearing Authorization header a compromised catalog
+  // received), so the error reports the declared endpoint and a fixed
+  // description only (spec §4: no credentials in error details).
   throw sourceError(
    id,
-   `catalog endpoint ${JSON.stringify(catalog.endpoint)} redirected to a different authority (${response.url}); the bearer token is never forwarded across authorities, so pin the catalog endpoint or fix its redirect`,
+   `catalog endpoint ${JSON.stringify(catalog.endpoint)} redirected to a different authority; the bearer token is never forwarded across authorities, so pin the catalog endpoint or fix its redirect`,
    "sources.iceberg-catalog-redirect",
   );
  }
@@ -890,10 +914,13 @@ export async function resolveCatalogMetadataLocation(id, remote, token) {
  let document;
  try {
   document = await response.json();
- } catch (error) {
+ } catch {
+  // The parser's message can quote the catalog-controlled body, which a
+  // compromised catalog can fill with echoed request detail (including the
+  // bearer token), so the error carries a fixed description only (spec §4).
   throw sourceError(
    id,
-   `catalog endpoint ${JSON.stringify(catalog.endpoint)} returned an unreadable table response (${error instanceof Error ? error.message : String(error)})`,
+   `catalog endpoint ${JSON.stringify(catalog.endpoint)} returned an unreadable table response; check the catalog's REST table endpoint`,
    "sources.iceberg-catalog",
   );
  }

@@ -93,11 +93,12 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
   let candidate;
   try {
    // The candidate re-stages the active generation's resolved inputs: a
-   // credential retry must not re-resolve Parquet-set membership, which
-   // changes only on initial open and explicit Refresh (spec
-   // 2026-09-28-0004 §3, LT-02). A failed catalog resolve never reaches
-   // this path — the catalog is resolved only at staging, so a query-time
-   // failure is always a storage read.
+   // credential retry must not re-resolve Parquet-set membership or the
+   // catalog's Iceberg metadata location, which change only on initial open
+   // and explicit Refresh (spec 2026-09-28-0004 §3, LT-02; ADR 0009
+   // resolve-once). A failed catalog resolve never reaches this path — the
+   // catalog is resolved only at staging, so a query-time failure is always
+   // a storage read.
    candidate = await stageGeneration(
     engine,
     config,
@@ -106,6 +107,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
     live,
     priorLiveErrors,
     pinnedParquetFilesOf(previous),
+    pinnedIcebergMetadataUrisOf(previous),
    );
   } catch (retryError) {
    throw liveReadError(config, retryError);
@@ -433,6 +435,7 @@ async function stageGeneration(
  live = null,
  priorLiveErrors = new Map(),
  pinnedParquetFiles = null,
+ pinnedIcebergMetadataUris = null,
 ) {
  const number = nextDashboardGeneration++;
  const schema = `featherbi_gen_${number}`;
@@ -510,6 +513,7 @@ async function stageGeneration(
    ? { liveCatalogTokens: catalogTokens }
    : {}),
   pinnedParquetFiles,
+  pinnedIcebergMetadataUris,
  });
  const generation = { number, schema, inputs, sources: registered.sources };
  try {
@@ -861,6 +865,16 @@ function pinnedParquetFilesOf(generation) {
  return pinned;
 }
 
+/** One live generation's resolved Iceberg metadata documents, keyed by
+ * source ID, for re-staging without re-resolving the catalog. */
+function pinnedIcebergMetadataUrisOf(generation) {
+ const pinned = {};
+ for (const [id, source] of Object.entries(generation?.sources ?? {})) {
+  if (source.icebergMetadataUri) pinned[id] = source.icebergMetadataUri;
+ }
+ return pinned;
+}
+
 /** Decorate failed live reads with the source name and the actionable remedy. */
 function liveReadError(config, error) {
  if (!error?.sourceId) return error;
@@ -868,7 +882,15 @@ function liveReadError(config, error) {
  if (!source?.remote) return error;
  const kind = classifyLiveError(error);
  // Live-only kinds point at endpoint/browser access, never packaged delivery
- // (spec 2026-09-28-0004 §4); single-file remotes keep their guidance.
+ // (spec 2026-09-28-0004 §4); single-file remotes keep their guidance. A
+ // catalog identity's guidance follows the failing endpoint, like the
+ // invalidation logic: only a catalog resolve failure (a
+ // `sources.iceberg-catalog*` code) names the catalog token — a
+ // credentials-classified failure on the table's objects is a storage
+ // failure and names the bucket, never the bearer token.
+ const catalogAuth =
+  source.remote.catalog &&
+  String(error?.code ?? "").startsWith("sources.iceberg-catalog");
  const remedy = source.remote.kind === "parquet-set"
   ? kind === "credentials"
    ? "the bucket rejected the credentials; the key needs list and read permission for the Parquet set, and the source will ask for credentials again if they are wrong or expired"
@@ -876,7 +898,7 @@ function liveReadError(config, error) {
     ? "the browser could not reach the bucket endpoint for listing or object reads (a CORS block looks the same); check the endpoint and the bucket's CORS access for this page"
     : "the live Parquet set read failed; check the bucket's listing and object access, its CORS configuration, and the credentials"
   : source.remote.kind === "iceberg"
-   ? source.remote.catalog
+   ? catalogAuth
     ? kind === "credentials"
      ? "the catalog endpoint rejected the bearer token; the token needs read access to the declared warehouse and table, and the source will ask for it again if it is wrong or expired"
      : kind === "network"

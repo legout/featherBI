@@ -84,9 +84,12 @@ function permissiveCors(request, response) {
 /**
  * Serve the T3-generated Iceberg fixture as an S3-style bucket over https
  * from 127.0.0.1 (object GET/HEAD with Range support). `requests` records
- * every object key so tests can prove which snapshot family was read.
+ * every object key so tests can prove which snapshot family was read;
+ * `control.rejectKeys` answers 403 for requests signed with one of those
+ * SigV4 access key IDs so a working private source can fail as a credential
+ * error on demand.
  */
-async function serveIcebergBucket(tls) {
+async function serveIcebergBucket(tls, control = {}) {
  const objects = new Map();
  for (const key of [
   "orders/data/00001.parquet",
@@ -105,6 +108,14 @@ async function serveIcebergBucket(tls) {
   { key: tls.key, cert: tls.cert },
   (request, response) => {
    if (permissiveCors(request, response)) return;
+   const signedKey = /Credential=([^/]+)\//.exec(
+    request.headers.authorization ?? "",
+   )?.[1];
+   if (signedKey && control.rejectKeys?.has(signedKey)) {
+    response.writeHead(403, { "Content-Length": 0 });
+    response.end();
+    return;
+   }
    const url = new URL(request.url, "https://s3.local");
    const key = url.pathname.replace(/^\/reports\//, "");
    requests.add(key);
@@ -180,6 +191,16 @@ async function serveCatalog(tls, control) {
     if (control.failWith) {
      response.writeHead(control.failWith, { "Content-Length": 0 });
      response.end();
+     return;
+    }
+    // A raw, non-JSON body (e.g. a compromised catalog echoing the request
+    // Authorization header) reaches the parser-failure path.
+    if (control.rawBody !== undefined) {
+     response.writeHead(200, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(control.rawBody),
+     });
+     response.end(control.rawBody);
      return;
     }
     const body = JSON.stringify({
@@ -689,6 +710,148 @@ test("a cross-authority catalog redirect fails visibly and never forwards the to
   for (const authorization of targetControl.authorizations) {
    expect(authorization).toBeNull();
   }
+ } finally {
+  await context.close();
+  await catalog.close();
+  await target.close();
+  await bucket.close();
+ }
+});
+
+/**
+ * LT-04 for private storage (spec 2026-09-28-0004 §3; ADR 0009
+ * resolve-once): a query-time S3 credential expiry on a catalog-identified
+ * table re-prompts and re-stages the ACTIVE generation's PINNED metadata
+ * document — the catalog is not re-resolved, so a new Iceberg commit that
+ * landed after open stays invisible until the explicit Refresh resolves
+ * anew and publishes the new snapshot atomically.
+ */
+test("an S3 retry keeps the pinned snapshot until an explicit Refresh", async ({
+ browser,
+}) => {
+ const tls = await selfSignedLocalhostCert();
+ const bucketControl = { rejectKeys: new Set() };
+ const bucket = await serveIcebergBucket(tls, bucketControl);
+ const catalogControl = {
+  metadataLocation: "s3://reports/orders/metadata/v1.metadata.json",
+  failWith: 0,
+  redirect: null,
+  requests: [],
+  authorizations: [],
+ };
+ const catalog = await serveCatalog(tls, catalogControl);
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  const config = catalogDashboardConfig({
+   auth: "s3",
+   catalogOrigin: catalog.origin,
+   storageHost: new URL(bucket.origin).host,
+  });
+  const { pagePath } = await writeDashboardPage(config, "live-iceberg-catalog-s3-retry.html");
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+
+  // Initial open prompts for the catalog token and then the S3 credentials,
+  // resolves v1 once, and publishes the pinned 2-row snapshot (A, C).
+  await answerPrompts(page, { s3: true });
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText("2");
+  await expect(page.locator("#filter-row option")).toHaveText(["all", "A", "C"]);
+  expect(catalogControl.requests.length).toBe(1);
+
+  // A new Iceberg commit lands (the catalog now resolves v2, 3 rows) while
+  // the accepted S3 key expires.
+  catalogControl.metadataLocation = "s3://reports/orders/metadata/v2.metadata.json";
+  bucketControl.rejectKeys.add("key-one");
+
+  // The next filtered read fails as a credential error; the retry re-prompts
+  // for the S3 credentials only and must re-stage the PINNED v1 document:
+  // still 2 rows and A/C options — a re-resolve would surface v2's 3 rows.
+  await page.locator("#apply-filters").click();
+  await expect(page.locator("dialog h2")).toHaveText("Credentials for orders");
+  await expect(page.locator('dialog input[aria-label="Bearer token"]')).toHaveCount(0);
+  await page.locator('dialog input[aria-label="Key ID"]').fill("key-two");
+  await page.locator('dialog input[aria-label="Secret"]').fill("s3-secret-2b8f0e4d");
+  await page.locator('dialog button[type="submit"]').click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText("2");
+  await expect(page.locator("#filter-row option")).toHaveText(["all", "A", "C"]);
+  // The credential retry never re-asked the catalog.
+  expect(catalogControl.requests.length).toBe(1);
+
+  // Explicit Refresh re-resolves the catalog: v2 (A, B, C) publishes.
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText("3");
+  await expect(page.locator("#filter-row option")).toHaveText(["all", "A", "B", "C"]);
+  expect(catalogControl.requests.length).toBe(2);
+ } finally {
+  await context.close();
+  await catalog.close();
+  await bucket.close();
+ }
+});
+
+/**
+ * Spec §4 credential exposure: a compromised catalog can echo the bearer
+ * token it received — into a cross-authority redirect Location or a
+ * malformed response body. Neither may reach the visible error: the
+ * resolver reports the declared endpoint and fixed failure descriptions
+ * only, so the token never appears in the error DOM or page content.
+ */
+test("a token-echoing catalog never surfaces the bearer token in errors", async ({
+ browser,
+}) => {
+ const tls = await selfSignedLocalhostCert();
+ const bucket = await serveIcebergBucket(tls);
+ const targetControl = { requests: [], authorizations: [] };
+ const target = await serveRedirectTarget(tls, targetControl);
+ const catalogControl = {
+  metadataLocation: "s3://reports/orders/metadata/v1.metadata.json",
+  failWith: 0,
+  // The redirect Location echoes the literal bearer token into the
+  // followed URL on the other authority.
+  redirect: `${target.origin}${CATALOG_TABLE_PATH}?echo=${encodeURIComponent(CATALOG_TOKEN)}`,
+  rawBody: undefined,
+  requests: [],
+  authorizations: [],
+ };
+ const catalog = await serveCatalog(tls, catalogControl);
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  const config = catalogDashboardConfig({
+   auth: "none",
+   catalogOrigin: catalog.origin,
+   storageHost: new URL(bucket.origin).host,
+  });
+  const { pagePath } = await writeDashboardPage(config, "live-iceberg-catalog-echo.html");
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+
+  // Redirect echo: the followed URL carries the token, but the boot error
+  // names the declared endpoint and the fixed failure only.
+  await answerPrompts(page);
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "error");
+  const redirectFailure = await page.locator("#dashboard-status").textContent();
+  expect(redirectFailure).toContain("orders");
+  expect(redirectFailure).toContain(catalog.origin);
+  expect(redirectFailure).toContain("different authority");
+  expect(redirectFailure.includes(CATALOG_TOKEN)).toBe(false);
+  expect((await page.content()).includes(CATALOG_TOKEN)).toBe(false);
+
+  // Malformed-body echo: the catalog answers 200 with the token-bearing
+  // text as its body; the parse failure stays fixed-text as well.
+  catalogControl.redirect = null;
+  catalogControl.rawBody = `Bearer ${CATALOG_TOKEN} is not JSON`;
+  await page.reload({ waitUntil: "load" });
+  await answerPrompts(page);
+  await expect(page.locator("#dashboard-status")).toHaveAttribute("data-state", "error");
+  const bodyFailure = await page.locator("#dashboard-status").textContent();
+  expect(bodyFailure).toContain("orders");
+  expect(bodyFailure).toContain(catalog.origin);
+  expect(bodyFailure).toContain("unreadable table response");
+  expect(bodyFailure.includes(CATALOG_TOKEN)).toBe(false);
+  expect((await page.content()).includes(CATALOG_TOKEN)).toBe(false);
  } finally {
   await context.close();
   await catalog.close();

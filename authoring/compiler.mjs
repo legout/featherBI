@@ -206,9 +206,9 @@ function validateRemoteSources(project, filename, document, lineCounter) {
   const iceberg = remote.kind === "iceberg";
   const sourceNote = `source ${JSON.stringify(source.id)}: `;
   if (iceberg) {
-   // Iceberg tables are metadata-URI identified in this revision: a REST
-   // `catalog` identity is a later ticket and stays an unknown field, and
-   // file-shaped fields never apply to a table source (spec §2.2).
+   // Iceberg tables carry exactly one identity (spec §2.2): a REST catalog
+   // selector or a versioned metadata URI; file-shaped fields never apply
+   // to a table source.
    const conflicts = ["uri", "format", "selector", "filename"].filter(
     (field) => remote[field] !== undefined,
    );
@@ -218,17 +218,78 @@ function validateRemoteSources(project, filename, document, lineCounter) {
      document,
      lineCounter,
      ["sources", index, "remote", conflicts[0]],
-     `${sourceNote}an iceberg table cannot declare ${conflicts.map((field) => JSON.stringify(field)).join(" and ")}; it is identified by "metadataUri" alone`,
+     `${sourceNote}an iceberg table cannot declare ${conflicts.map((field) => JSON.stringify(field)).join(" and ")}; it is identified by exactly one of "catalog" or "metadataUri"`,
     );
    }
-   if (!/^s3:\/\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*\.metadata\.json$/.test(remote.metadataUri)) {
+   if (remote.catalog !== undefined && remote.metadataUri !== undefined) {
     throw yamlError(
      filename,
      document,
      lineCounter,
      ["sources", index, "remote", "metadataUri"],
-     `${sourceNote}metadataUri must be an s3:// URI of a versioned .metadata.json document, such as "s3://reports/orders/metadata/v3.metadata.json"`,
+     `${sourceNote}an iceberg table cannot declare both "catalog" and "metadataUri"; use exactly one identity`,
     );
+   }
+   if (remote.catalog !== undefined) {
+    if (remote.catalogAuth === undefined) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "catalogAuth"],
+      `${sourceNote}a catalog identity requires "catalogAuth: none" or "catalogAuth: bearer"`,
+     );
+    }
+    if (!/^https:\/\//i.test(remote.catalog.endpoint)) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "catalog", "endpoint"],
+      `${sourceNote}catalog endpoint must be an HTTPS URL, such as "https://catalog.example.com"`,
+     );
+    }
+    if (
+     /^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(remote.catalog.endpoint) ||
+     looksLikeCredentialMaterial(remote.catalog.endpoint) ||
+     looksLikeCredentialMaterial(remote.catalog.endpoint.match(/[?#](.*)$/)?.[1] ?? "")
+    ) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "catalog", "endpoint"],
+      `${sourceNote}catalog endpoint must not contain credentials or secret-looking values`,
+     );
+    }
+   } else {
+    if (remote.catalogAuth !== undefined) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "catalogAuth"],
+      `${sourceNote}"catalogAuth" requires a catalog identity; a metadataUri table has no catalog authentication`,
+     );
+    }
+    if (remote.metadataUri === undefined) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote"],
+      `${sourceNote}an iceberg table requires exactly one of "catalog" or "metadataUri"`,
+     );
+    }
+    if (!/^s3:\/\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*\.metadata\.json$/.test(remote.metadataUri)) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "metadataUri"],
+      `${sourceNote}metadataUri must be an s3:// URI of a versioned .metadata.json document, such as "s3://reports/orders/metadata/v3.metadata.json"`,
+     );
+    }
    }
   } else {
    const conflicts = ["format", "filename"].filter((field) => remote[field] !== undefined);
@@ -259,8 +320,26 @@ function validateRemoteSources(project, filename, document, lineCounter) {
      `${sourceNote}metadataUri requires remote.kind: iceberg`,
     );
    }
+   if (remote.catalog !== undefined) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "catalog"],
+     `${sourceNote}catalog requires remote.kind: iceberg`,
+    );
+   }
+   if (remote.catalogAuth !== undefined) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "catalogAuth"],
+     `${sourceNote}catalogAuth requires remote.kind: iceberg`,
+    );
+   }
   }
-  if (iceberg) {
+  if (iceberg && remote.metadataUri !== undefined) {
    if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(remote.metadataUri)) {
     throw yamlError(
      filename,
@@ -396,21 +475,36 @@ function runtimeSource(source) {
  if (!source.remote) return source;
  const remote = source.remote;
  if (remote.kind === "iceberg") {
-  // Live Iceberg table by metadata URI (spec 2026-09-28-0004 §2.2): the
-  // recipient's browser loads the pinned trusted Iceberg capability and
-  // scans the exact declared versioned metadata document. Only the declared
-  // non-secret identity travels; no snapshot inventory or credentials
-  // compile in.
+  // Live Iceberg table (spec 2026-09-28-0004 §2.2): the recipient's browser
+  // loads the pinned trusted Iceberg capability and — for a catalog
+  // identity — resolves `metadata-location` once per generation with a
+  // bearer-authenticated fetch before scanning the pinned versioned
+  // document. Only the declared non-secret identity travels; no snapshot
+  // inventory, resolved location, or credential compiles in (LT-07).
   return {
    id: source.id,
    schema: source.schema,
-   remote: {
-    kind: "iceberg",
-    metadataUri: remote.metadataUri,
-    auth: remote.auth,
-    ...(remote.region ? { region: remote.region } : {}),
-    ...(remote.endpoint ? { endpoint: remote.endpoint } : {}),
-   },
+   remote: remote.catalog
+    ? {
+       kind: "iceberg",
+       catalog: {
+        endpoint: remote.catalog.endpoint,
+        warehouse: remote.catalog.warehouse,
+        namespace: remote.catalog.namespace,
+        table: remote.catalog.table,
+       },
+       catalogAuth: remote.catalogAuth,
+       auth: remote.auth,
+       ...(remote.region ? { region: remote.region } : {}),
+       ...(remote.endpoint ? { endpoint: remote.endpoint } : {}),
+      }
+    : {
+       kind: "iceberg",
+       metadataUri: remote.metadataUri,
+       auth: remote.auth,
+       ...(remote.region ? { region: remote.region } : {}),
+       ...(remote.endpoint ? { endpoint: remote.endpoint } : {}),
+      },
   };
  }
  if (remote.kind === "parquet-set") {
@@ -774,8 +868,7 @@ function preferredSchemaError(errors, project) {
  // An unknown field is the actionable cause when it is the only problem:
  // it names itself (and its source position), while the missing-required
  // cascade it triggers does not. Errors from inside a `oneOf` alternative
- // are competing-variant noise, not the cause, so they never win here
- // (this keeps an Iceberg `catalog` identity naming source and field).
+ // are competing-variant noise, not the cause, so they never win here.
  const unknown = errors.find(
   (error) =>
    error.keyword === "additionalProperties" &&

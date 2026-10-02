@@ -71,7 +71,7 @@ test("iceberg identity conflicts and invalid metadata URIs fail naming the sourc
  const cases = [
   {
    remote: `{kind: iceberg, metadataUri: "s3://reports/orders/metadata/v3.metadata.json", uri: "s3://reports/orders/", auth: none, delivery: live}`,
-   match: /dashboard\.yaml:\d+:\d+.*source "orders".*cannot declare "uri".*"metadataUri" alone/,
+   match: /dashboard\.yaml:\d+:\d+.*source "orders".*cannot declare "uri".*exactly one of "catalog" or "metadataUri"/,
   },
   {
    remote: `{kind: iceberg, metadataUri: "s3://reports/orders/metadata/v3.metadata.json", format: parquet, auth: none, delivery: live}`,
@@ -106,17 +106,6 @@ test("iceberg identity conflicts and invalid metadata URIs fail naming the sourc
   const dashboard = await project(fixture.remote);
   await assert.rejects(() => compileProject(dashboard), fixture.match);
  }
-});
-
-test("a REST catalog identity stays an unknown field naming source and field", async () => {
- // `catalog` arrives with T4; until then it is an unknown remote field.
- const dashboard = await project(
-  `{kind: iceberg, catalog: {endpoint: "https://catalog.example.com"}, auth: none, delivery: live}`,
- );
- await assert.rejects(
-  () => compileProject(dashboard),
-  /dashboard\.yaml:\d+:\d+.*sources\.0\.remote\.catalog.*additional property/,
- );
 });
 
 test("authored SQL cannot invoke iceberg_scan or extension commands", async () => {
@@ -192,6 +181,14 @@ test("the runtime contract accepts the iceberg remote shape and nothing wider", 
  assert.equal(validateConfig(base).ok, true);
  for (const extra of [
   { catalog: { endpoint: "https://catalog.example.com" } },
+  {
+   catalog: {
+    endpoint: "https://catalog.example.com",
+    warehouse: "analytics",
+    namespace: "sales",
+    table: "orders",
+   },
+  },
   { delivery: "live" },
   { uri: "s3://reports/orders/" },
   { selector: { glob: "part-*.parquet" } },

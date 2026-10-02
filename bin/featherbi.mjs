@@ -17,7 +17,7 @@ try {
  } else if (command === "profile") {
   const options = parseSimpleArgs(
    args,
-   new Set(["--include-values", "--iceberg-metadata"]),
+   new Set(["--include-values", "--iceberg-metadata", "--iceberg-catalog"]),
   );
   const profileArgs = [
    "run",
@@ -40,6 +40,16 @@ try {
   if (options.glob) profileArgs.push("--glob", options.glob);
   if (options.manifest) profileArgs.push("--manifest", options.manifest);
   if (options.icebergMetadata) profileArgs.push("--iceberg-metadata");
+  if (options.icebergCatalog) profileArgs.push("--iceberg-catalog");
+  if (options.catalogWarehouse) profileArgs.push("--catalog-warehouse", options.catalogWarehouse);
+  if (options.catalogNamespace) profileArgs.push("--catalog-namespace", options.catalogNamespace);
+  if (options.catalogTable) profileArgs.push("--catalog-table", options.catalogTable);
+  if (options.catalogAuth) {
+   if (!["none", "bearer"].includes(options.catalogAuth)) {
+    throw new Error(`--catalog-auth must be none or bearer, found ${JSON.stringify(options.catalogAuth)}`);
+   }
+   profileArgs.push("--catalog-auth", options.catalogAuth);
+  }
   if (options.includeValues) profileArgs.push("--include-values");
   if (options.output) {
    await mkdir(path.dirname(path.resolve(options.output)), { recursive: true });
@@ -158,6 +168,11 @@ function parseSimpleArgs(args, booleans = new Set()) {
   "--glob": "glob",
   "--manifest": "manifest",
   "--iceberg-metadata": "icebergMetadata",
+  "--iceberg-catalog": "icebergCatalog",
+  "--catalog-warehouse": "catalogWarehouse",
+  "--catalog-namespace": "catalogNamespace",
+  "--catalog-table": "catalogTable",
+  "--catalog-auth": "catalogAuth",
   "--project": "project",
   "--output": "output",
   "--include-values": "includeValues",
@@ -202,7 +217,7 @@ async function ensureValidator() {
 
 function printHelp() {
 console.log(`featherbi setup [--global] [--agent ID] [--yes|--no] [--design]
-featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--glob PATTERN | --manifest URI | --iceberg-metadata] [--output FILE] [--include-values]
+featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--glob PATTERN | --manifest URI | --iceberg-metadata | --iceberg-catalog --catalog-warehouse ID --catalog-namespace ID --catalog-table ID --catalog-auth none|bearer] [--output FILE] [--include-values]
 featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config.json]
 featherbi validate --config CONFIG
 featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]

@@ -221,8 +221,9 @@ function collectSemanticIssues(config, issues) {
     }
     if (source.remote) {
       // Live remote identities carry their location in `uri` (single-file,
-      // Parquet set) or `metadataUri` (Iceberg table); both get the same
-      // credential-material admission on the URI and its query/fragment.
+      // Parquet set), `metadataUri` (Iceberg table), or `catalog.endpoint`
+      // (Iceberg REST catalog); each gets the same credential-material
+      // admission on the value and its query/fragment.
       for (const location of ["uri", "metadataUri"]) {
         const value = source.remote[location];
         if (typeof value !== "string") continue;
@@ -247,6 +248,19 @@ function collectSemanticIssues(config, issues) {
           `${basePath}.remote.endpoint`,
           "remote.credentials-in-endpoint",
           "remote endpoint must not contain credentials or secret-looking values",
+        );
+      }
+      const catalogEndpoint = source.remote.catalog?.endpoint;
+      if (
+        typeof catalogEndpoint === "string" &&
+        (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(catalogEndpoint) ||
+          looksLikeCredentialMaterial(catalogEndpoint) ||
+          looksLikeCredentialMaterial(catalogEndpoint.match(/[?#](.*)$/)?.[1] ?? ""))
+      ) {
+        issue(
+          `${basePath}.remote.catalog.endpoint`,
+          "remote.credentials-in-endpoint",
+          "catalog endpoint must not contain credentials or secret-looking values",
         );
       }
     }

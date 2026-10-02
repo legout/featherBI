@@ -59,6 +59,8 @@ export async function mountDashboard({
     onState: render,
     liveCredentials: (source, priorError) =>
      promptLiveCredentials(root, source, priorError),
+    liveCatalogToken: (source, priorError) =>
+     promptCatalogToken(root, source, priorError),
    });
    root.querySelector("#replace-files").textContent = "Replace selected files";
    return controller;
@@ -459,10 +461,15 @@ function buildSources(container, sources) {
    const note = document.createElement("p");
    note.className = "remote-source";
    note.dataset.remoteSource = source.id;
-   note.textContent =
-    source.remote.auth === "s3"
-     ? `${source.id} (remote; asks for credentials on first use)`
-     : `${source.id} (remote; reads live)`;
+   // Name exactly what the recipient will be asked for, and only when a
+   // prompt exists for this source (spec §4: prompts appear on first need).
+   const asks = [
+    source.remote.catalogAuth === "bearer" ? "a catalog token" : null,
+    source.remote.auth === "s3" ? "credentials" : null,
+   ].filter(Boolean);
+   note.textContent = asks.length
+    ? `${source.id} (remote; asks for ${asks.join(" and ")} on first use)`
+    : `${source.id} (remote; reads live)`;
    container.append(note);
    continue;
   }
@@ -516,7 +523,11 @@ export function promptLiveCredentials(root, source, priorError) {
         : "the default AWS S3 endpoint"
       }.`
     : remote?.kind === "iceberg"
-      ? `Reads the Iceberg table identified by ${remote.metadataUri} from ${
+      ? `Reads the Iceberg table ${
+         remote.catalog
+          ? `resolved from the catalog at ${remote.catalog.endpoint}`
+          : `identified by ${remote.metadataUri}`
+         } from ${
          remote.endpoint
           ? `S3 endpoint ${remote.endpoint}`
           : "the default AWS S3 endpoint"
@@ -604,6 +615,78 @@ function credentialField(text, type, name, required) {
  input.setAttribute("aria-label", text);
  label.prepend(input);
  return { label, input };
+}
+
+/**
+ * Ask the recipient once per session for one private Iceberg REST catalog's
+ * bearer token (spec §2.2, §4; LT-04). The prompt is separate from the S3
+ * credential prompt and distinct from it: it names the HTTPS catalog
+ * endpoint before entry, takes one token, and the value lives only in the
+ * session's memory — used for that endpoint's resolve request and never
+ * stored, logged, embedded, or passed to any storage read.
+ */
+export function promptCatalogToken(root, source, priorError) {
+ return new Promise((resolve) => {
+  const dialog = document.createElement("dialog");
+  const heading = Object.assign(document.createElement("h2"), {
+   textContent: `Catalog token for ${source.id}`,
+  });
+  // Display the named HTTPS catalog endpoint before token entry (spec §4).
+  const destination = Object.assign(document.createElement("p"), {
+   textContent: `Authenticates to the catalog at ${source.remote?.catalog?.endpoint}.`,
+  });
+  destination.dataset.credentialDestination = "";
+  const note = Object.assign(document.createElement("p"), {
+   textContent:
+    "Used only for this session's catalog reads; never stored or included in the dashboard.",
+  });
+  const errorLine = Object.assign(document.createElement("p"), {
+   textContent: priorError ? `Last attempt failed: ${priorError}` : "",
+  });
+  errorLine.setAttribute("role", "alert");
+  errorLine.dataset.credentialError = "";
+  const tokenField = credentialField("Bearer token", "password", "token", true);
+  const submit = Object.assign(document.createElement("button"), {
+   type: "submit",
+   textContent: "Connect catalog",
+  });
+  const cancel = Object.assign(document.createElement("button"), {
+   type: "button",
+   textContent: "Cancel",
+  });
+  let settled = false;
+  const done = (value) => {
+   if (settled) return;
+   settled = true;
+   dialog.close();
+   dialog.remove();
+   resolve(value);
+  };
+  cancel.addEventListener("click", () => done(null));
+  dialog.addEventListener("close", () => {
+   if (settled) return;
+   settled = true;
+   dialog.remove();
+   resolve(null);
+  });
+  const form = document.createElement("form");
+  form.append(
+   heading,
+   destination,
+   note,
+   errorLine,
+   tokenField.label,
+   submit,
+   cancel,
+  );
+  form.addEventListener("submit", (event) => {
+   event.preventDefault();
+   done(tokenField.input.value);
+  });
+  dialog.append(form);
+  (root.body ?? root).append(dialog);
+  dialog.showModal();
+ });
 }
 
 function buildPlayground(root, config, editorCapability) {

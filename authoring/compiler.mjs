@@ -233,24 +233,56 @@ function validateRemoteSources(project, filename, document, lineCounter) {
      `${sourceNote}parquet-set uri must be an s3:// prefix ending with "/"`,
     );
    }
-   const glob = remote.selector.glob;
-   if (!glob.endsWith(".parquet")) {
+   const selector = remote.selector ?? {};
+   const declared = ["glob", "manifest"].filter((field) => selector[field] !== undefined);
+   if (declared.length === 2) {
     throw yamlError(
      filename,
      document,
      lineCounter,
-     ["sources", index, "remote", "selector", "glob"],
-     `${sourceNote}glob must be a relative Parquet-object pattern ending with ".parquet"`,
+     ["sources", index, "remote", "selector", declared[0]],
+     `${sourceNote}a parquet-set selector cannot declare both "glob" and "manifest"; use exactly one selector`,
     );
    }
-   if (glob.split("/").includes("..")) {
+   if (declared.length === 0) {
     throw yamlError(
      filename,
      document,
      lineCounter,
-     ["sources", index, "remote", "selector", "glob"],
-     `${sourceNote}glob must not contain ".." segments; it stays below the declared prefix`,
+     ["sources", index, "remote", "selector"],
+     `${sourceNote}a parquet-set selector requires exactly one of "glob" or "manifest"`,
     );
+   }
+   if (declared[0] === "manifest") {
+    if (!/^s3:\/\/[A-Za-z0-9._~/-]+\.json$/.test(selector.manifest)) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "selector", "manifest"],
+      `${sourceNote}manifest must be an s3:// URI of a .json object, such as "s3://reports/sales/manifest.json"`,
+     );
+    }
+   } else {
+    const glob = selector.glob;
+    if (!glob.endsWith(".parquet")) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "selector", "glob"],
+      `${sourceNote}glob must be a relative Parquet-object pattern ending with ".parquet"`,
+     );
+    }
+    if (glob.split("/").includes("..")) {
+     throw yamlError(
+      filename,
+      document,
+      lineCounter,
+      ["sources", index, "remote", "selector", "glob"],
+      `${sourceNote}glob must not contain ".." segments; it stays below the declared prefix`,
+     );
+    }
    }
   }
   if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(remote.uri)) {
@@ -305,15 +337,19 @@ function runtimeSource(source) {
  const remote = source.remote;
  if (remote.kind === "parquet-set") {
   // Live Parquet file set (spec 2026-09-28-0004 §2.1): the recipient's
-  // browser resolves the prefix glob once per generation. Only the declared
-  // non-secret metadata travels; no file inventory or credentials compile in.
+  // browser resolves the prefix glob or fetches the manifest once per
+  // generation. Only the declared non-secret metadata travels; no file
+  // inventory or credentials compile in.
   return {
    id: source.id,
    schema: source.schema,
    remote: {
     kind: "parquet-set",
     uri: remote.uri,
-    selector: { glob: remote.selector.glob },
+    selector:
+     remote.selector.manifest !== undefined
+      ? { manifest: remote.selector.manifest }
+      : { glob: remote.selector.glob },
     auth: remote.auth,
     ...(remote.region ? { region: remote.region } : {}),
     ...(remote.endpoint ? { endpoint: remote.endpoint } : {}),

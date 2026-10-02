@@ -201,7 +201,59 @@ export async function compileProject(projectPath) {
 function validateRemoteSources(project, filename, document, lineCounter) {
  for (const [index, source] of project.sources.entries()) {
   if (!source.remote) continue;
-  if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.uri)) {
+  const remote = source.remote;
+  const parquetSet = remote.kind === "parquet-set";
+  const sourceNote = `source ${JSON.stringify(source.id)}: `;
+  const conflicts = ["format", "filename"].filter((field) => remote[field] !== undefined);
+  if (parquetSet && conflicts.length > 0) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", conflicts[0]],
+    `${sourceNote}a parquet-set selector cannot declare ${conflicts.map((field) => JSON.stringify(field)).join(" and ")}; remove them or use a single-file remote`,
+   );
+  }
+  if (!parquetSet && remote.selector !== undefined) {
+   throw yamlError(
+    filename,
+    document,
+    lineCounter,
+    ["sources", index, "remote", "selector"],
+    `${sourceNote}selector requires remote.kind: parquet-set`,
+   );
+  }
+  if (parquetSet) {
+   if (!remote.uri.endsWith("/")) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "uri"],
+     `${sourceNote}parquet-set uri must be an s3:// prefix ending with "/"`,
+    );
+   }
+   const glob = remote.selector.glob;
+   if (!glob.endsWith(".parquet")) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "selector", "glob"],
+     `${sourceNote}glob must be a relative Parquet-object pattern ending with ".parquet"`,
+    );
+   }
+   if (glob.split("/").includes("..")) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "selector", "glob"],
+     `${sourceNote}glob must not contain ".." segments; it stays below the declared prefix`,
+    );
+   }
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(remote.uri)) {
    throw yamlError(
     filename,
     document,
@@ -234,6 +286,8 @@ function validateRemoteSources(project, filename, document, lineCounter) {
    );
   }
   if (!remoteMemberName(source)) {
+   // Parquet sets are live-only prefixes, never packaged file members.
+   if (parquetSet) continue;
    throw yamlError(
     filename,
     document,
@@ -249,6 +303,23 @@ function validateRemoteSources(project, filename, document, lineCounter) {
 function runtimeSource(source) {
  if (!source.remote) return source;
  const remote = source.remote;
+ if (remote.kind === "parquet-set") {
+  // Live Parquet file set (spec 2026-09-28-0004 §2.1): the recipient's
+  // browser resolves the prefix glob once per generation. Only the declared
+  // non-secret metadata travels; no file inventory or credentials compile in.
+  return {
+   id: source.id,
+   schema: source.schema,
+   remote: {
+    kind: "parquet-set",
+    uri: remote.uri,
+    selector: { glob: remote.selector.glob },
+    auth: remote.auth,
+    ...(remote.region ? { region: remote.region } : {}),
+    ...(remote.endpoint ? { endpoint: remote.endpoint } : {}),
+   },
+  };
+ }
  if (remote.delivery === "live") {
   // Live sources carry their remote metadata into the runtime config; the
   // recipient's browser reads the URI directly (public) or after prompting

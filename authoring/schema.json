@@ -467,14 +467,15 @@
         "selector": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "glob"
-          ],
           "properties": {
             "glob": {
               "type": "string",
               "minLength": 1,
               "pattern": "^(?!/)(?!\\.\\./)[^\\\\\\u0000-\\u001f\\u007f-\\u009f]+$"
+            },
+            "manifest": {
+              "type": "string",
+              "minLength": 1
             }
           }
         },

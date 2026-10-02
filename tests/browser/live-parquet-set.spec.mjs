@@ -70,6 +70,9 @@ async function selfSignedLocalhostCert() {
  * XML on `?list-type=2` (path-style bucket root) plus object HEAD/GET with
  * Range support and permissive CORS. The served key set is mutable so the test
  * can land a new object under the declared prefix mid-session,
+ * `control.manifest` serves a mutable JSON manifest document at the
+ * bucket-root object `manifest.json` (outside the declared prefix) with
+ * `control.failManifest` failing only that document,
  * `control.failObjects` makes object reads fail while listing keeps working
  * so a refresh can fail after membership resolved, and `control.rejectKeys`
  * answers 403 for requests signed with one of those SigV4 access key IDs so a
@@ -122,6 +125,32 @@ async function serveS3StyleBucket(tls, bytes, keys, control = { failObjects: fal
     return;
    }
    const key = url.pathname.replace(/^\/reports\//, "");
+   // A mutable manifest document (bucket-root object, outside the declared
+   // prefix) so a manifest-selector source can observe membership changing
+   // between generations; `control.failManifest` makes only the manifest
+   // unreadable while the Parquet objects stay readable.
+   if (control.manifest && key === "manifest.json") {
+    if (control.failManifest) {
+     response.writeHead(404, { "Content-Length": 0 });
+     response.end();
+     return;
+    }
+    const body = Buffer.from(JSON.stringify({ files: control.manifest.files }));
+    if (request.method === "HEAD") {
+     response.writeHead(200, {
+      "Content-Length": body.length,
+      "Accept-Ranges": "bytes",
+     });
+     response.end();
+     return;
+    }
+    response.writeHead(200, {
+     "Content-Length": body.length,
+     "Accept-Ranges": "bytes",
+    });
+    response.end(body);
+    return;
+   }
    if (control.failObjects) {
     response.writeHead(404, { "Content-Length": 0 });
     response.end();
@@ -467,6 +496,179 @@ test("a credential retry re-stages the pinned membership until an explicit Refre
 
   // Explicit Refresh re-resolves the glob: the new part joins the source.
   await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "15",
+  );
+ } finally {
+  await rm(pagePath, { force: true });
+  await context.close();
+  await fixture.close();
+ }
+});
+
+/**
+ * LT-03 for manifest selectors: a remote JSON manifest resolves relative
+ * keys under the declared prefix (exact duplicates deduplicate before any
+ * view publishes), membership stays pinned for filtering, and a changed
+ * manifest appears only in a new generation through the explicit Refresh.
+ * The manifest lives outside the declared prefix, so its fetch also proves
+ * the manifest-scoped credential path, and a manifest that becomes
+ * unreadable fails the refresh while the prior generation stays usable
+ * (LT-06) — never recommending packaged delivery for a live-only kind.
+ */
+test("a manifest selector pins its resolved membership until an explicit Refresh", async ({
+ browser,
+}) => {
+ const bytes = await readFile(
+  path.join(rootDir, ".artifacts", "fixtures", "inspections.parquet"),
+ );
+ // Each part serves the same 5-row fixture (3 rows station SJ per part).
+ const keys = new Set(["reports/part-1.parquet", "reports/part-2.parquet"]);
+ const control = {
+  failObjects: false,
+  failManifest: false,
+  // The duplicate entry must deduplicate: two parts, not three reads.
+  manifest: { files: ["part-1.parquet", "part-2.parquet", "part-1.parquet"] },
+ };
+ const tls = await selfSignedLocalhostCert();
+ const fixture = await serveS3StyleBucket(tls, bytes, keys, control);
+ const pagePath = path.join(
+  rootDir,
+  ".artifacts",
+  "browser",
+  "live-parquet-manifest.html",
+ );
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  const { html } = await renderDashboard({
+   config: {
+    contract: 2,
+    app: "grid",
+    title: "Live parquet manifest set",
+    data: {
+     mode: "upload",
+     sources: [
+      {
+       id: "sales",
+       schema: {
+        order_number: { type: "string", nullable: false },
+        test_station_identifier: { type: "string", nullable: false },
+       },
+       remote: {
+        kind: "parquet-set",
+        uri: "s3://reports/reports/",
+        selector: { manifest: "s3://reports/manifest.json" },
+        auth: "none",
+        endpoint: new URL(fixture.origin).host,
+       },
+      },
+     ],
+    },
+    filters: [
+     {
+      id: "station",
+      kind: "select",
+      source: "sales",
+      column: "test_station_identifier",
+      default: null,
+     },
+    ],
+    queries: {
+     records: {
+      sql: "SELECT count(*) AS records FROM sales WHERE ($station IS NULL OR test_station_identifier = $station)",
+      params: ["station"],
+     },
+    },
+    layout: [
+     {
+      id: "kpi_records",
+      type: "kpi",
+      query: "records",
+      field: "records",
+      label: "Sales records",
+      x: 1,
+      y: 1,
+      width: 12,
+      height: 1,
+     },
+    ],
+    theme: "neutral",
+   },
+  });
+  await writeFile(pagePath, html, "utf8");
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+
+  // Open: the manifest resolves both parts (duplicates deduplicated).
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "10",
+  );
+
+  // The manifest changes after the generation opened: a third part joins it
+  // and lands under the declared prefix.
+  control.manifest.files = [
+   "part-1.parquet",
+   "part-2.parquet",
+   "part-3.parquet",
+  ];
+  keys.add("reports/part-3.parquet");
+
+  // Filtering must not re-fetch the manifest: the pinned two parts stay.
+  await page.locator("#filter-station").selectOption({ label: "SJ" });
+  await page.locator("#apply-filters").click();
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "6",
+  );
+
+  // Explicit Refresh re-fetches the manifest: the third part joins the
+  // source only in the new generation.
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "15",
+  );
+  await page.locator("#filter-station").selectOption({ label: "SJ" });
+  await page.locator("#apply-filters").click();
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "9",
+  );
+
+  // LT-06: a refresh whose manifest cannot be read keeps the prior active
+  // generation usable with a source-specific error and never publishes a
+  // partial refresh; the remedy never suggests packaged delivery.
+  control.failManifest = true;
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "error",
+  );
+  const failure = await page.locator("#dashboard-status").textContent();
+  expect(failure).toContain("sales");
+  expect(failure).toContain("Showing prior results");
+  expect(failure).toContain("manifest");
+  expect(failure).not.toContain("packaged build");
+  // The retained snapshot is the last committed read: the SJ filter over the
+  // refreshed three-part generation.
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "9",
+  );
+
+  // The retained generation keeps serving filtered reads after the failed
+  // candidate (and its manifest fetch secret) was cleaned up.
+  control.failManifest = false;
+  await page.locator("#filter-station").selectOption({ label: "all" });
+  await page.locator("#apply-filters").click();
   await expect(page.locator("#dashboard-status")).toHaveAttribute(
    "data-state",
    "ready",

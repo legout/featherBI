@@ -25,6 +25,10 @@ REMOTE_INPUT = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
 ENV_PREFIX = "FTHR_S3_"
 # Upper bound on one profiled Parquet file set (spec 2026-09-28-0004 §2.1).
 PARQUET_SET_MAX_FILES = 10_000
+# Upper bound on one Parquet-set manifest document (spec §2.1).
+PARQUET_SET_MANIFEST_MAX_BYTES = 2 * 1024 * 1024
+# Shape one Parquet-set manifest URI must have (spec §2.1).
+PARQUET_SET_MANIFEST_URI = re.compile(r"^s3://[A-Za-z0-9._~/-]+\.json$")
 
 
 def identifier(name):
@@ -172,6 +176,96 @@ def resolve_parquet_set(con, input_path, selector_glob, source_id):
     return sorted(files)
 
 
+def manifest_entry_reason(entry):
+    """One rejection reason for an invalid manifest entry, or None."""
+    if not isinstance(entry, str):
+        return "is not a string"
+    if entry == "":
+        return "is empty"
+    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in entry):
+        return "contains control characters"
+    if entry.startswith("/"):
+        return "is absolute; entries are relative to the declared prefix"
+    if "://" in entry:
+        return "is a URL, not a relative object key"
+    if "\\" in entry:
+        return 'uses a backslash separator; use "/"'
+    if ".." in entry.split("/"):
+        return 'escapes the declared prefix with ".."'
+    if "?" in entry or "#" in entry:
+        return "carries a query or fragment; entries are plain object keys"
+    if not entry.endswith(".parquet"):
+        return "is not a Parquet object"
+    return None
+
+
+def resolve_manifest_set(con, input_path, manifest, source_id):
+    """Resolve one Parquet set's manifest into a bounded, sorted file list.
+
+    Fetches the manifest through the same native DuckDB secret machinery as
+    the object reads, enforces the 2 MiB and 10,000 caps before parsing, and
+    validates every entry as a relative Parquet key below the declared
+    prefix. The resolved keys stay in memory only (spec §5).
+    """
+    if not PARQUET_SET_MANIFEST_URI.fullmatch(manifest or ""):
+        raise ValueError(
+            f"source {source_id!r}: manifest must be an s3:// URI of a .json "
+            "object, such as 's3://reports/sales/manifest.json'"
+        )
+    text = con.execute(
+        f"SELECT content FROM read_text({sql_literal(manifest)})"
+    ).fetchone()[0]
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError(
+            f"source {source_id!r}: manifest {manifest!r} is empty or unreadable"
+        )
+    if len(text) > PARQUET_SET_MANIFEST_MAX_BYTES or len(text.encode("utf-8")) > PARQUET_SET_MANIFEST_MAX_BYTES:
+        raise ValueError(
+            f"source {source_id!r}: manifest {manifest!r} exceeds the 2 MiB "
+            "limit; split the file set or narrow the manifest"
+        )
+    try:
+        document = json.loads(text)
+    except ValueError as error:
+        raise ValueError(
+            f"source {source_id!r}: manifest {manifest!r} is not valid JSON "
+            f"({error})"
+        ) from error
+    entries = document.get("files") if isinstance(document, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError(
+            f"source {source_id!r}: manifest {manifest!r} must be a JSON object "
+            'like {"files": ["year=2026/part-1.parquet"]}'
+        )
+    files = []
+    for entry in entries:
+        reason = manifest_entry_reason(entry)
+        if reason is not None:
+            raise ValueError(
+                f"source {source_id!r}: manifest entry {entry!r} {reason}; "
+                f"manifest entries are relative Parquet keys below {input_path!r}"
+            )
+        file = f"{input_path}{entry}"
+        if not file.startswith(input_path):
+            raise ValueError(
+                f"source {source_id!r}: manifest entry {entry!r} resolves outside "
+                f"the declared prefix {input_path!r}"
+            )
+        if file not in files:
+            files.append(file)
+    if not files:
+        raise ValueError(
+            f"source {source_id!r}: manifest {manifest!r} lists no Parquet "
+            'files; check its "files" list'
+        )
+    if len(files) > PARQUET_SET_MAX_FILES:
+        raise ValueError(
+            f"source {source_id!r}: manifest {manifest!r} lists more than "
+            f"{PARQUET_SET_MAX_FILES} Parquet files; narrow the manifest"
+        )
+    return sorted(files)
+
+
 def value_json(value):
     if value is None or isinstance(value, (int, float, bool)):
         return value
@@ -179,10 +273,12 @@ def value_json(value):
     return text if len(text) <= MAX_TEXT_LENGTH else text[:MAX_TEXT_LENGTH] + "…"
 
 
-def profile(input_path, source_id, format_name, auth="none", include_values=False, secret_values=None, region=None, endpoint=None, selector_glob=None):
+def profile(input_path, source_id, format_name, auth="none", include_values=False, secret_values=None, region=None, endpoint=None, selector_glob=None, selector_manifest=None):
     remote = is_remote(input_path)
-    if selector_glob is not None and not remote:
-        raise ValueError("a selector glob requires a remote s3:// prefix input")
+    if (selector_glob is not None or selector_manifest is not None) and not remote:
+        raise ValueError("a selector requires a remote s3:// prefix input")
+    if selector_glob is not None and selector_manifest is not None:
+        raise ValueError("a parquet-set selector requires exactly one of glob or manifest")
     size = None if remote else os.path.getsize(input_path)
     con = duckdb.connect(":memory:")
     con.execute(f"SET memory_limit='{MEMORY_LIMIT}'")
@@ -191,9 +287,15 @@ def profile(input_path, source_id, format_name, auth="none", include_values=Fals
     if remote:
         configure_remote(con, input_path, source_id, auth, secret_values or {}, region, endpoint)
     files = None
+    selector = None
     if selector_glob is not None:
         files = resolve_parquet_set(con, input_path, selector_glob, source_id)
         relation = con.read_parquet(files)
+        selector = {"glob": selector_glob}
+    elif selector_manifest is not None:
+        files = resolve_manifest_set(con, input_path, selector_manifest, source_id)
+        relation = con.read_parquet(files)
+        selector = {"manifest": selector_manifest}
     else:
         relation = read_relation(con, input_path, format_name)
     columns = list(zip(relation.columns, map(str, relation.types), strict=True))
@@ -271,11 +373,12 @@ def profile(input_path, source_id, format_name, auth="none", include_values=Fals
     }
     if files is not None:
         # Bounded Parquet-set metadata only: the file count and the declared
-        # glob, never the enumerated object keys (spec 2026-09-28-0004 §5).
+        # selector, never the enumerated object keys (spec 2026-09-28-0004 §5).
         payload["kind"] = "parquet-set"
         payload["file_count"] = len(files)
-        payload["selector"] = {"glob": selector_glob}
+        payload["selector"] = selector
         payload["limits"]["max_parquet_set_files"] = PARQUET_SET_MAX_FILES
+        payload["limits"]["max_parquet_set_manifest_bytes"] = PARQUET_SET_MANIFEST_MAX_BYTES
     return payload
 
 
@@ -288,7 +391,9 @@ def main():
     parser.add_argument("--region")
     parser.add_argument("--endpoint")
     parser.add_argument("--include-values", action="store_true", help="include bounded ranges/top values after user permission")
-    parser.add_argument("--glob", help='relative Parquet-object pattern for one live Parquet set, e.g. "year=*/part-*.parquet" (requires --format parquet and an s3:// prefix input)')
+    selector = parser.add_mutually_exclusive_group()
+    selector.add_argument("--glob", help='relative Parquet-object pattern for one live Parquet set, e.g. "year=*/part-*.parquet" (requires --format parquet and an s3:// prefix input)')
+    selector.add_argument("--manifest", help='s3:// URI of the .json manifest for one live Parquet set, e.g. "s3://reports/sales/manifest.json" (requires --format parquet and an s3:// prefix input)')
     parser.add_argument("--output")
     args = parser.parse_args()
     if not SOURCE_ID.fullmatch(args.source_id):
@@ -307,6 +412,16 @@ def main():
             )
         if not args.input.startswith("s3://") or not args.input.endswith("/"):
             parser.error("--glob requires an s3:// prefix input ending with '/'")
+    if args.manifest:
+        if args.format != "parquet":
+            parser.error("--manifest requires --format parquet")
+        if not PARQUET_SET_MANIFEST_URI.fullmatch(args.manifest):
+            parser.error(
+                '--manifest must be an s3:// URI of a .json object such as '
+                '"s3://reports/sales/manifest.json"'
+            )
+        if not args.input.startswith("s3://") or not args.input.endswith("/"):
+            parser.error("--manifest requires an s3:// prefix input ending with '/'")
     try:
         payload = profile(
             args.input,
@@ -318,6 +433,7 @@ def main():
             args.region,
             args.endpoint,
             args.glob,
+            args.manifest,
         )
     except Exception as error:
         message = str(error)

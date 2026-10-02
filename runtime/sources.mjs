@@ -11,6 +11,10 @@ const SQL_TYPES = {
 const INPUT_TYPES = new Set(["csv", "parquet", "json", "ndjson"]);
 /** Upper bound on one live Parquet file set (spec 2026-09-28-0004 §2.1). */
 const PARQUET_SET_MAX_FILES = 10_000;
+/** Upper bound on one Parquet-set manifest document (spec §2.1). */
+const PARQUET_SET_MANIFEST_MAX_BYTES = 2 * 1024 * 1024;
+/** Shape every Parquet-set manifest document must have (spec §2.1). */
+const PARQUET_SET_MANIFEST_URI = /^s3:\/\/[A-Za-z0-9._~/-]+\.json$/;
 /** Per-generation secret tags count down so newer generations sort first in
  * DuckDB's equal-score secret selection (verified against the pinned
  * DuckDB-WASM build): a staged candidate must shadow the active generation's
@@ -83,15 +87,24 @@ export async function registerSources(engine, files, options = {}) {
     if (secretName) createdSecretNames.push(secretName);
     if (parquetSet) {
      // Membership resolves exactly once per generation (spec §3): the glob
-     // expands to an explicit, capped, sorted file list and the view pins it,
-     // so filter changes never re-resolve membership. A re-stage that passes
-     // the active generation's resolved list as pinned options reuses it
-     // instead of resolving anew.
+     // expands or the manifest is fetched and validated to an explicit,
+     // capped, sorted file list and the view pins it, so filter changes
+     // never re-resolve membership. A re-stage that passes the active
+     // generation's resolved list as pinned options reuses it instead of
+     // resolving anew.
      const pinned =
       pinnedParquetFiles instanceof Map
        ? pinnedParquetFiles.get(id)
        : pinnedParquetFiles?.[id];
-     const files = pinned ?? (await resolveParquetSetFiles(engine.connection, id, remote));
+     const files =
+      pinned ??
+      (await resolveParquetSetFiles(
+       engine,
+       source,
+       id,
+       options.liveCredentials,
+       generation,
+      ));
      resolvedParquetFiles = files;
      for (const file of files) {
       const fileColumns = await describeReader(
@@ -356,8 +369,10 @@ export function liveSecretName(id, generation = 0) {
  return `featherbi_live_${id}${tag}`;
 }
 
-/** Temporary config-provider secret SQL for one private live remote source. */
-export function liveSecretSql(id, credentials, remote, generation = 0) {
+/** Temporary config-provider secret SQL for one private live remote source.
+ * `scope` overrides the parquet-set prefix scope (the manifest fetch secret
+ * scopes the same credentials to the manifest object itself). */
+export function liveSecretSql(id, credentials, remote, generation = 0, scope = null) {
  const options = [];
  if (credentials?.keyId && credentials?.secret) {
   options.push(
@@ -377,17 +392,29 @@ export function liveSecretSql(id, credentials, remote, generation = 0) {
  if (remote.kind === "parquet-set") {
   // Scope the secret to the declared prefix so the listing and object reads
   // of this set never pick up another live source's credentials.
-  options.push(`SCOPE ${stringLiteral(remote.uri)}`);
+  options.push(`SCOPE ${stringLiteral(scope ?? remote.uri)}`);
  }
  return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(liveSecretName(id, generation))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
 }
 
 /**
- * Resolve one live Parquet set's glob into the generation's explicit file
- * list: capped, sorted, and provably below the declared prefix (spec §2.1).
+ * Resolve one live Parquet set's selector into the generation's explicit
+ * file list (spec 2026-09-28-0004 §2.1): a glob expands once below the
+ * declared prefix; a manifest is fetched once through the same
+ * per-generation secret machinery and validated before anything is
+ * admitted.
  * @returns {Promise<string[]>}
  */
-async function resolveParquetSetFiles(connection, id, remote) {
+async function resolveParquetSetFiles(engine, source, id, liveCredentials, generation = 0) {
+ const remote = source.remote;
+ if (remote.selector?.manifest !== undefined) {
+  return resolveManifestParquetSet(engine, source, id, liveCredentials, generation);
+ }
+ return resolveGlobParquetSet(engine.connection, id, remote);
+}
+
+/** Resolve one Parquet set's glob selector into its bounded file list. */
+async function resolveGlobParquetSet(connection, id, remote) {
  const glob = remote.selector?.glob;
  if (
   typeof glob !== "string" ||
@@ -433,6 +460,179 @@ async function resolveParquetSetFiles(connection, id, remote) {
   );
  }
  return files;
+}
+
+/**
+ * Resolve one Parquet set's manifest selector (spec §2.1): fetch the JSON
+ * document once through the same httpfs/secret machinery as the files, then
+ * validate it below. Unreadable manifests fail as source-tagged errors so
+ * the candidate generation rolls back (LT-06).
+ * @returns {Promise<string[]>}
+ */
+async function resolveManifestParquetSet(engine, source, id, liveCredentials, generation) {
+ const remote = source.remote;
+ const manifestUri = remote.selector.manifest;
+ if (typeof manifestUri !== "string" || !PARQUET_SET_MANIFEST_URI.test(manifestUri)) {
+  throw sourceError(
+   id,
+   `invalid manifest selector ${JSON.stringify(manifestUri)}; use an s3:// .json object such as "s3://reports/sales/manifest.json"`,
+   "sources.parquet-set-manifest",
+  );
+ }
+ let text;
+ try {
+  text = await fetchManifestText(engine, source, id, manifestUri, liveCredentials, generation);
+ } catch (error) {
+  if (error?.sourceId) throw error;
+  throw sourceError(
+   id,
+   `cannot read manifest ${JSON.stringify(manifestUri)}: ${error instanceof Error ? error.message : String(error)}; check the manifest object, the bucket's read permission, and CORS access for the browser`,
+   "sources.parquet-set-manifest",
+  );
+ }
+ return manifestParquetFiles(id, remote.uri, manifestUri, text);
+}
+
+/**
+ * Fetch one manifest document once through httpfs. A manifest outside the
+ * declared prefix's secret scope gets its own one-shot secret scoped to the
+ * manifest object itself — the same credentials and endpoint, so manifest
+ * content can never redirect the credential to another authority (spec §4).
+ * @returns {Promise<string>}
+ */
+async function fetchManifestText(engine, source, id, manifestUri, liveCredentials, generation) {
+ const remote = source.remote;
+ const needsFetchSecret =
+  !manifestUri.startsWith(remote.uri) &&
+  (remote.auth === "s3" || remote.region || remote.endpoint);
+ if (needsFetchSecret) {
+  const credentials =
+   (liveCredentials instanceof Map
+    ? liveCredentials.get(id)
+    : liveCredentials?.[id]) ?? null;
+  await runSql(
+   engine.connection,
+   liveSecretSql(`manifest_${id}`, credentials, { ...remote, uri: manifestUri }, generation),
+  );
+ }
+ try {
+  const rows = await runSql(
+   engine.connection,
+   `SELECT content FROM read_text(${stringLiteral(manifestUri)})`,
+  );
+  const row = rows.numRows === 1 ? rows.toArray()[0] : null;
+  if (typeof row?.content !== "string") {
+   throw sourceError(
+    id,
+    `manifest ${JSON.stringify(manifestUri)} is not a readable document`,
+    "sources.parquet-set-manifest",
+   );
+  }
+  return row.content;
+ } finally {
+  if (needsFetchSecret) {
+   await dropLiveSecrets(engine, [liveSecretName(`manifest_${id}`, generation)]);
+  }
+ }
+}
+
+/** One rejection reason for an invalid manifest entry, or null. */
+function manifestEntryReason(entry) {
+ if (typeof entry !== "string") return "is not a string";
+ if (entry === "") return "is empty";
+ if (/[\u0000-\u001f\u007f]/.test(entry)) return "contains control characters";
+ if (entry.startsWith("/")) return "is absolute; entries are relative to the declared prefix";
+ if (entry.includes("://")) return "is a URL, not a relative object key";
+ if (entry.includes("\\")) return 'uses a backslash separator; use "/"';
+ if (entry.split("/").includes("..")) return 'escapes the declared prefix with ".."';
+ if (entry.includes("?") || entry.includes("#"))
+  return "carries a query or fragment; entries are plain object keys";
+ if (!entry.endsWith(".parquet")) return "is not a Parquet object";
+ return null;
+}
+
+/**
+ * Validate one fetched Parquet-set manifest document (spec
+ * 2026-09-28-0004 §2.1) into the generation's explicit file list: the 2 MiB
+ * cap applies before parsing, every entry must be a relative Parquet key
+ * below the declared prefix, exact duplicates deduplicate, distinct keys
+ * stay case-sensitive, and the result is capped, sorted, and prefixed.
+ * Throws before any view can publish the membership (LT-03).
+ * @param {string} id
+ * @param {string} prefix
+ * @param {string} manifestUri
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function manifestParquetFiles(id, prefix, manifestUri, text) {
+ const describe = (message, code) =>
+  sourceError(id, `manifest ${JSON.stringify(manifestUri)} ${message}`, code);
+ if (typeof text !== "string" || text.trim() === "") {
+  throw describe("is empty or unreadable", "sources.parquet-set-manifest");
+ }
+ if (
+  text.length > PARQUET_SET_MANIFEST_MAX_BYTES ||
+  byteLength(text) > PARQUET_SET_MANIFEST_MAX_BYTES
+ ) {
+  throw describe(
+   "exceeds the 2 MiB limit; split the file set or narrow the manifest",
+   "sources.parquet-set-manifest-size",
+  );
+ }
+ let document;
+ try {
+  document = JSON.parse(text);
+ } catch (error) {
+  throw describe(
+   `is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+   "sources.parquet-set-manifest",
+  );
+ }
+ const entries = plainObject(document) ? document.files : undefined;
+ if (!Array.isArray(entries)) {
+  throw describe(
+   'must be a JSON object like {"files": ["year=2026/part-1.parquet"]}',
+   "sources.parquet-set-manifest",
+  );
+ }
+ const seen = new Set();
+ const files = [];
+ for (const entry of entries) {
+  const reason = manifestEntryReason(entry);
+  if (reason !== null) {
+   throw sourceError(
+    id,
+    `manifest entry ${JSON.stringify(entry)} ${reason}; manifest entries are relative Parquet keys below ${JSON.stringify(prefix)}`,
+    "sources.parquet-set-manifest-entry",
+   );
+  }
+  const file = `${prefix}${entry}`;
+  if (!file.startsWith(prefix)) {
+   throw sourceError(
+    id,
+    `manifest entry ${JSON.stringify(entry)} resolves outside the declared prefix ${JSON.stringify(prefix)}`,
+    "sources.parquet-set-manifest-entry",
+   );
+  }
+  // Exact duplicates deduplicate; distinct keys stay case-sensitive.
+  if (!seen.has(file)) {
+   seen.add(file);
+   files.push(file);
+  }
+ }
+ if (files.length === 0) {
+  throw describe(
+   'lists no Parquet files; check its "files" list',
+   "sources.parquet-set-empty",
+  );
+ }
+ if (files.length > PARQUET_SET_MAX_FILES) {
+  throw describe(
+   `lists more than ${PARQUET_SET_MAX_FILES.toLocaleString("en-US")} Parquet files; narrow the manifest`,
+   "sources.parquet-set-limit",
+  );
+ }
+ return files.sort();
 }
 
 /** Classify a failed live read: "credentials", "network", or "other". */
@@ -736,6 +936,11 @@ function runSql(connection, sql) {
 
 function plainObject(value) {
  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** UTF-8 byte length, for the manifest size cap. */
+function byteLength(text) {
+ return new TextEncoder().encode(text).length;
 }
 
 function isFile(value) {

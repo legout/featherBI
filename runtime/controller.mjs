@@ -9,7 +9,7 @@ const TABLE_PAGE_SIZE = 100;
 let nextDashboardGeneration = 1;
 
 /** Create one serialized dashboard runtime and publish only coherent snapshots. */
-export async function createDashboard({ config, inputs, onState = () => {}, liveCredentials = null }) {
+export async function createDashboard({ config, inputs, onState = () => {}, liveCredentials = null, liveCatalogToken = null }) {
  const validation = validateConfig(config);
  if (!validation.ok) {
   throw new Error(
@@ -21,8 +21,18 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
  const sourceIds = config.data.sources.map(({ id }) => id);
  const inputMap = mapInputs(config, inputs);
  const sessionCredentials = new Map();
+ // Memory-only bearer tokens for private Iceberg REST catalogs (spec §2.2,
+ // §4; LT-04): kept separate from the S3 credential map, used only for the
+ // catalog's resolve fetch, and dropped with the page — never persisted,
+ // logged, or passed into DuckDB.
+ const sessionCatalogTokens = new Map();
  const priorLiveErrors = new Map();
- const live = { getCredentials: liveCredentials, sessionCredentials };
+ const live = {
+  getCredentials: liveCredentials,
+  getCatalogToken: liveCatalogToken,
+  sessionCredentials,
+  sessionCatalogTokens,
+ };
  onState({ status: "loading", error: null });
  const engine = await createEngine();
  let queue = Promise.resolve();
@@ -42,38 +52,52 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
  };
  const credentialSourceIds = (error) =>
   [...new Set(error?.sourceIds ?? (error?.sourceId ? [error.sourceId] : []))];
+ // A failed catalog resolve carries a `sources.iceberg-catalog*` code, so
+ // its retry clears (and re-prompts for) the bearer token, never the S3
+ // credentials (spec §4: authentication failure re-prompts once with the
+ // failing endpoint identified).
+ const isCatalogAuthFailure = (error) =>
+  String(error?.code ?? "").startsWith("sources.iceberg-catalog") &&
+  credentialSourceIds(error).length > 0;
  const isCredentialFailure = (error) =>
-  credentialSourceIds(error).some((sourceId) =>
+  (credentialSourceIds(error).some((sourceId) =>
    config.data.sources.some(
     ({ id, remote }) => id === sourceId && remote?.auth === "s3",
    ),
-  ) &&
+  ) ||
+   isCatalogAuthFailure(error)) &&
   classifyLiveError(error) === "credentials";
+ // Drop exactly the secret that failed: the catalog bearer token for a
+ // catalog resolve failure, the S3 credentials for a storage failure.
+ const invalidateFailedCredentials = (error) => {
+  const catalogAuth = isCatalogAuthFailure(error);
+  for (const sourceId of credentialSourceIds(error)) {
+   priorLiveErrors.set(sourceId, error.message);
+   if (catalogAuth) sessionCatalogTokens.delete(sourceId);
+   else sessionCredentials.delete(sourceId);
+  }
+ };
  const stageWithCredentialRetry = async (sourceInputs) => {
   try {
    return await stageGeneration(engine, config, sourceInputs, sourceIds, live, priorLiveErrors);
   } catch (error) {
    if (!isCredentialFailure(error)) throw error;
-   for (const sourceId of credentialSourceIds(error)) {
-    priorLiveErrors.set(sourceId, error.message);
-    sessionCredentials.delete(sourceId);
-   }
+   invalidateFailedCredentials(error);
    return stageGeneration(engine, config, sourceInputs, sourceIds, live, priorLiveErrors);
   }
  };
  const retryLiveGeneration = async (error) => {
   if (!isCredentialFailure(error)) throw error;
-  for (const sourceId of credentialSourceIds(error)) {
-   priorLiveErrors.set(sourceId, error.message);
-   sessionCredentials.delete(sourceId);
-  }
+  invalidateFailedCredentials(error);
   const previous = active;
   let candidate;
   try {
    // The candidate re-stages the active generation's resolved inputs: a
    // credential retry must not re-resolve Parquet-set membership, which
    // changes only on initial open and explicit Refresh (spec
-   // 2026-09-28-0004 §3, LT-02).
+   // 2026-09-28-0004 §3, LT-02). A failed catalog resolve never reaches
+   // this path — the catalog is resolved only at staging, so a query-time
+   // failure is always a storage read.
    candidate = await stageGeneration(
     engine,
     config,
@@ -344,8 +368,14 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
       error?.sourceId &&
       classifyLiveError(error) === "credentials"
      ) {
-      // Force a fresh prompt on the next replacement attempt.
-      sessionCredentials.delete(error.sourceId);
+      // Force a fresh prompt on the next replacement attempt — dropping
+      // exactly the failed secret: the catalog bearer token for a catalog
+      // resolve failure, the S3 credentials for a storage failure.
+      if (String(error?.code ?? "").startsWith("sources.iceberg-catalog")) {
+       sessionCatalogTokens.delete(error.sourceId);
+      } else {
+       sessionCredentials.delete(error.sourceId);
+      }
      }
      if (revision === latestRevision) {
       state = retainedSnapshot(prior, liveReadError(config, error));
@@ -407,6 +437,7 @@ async function stageGeneration(
  const number = nextDashboardGeneration++;
  const schema = `featherbi_gen_${number}`;
  const orderedInputs = [];
+ const catalogTokens = {};
  for (const source of config.data.sources) {
   const input = inputs.get(source.id);
   if (input) {
@@ -415,6 +446,34 @@ async function stageGeneration(
   }
   if (!source.remote) {
    throw new Error(`missing input for source ${JSON.stringify(source.id)}`);
+  }
+  // A private catalog asks for its bearer token first (spec §2.2, §4): the
+  // token is prompted only when needed, kept separate from the S3
+  // credentials, and consumed only by the catalog's resolve fetch.
+  if (
+   source.remote.kind === "iceberg" &&
+   source.remote.catalog &&
+   source.remote.catalogAuth === "bearer"
+  ) {
+   let token = live?.sessionCatalogTokens?.get(source.id);
+   if (!token) {
+    if (!live?.getCatalogToken) {
+     throw new Error(
+      `source ${JSON.stringify(source.id)} reads a private catalog and needs a token; no catalog prompt is available for this dashboard`,
+     );
+    }
+    token = await live.getCatalogToken(
+     source,
+     priorLiveErrors.get(source.id) ?? null,
+    );
+    if (!token) {
+     throw new Error(
+      `source ${JSON.stringify(source.id)} needs a catalog token for the live read; enter it to load the dashboard`,
+     );
+    }
+    live.sessionCatalogTokens.set(source.id, token);
+   }
+   catalogTokens[source.id] = token;
   }
   let credentials;
   if (source.remote.auth === "s3") {
@@ -437,7 +496,7 @@ async function stageGeneration(
     live.sessionCredentials.set(source.id, credentials);
    }
   }
-  orderedInputs.push({ source, credentials });
+  orderedInputs.push({ source, ...(credentials ? { credentials } : {}) });
  }
  const loadStarted = performance.now();
  const registered = await registerSources(engine, orderedInputs, {
@@ -447,6 +506,9 @@ async function stageGeneration(
     .filter(({ credentials }) => credentials)
     .map(({ source, credentials }) => [source.id, credentials]),
   ),
+  ...(Object.keys(catalogTokens).length
+   ? { liveCatalogTokens: catalogTokens }
+   : {}),
   pinnedParquetFiles,
  });
  const generation = { number, schema, inputs, sources: registered.sources };
@@ -814,11 +876,17 @@ function liveReadError(config, error) {
     ? "the browser could not reach the bucket endpoint for listing or object reads (a CORS block looks the same); check the endpoint and the bucket's CORS access for this page"
     : "the live Parquet set read failed; check the bucket's listing and object access, its CORS configuration, and the credentials"
   : source.remote.kind === "iceberg"
-   ? kind === "credentials"
-    ? "the bucket rejected the credentials; the key needs read permission for the table's metadata and data objects, and the source will ask for credentials again if they are wrong or expired"
-    : kind === "network"
-     ? "the browser could not reach the bucket endpoint for the table metadata or object reads (a CORS block looks the same); check the endpoint and the bucket's CORS access for this page"
-     : "the live Iceberg table read failed; check the metadata document, the table's object access, its CORS configuration, and the credentials"
+   ? source.remote.catalog
+    ? kind === "credentials"
+     ? "the catalog endpoint rejected the bearer token; the token needs read access to the declared warehouse and table, and the source will ask for it again if it is wrong or expired"
+     : kind === "network"
+      ? "the browser could not reach the catalog endpoint or the table's object storage (a CORS block looks the same); check the catalog endpoint, the storage endpoint, and their CORS access for this page"
+      : "the live Iceberg table read failed; check the catalog endpoint, the resolved table objects, their CORS access, and the credentials"
+    : kind === "credentials"
+     ? "the bucket rejected the credentials; the key needs read permission for the table's metadata and data objects, and the source will ask for credentials again if they are wrong or expired"
+     : kind === "network"
+      ? "the browser could not reach the bucket endpoint for the table metadata or object reads (a CORS block looks the same); check the endpoint and the bucket's CORS access for this page"
+      : "the live Iceberg table read failed; check the metadata document, the table's object access, its CORS configuration, and the credentials"
   : kind === "credentials"
    ? "the remote host rejected the credentials; if they are wrong or expired, the source will ask for them again"
    : kind === "network"

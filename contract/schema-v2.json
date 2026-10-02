@@ -296,6 +296,37 @@
             "metadataUri": {
               "type": "string",
               "pattern": "^s3://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*\\.metadata\\.json$"
+            },
+            "catalogAuth": {
+              "enum": [
+                "none",
+                "bearer"
+              ]
+            },
+            "catalog": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "endpoint",
+                "warehouse",
+                "namespace",
+                "table"
+              ],
+              "properties": {
+                "endpoint": {
+                  "type": "string",
+                  "pattern": "^https://[A-Za-z0-9._~:/-]+$"
+                },
+                "warehouse": {
+                  "$ref": "#/definitions/id"
+                },
+                "namespace": {
+                  "$ref": "#/definitions/plainText"
+                },
+                "table": {
+                  "$ref": "#/definitions/plainText"
+                }
+              }
             }
           },
           "allOf": [
@@ -326,7 +357,9 @@
                     "pattern": "^s3://[A-Za-z0-9._~-]+/(?:[A-Za-z0-9._~-]+/)*$"
                   },
                   "format": false,
-                  "metadataUri": false
+                  "metadataUri": false,
+                  "catalog": false,
+                  "catalogAuth": false
                 }
               }
             },
@@ -344,7 +377,6 @@
               "then": {
                 "required": [
                   "kind",
-                  "metadataUri",
                   "auth"
                 ],
                 "properties": {
@@ -357,8 +389,65 @@
                   },
                   "uri": false,
                   "format": false,
-                  "selector": false
-                }
+                  "selector": false,
+                  "catalog": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "endpoint",
+                      "warehouse",
+                      "namespace",
+                      "table"
+                    ],
+                    "properties": {
+                      "endpoint": {
+                        "type": "string",
+                        "pattern": "^https://[A-Za-z0-9._~:/-]+$"
+                      },
+                      "warehouse": {
+                        "$ref": "#/definitions/id"
+                      },
+                      "namespace": {
+                        "$ref": "#/definitions/plainText"
+                      },
+                      "table": {
+                        "$ref": "#/definitions/plainText"
+                      }
+                    }
+                  }
+                },
+                "anyOf": [
+                  {
+                    "required": [
+                      "catalog",
+                      "catalogAuth"
+                    ],
+                    "not": {
+                      "required": [
+                        "metadataUri"
+                      ]
+                    }
+                  },
+                  {
+                    "required": [
+                      "metadataUri"
+                    ],
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "catalog"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "catalogAuth"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
               }
             },
             {
@@ -377,7 +466,9 @@
                 ],
                 "properties": {
                   "selector": false,
-                  "metadataUri": false
+                  "metadataUri": false,
+                  "catalog": false,
+                  "catalogAuth": false
                 }
               }
             }

@@ -10,7 +10,10 @@ import json
 import os
 import re
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 import duckdb  # pyright: ignore[reportMissingImports] # resolved by `uv run --script` from the PEP 723 block above
 
@@ -31,6 +34,13 @@ PARQUET_SET_MANIFEST_MAX_BYTES = 2 * 1024 * 1024
 PARQUET_SET_MANIFEST_URI = re.compile(r"^s3://[A-Za-z0-9._~/-]+\.json$")
 # Shape one declared Iceberg metadata URI must have (spec §2.2).
 ICEBERG_METADATA_URI = re.compile(r"^s3://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*\.metadata\.json$")
+# Catalog bearer token environment variable (spec §2.2: environment or a
+# gitignored .env, consistent with the FTHR_S3_* conventions; never in
+# portable project files or generated reports).
+CATALOG_TOKEN_ENV = "FTHR_ICEBERG_TOKEN"
+# Catalog REST table URL shape (T0 verdict, ticket #34): the warehouse is the
+# path prefix segment under /v1.
+CATALOG_TABLE_PATH = "/v1/{warehouse}/namespaces/{namespace}/tables/{table}"
 
 
 def identifier(name):
@@ -68,6 +78,86 @@ def read_iceberg_relation(con, input_path, source_id):
     return con.sql(
         f"SELECT * FROM iceberg_scan({sql_literal(input_path)})"
     )
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Fail any HTTP redirect instead of following it.
+
+    urllib would otherwise re-send the catalog Authorization header to the
+    redirect target (the browser strips it cross-origin; authoring stays at
+    least as strict), so a redirecting catalog endpoint is a resolution
+    failure naming the endpoint, never a forwarded token (spec §4).
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError(
+            f"catalog endpoint {req.full_url} redirected (HTTP {code}) to "
+            f"{newurl}; the request was not followed, so the token is never "
+            "forwarded — pin the catalog endpoint or fix its redirect"
+        )
+
+
+def resolve_catalog_metadata_location(values, endpoint, warehouse, namespace, table, catalog_auth, source_id):
+    """Resolve one catalog identity's current metadata-location natively.
+
+    One HTTPS request to the REST table endpoint; the bearer token (when
+    catalogAuth is bearer) comes from FTHR_ICEBERG_TOKEN in the environment
+    or a gitignored .env and is used only for this request — it never reaches
+    the profile output, an error message, or DuckDB. The returned location is
+    validated against the strict metadata-URI shape so the profile pins a
+    real versioned snapshot document (spec §2.2, §5).
+    """
+    url = endpoint.rstrip("/") + CATALOG_TABLE_PATH.format(
+        warehouse=quote(str(warehouse), safe=""),
+        namespace=quote(str(namespace), safe=""),
+        table=quote(str(table), safe=""),
+    )
+    headers = {"Accept": "application/json"}
+    token = values.get(CATALOG_TOKEN_ENV, "")
+    if catalog_auth == "bearer":
+        if not token:
+            raise ValueError(
+                f"source {source_id!r} requires a catalog bearer token; set "
+                f"{CATALOG_TOKEN_ENV} in the process environment or in a "
+                "gitignored .env file (see .env.example)"
+            )
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=headers)
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=30) as response:
+            body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        if error.code in (401, 403):
+            raise ValueError(
+                f"source {source_id!r}: catalog endpoint {endpoint!r} rejected "
+                f"the request (HTTP {error.code}); check the "
+                f"{CATALOG_TOKEN_ENV} token, the warehouse, and the table name"
+            ) from error
+        raise ValueError(
+            f"source {source_id!r}: catalog endpoint {endpoint!r} returned "
+            f"HTTP {error.code}; check the warehouse, namespace, and table"
+        ) from error
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise ValueError(
+            f"source {source_id!r}: catalog endpoint {endpoint!r} could not "
+            f"be reached ({error}); check the endpoint URL"
+        ) from error
+    try:
+        document = json.loads(body)
+    except ValueError as error:
+        raise ValueError(
+            f"source {source_id!r}: catalog endpoint {endpoint!r} returned "
+            f"an unreadable table response ({error})"
+        ) from error
+    location = document.get("metadata-location") if isinstance(document, dict) else None
+    if not isinstance(location, str) or not ICEBERG_METADATA_URI.fullmatch(location):
+        raise ValueError(
+            f"source {source_id!r}: catalog endpoint {endpoint!r} returned no "
+            "versioned s3:// .metadata.json metadata-location, so no snapshot "
+            "can be pinned; check the warehouse, namespace, and table"
+        )
+    return location
 
 
 def env_with_dotenv():
@@ -303,25 +393,41 @@ def value_json(value):
     return text if len(text) <= MAX_TEXT_LENGTH else text[:MAX_TEXT_LENGTH] + "…"
 
 
-def profile(input_path, source_id, format_name, auth="none", include_values=False, secret_values=None, region=None, endpoint=None, selector_glob=None, selector_manifest=None, iceberg_metadata=False):
+def profile(input_path, source_id, format_name, auth="none", include_values=False, secret_values=None, region=None, endpoint=None, selector_glob=None, selector_manifest=None, iceberg_metadata=False, iceberg_catalog=False, catalog_warehouse=None, catalog_namespace=None, catalog_table=None, catalog_auth=None):
     remote = is_remote(input_path)
     selector_count = (
-        (selector_glob is not None) + (selector_manifest is not None) + bool(iceberg_metadata)
+        (selector_glob is not None) + (selector_manifest is not None) + bool(iceberg_metadata) + bool(iceberg_catalog)
     )
     if selector_count > 1:
-        raise ValueError("a live source selector requires exactly one of glob, manifest, or iceberg-metadata")
+        raise ValueError("a live source selector requires exactly one of glob, manifest, iceberg-metadata, or iceberg-catalog")
     if selector_count and not remote:
-        raise ValueError("a selector requires a remote s3:// input")
+        raise ValueError("a selector requires a remote input")
     size = None if remote else os.path.getsize(input_path)
     con = duckdb.connect(":memory:")
     con.execute(f"SET memory_limit='{MEMORY_LIMIT}'")
     con.execute(f"SET threads={THREADS}")
     con.execute("SET preserve_insertion_order=false")
+    resolved_location = None
+    if iceberg_catalog:
+        # Resolve the catalog identity exactly once (spec §2.2, §3) before
+        # any storage access: the profile pins the returned versioned
+        # document, exactly like the browser runtime's per-generation resolve.
+        resolved_location = resolve_catalog_metadata_location(
+            secret_values or {},
+            input_path,
+            catalog_warehouse,
+            catalog_namespace,
+            catalog_table,
+            catalog_auth or "bearer",
+            source_id,
+        )
     if remote:
-        configure_remote(con, input_path, source_id, auth, secret_values or {}, region, endpoint)
+        configure_remote(con, resolved_location or input_path, source_id, auth, secret_values or {}, region, endpoint)
     files = None
     selector = None
-    if iceberg_metadata:
+    if iceberg_catalog:
+        relation = read_iceberg_relation(con, resolved_location, source_id)
+    elif iceberg_metadata:
         relation = read_iceberg_relation(con, input_path, source_id)
     elif selector_glob is not None:
         files = resolve_parquet_set(con, input_path, selector_glob, source_id)
@@ -414,7 +520,7 @@ def profile(input_path, source_id, format_name, auth="none", include_values=Fals
         payload["selector"] = selector
         payload["limits"]["max_parquet_set_files"] = PARQUET_SET_MAX_FILES
         payload["limits"]["max_parquet_set_manifest_bytes"] = PARQUET_SET_MANIFEST_MAX_BYTES
-    if iceberg_metadata:
+    if iceberg_metadata or iceberg_catalog:
         # Bounded Iceberg table profile: the snapshot's row count and schema
         # summary only — no manifest/data-file inventory, metadata paths, or
         # credentials reach the portable report (spec §5).
@@ -436,6 +542,11 @@ def main():
     selector.add_argument("--glob", help='relative Parquet-object pattern for one live Parquet set, e.g. "year=*/part-*.parquet" (requires --format parquet and an s3:// prefix input)')
     selector.add_argument("--manifest", help='s3:// URI of the .json manifest for one live Parquet set, e.g. "s3://reports/sales/manifest.json" (requires --format parquet and an s3:// prefix input)')
     selector.add_argument("--iceberg-metadata", action="store_true", help="treat --input as one live Iceberg table's versioned s3:// .metadata.json document and profile it with true snapshot/delete semantics (requires --format parquet)")
+    selector.add_argument("--iceberg-catalog", action="store_true", help="treat --input as one live Iceberg table's https:// REST catalog endpoint, resolve its current metadata-location natively, and profile the pinned snapshot (requires --format parquet, --catalog-warehouse, --catalog-namespace, --catalog-table, and --catalog-auth)")
+    parser.add_argument("--catalog-warehouse", help="warehouse path segment of the declared catalog identity (with --iceberg-catalog)")
+    parser.add_argument("--catalog-namespace", help="namespace of the declared catalog identity (with --iceberg-catalog)")
+    parser.add_argument("--catalog-table", help="table of the declared catalog identity (with --iceberg-catalog)")
+    parser.add_argument("--catalog-auth", choices=("none", "bearer"), help="catalog authentication; bearer reads the token from FTHR_ICEBERG_TOKEN in the environment or a gitignored .env (with --iceberg-catalog)")
     parser.add_argument("--output")
     args = parser.parse_args()
     if not SOURCE_ID.fullmatch(args.source_id):
@@ -473,6 +584,21 @@ def main():
                 '.metadata.json document such as '
                 '"s3://reports/orders/metadata/v3.metadata.json"'
             )
+    if args.iceberg_catalog:
+        if args.format != "parquet":
+            parser.error("--iceberg-catalog requires --format parquet")
+        if not args.input.startswith("https://"):
+            parser.error(
+                "--iceberg-catalog requires an https:// catalog endpoint as --input"
+            )
+        for flag, value in (
+            ("--catalog-warehouse", args.catalog_warehouse),
+            ("--catalog-namespace", args.catalog_namespace),
+            ("--catalog-table", args.catalog_table),
+            ("--catalog-auth", args.catalog_auth),
+        ):
+            if not value:
+                parser.error(f"--iceberg-catalog requires {flag}")
     try:
         payload = profile(
             args.input,
@@ -486,12 +612,17 @@ def main():
             args.glob,
             args.manifest,
             args.iceberg_metadata,
+            args.iceberg_catalog,
+            args.catalog_warehouse,
+            args.catalog_namespace,
+            args.catalog_table,
+            args.catalog_auth,
         )
     except Exception as error:
         message = str(error)
         safe = message.replace(str(Path(args.input).resolve()), "<input>").replace(args.input, "<input>")
         for name, value in env_with_dotenv().items():
-            if name.startswith(ENV_PREFIX) and value:
+            if value and (name.startswith(ENV_PREFIX) or name == CATALOG_TOKEN_ENV):
                 safe = safe.replace(value, "<redacted>")
         print(f"cannot profile source {args.source_id!r} as {args.format}: {safe}", file=sys.stderr)
         return 1

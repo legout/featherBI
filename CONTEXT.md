@@ -37,6 +37,14 @@ _Avoid_: Any numeric field or chart value.
 
 **Renderer preset**: A coherent default presentation mode, such as standard featherBI components or Perspective-first exploration, independent of the selected visual theme.
 
+**Theme preset**: A built-in theme-token set (`siemens-ix` dark, `siemens-ix-light` light) selected only by explicit request and never inferred from organization or data names.
+
+**Theme tokens**: The validated `theme.tokens.yaml` contract of surfaces, text, border, accent, status colors, fonts, radius, and chart palette from which the compiler bakes a theme.
+_Avoid_: Free-form chart CSS as a theming mechanism.
+
+**Baked theme**: The complete theme bundle — scoped CSS variables including AG Grid `--ag-*` overrides plus a registered ECharts theme — that the compiler derives from tokens and ships inside the artifact.
+_Avoid_: Recipient-side theme switching.
+
 **SQL playground**: An ephemeral recipient workspace for bounded read-only queries; its contents do not modify the dashboard project.
 
 ### Data and coherent results

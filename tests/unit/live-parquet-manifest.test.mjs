@@ -16,7 +16,12 @@ import path from "node:path";
 import test from "node:test";
 import { compileProject } from "../../authoring/compiler.mjs";
 import { validateConfig } from "../../contract/config.mjs";
-import { manifestParquetFiles } from "../../runtime/sources.mjs";
+import {
+ fetchManifestText,
+ liveSecretName,
+ manifestFetchSecretName,
+ manifestParquetFiles,
+} from "../../runtime/sources.mjs";
 
 const PREFIX = "s3://reports/sales/";
 const MANIFEST = "s3://reports/sales/manifest.json";
@@ -381,4 +386,55 @@ test("the native profiler resolves a manifest set with dedupe and no private pat
  } finally {
   await new Promise((resolve) => server.close(resolve));
  }
+});
+
+test("an iceberg source's storage secret survives another source's out-of-prefix manifest fetch", async () => {
+ // Mixed-dashboard regression: a private iceberg source `manifest_sales`
+ // holds the active storage secret featherbi_live_manifest_sales_999999999,
+ // which the parquet-set `sales`'s out-of-prefix manifest fetch used to
+ // CREATE OR REPLACE and then DROP through the shared `manifest_<id>`
+ // naming. The one-shot fetch secret now lives in the disjoint
+ // manifestFetchSecretName namespace — a hyphen can never appear in a
+ // source id — so resolving `sales`'s manifest never touches the iceberg
+ // source's secret (spec §4 isolation).
+ const manifestUri = "s3://manifests/sales/manifest.json";
+ const document = '{"files": ["part-1.parquet"]}';
+ const statements = [];
+ const engine = {
+  connection: {
+   query: async (sql) => {
+    statements.push(sql);
+    return sql.startsWith("SELECT content FROM read_text")
+     ? { numRows: 1, toArray: () => [{ content: document }] }
+     : { numRows: 0, toArray: () => [] };
+   },
+  },
+ };
+ const text = await fetchManifestText(
+  engine,
+  { remote: { kind: "parquet-set", uri: PREFIX, auth: "s3", selector: { manifest: manifestUri } } },
+  "sales",
+  manifestUri,
+  { sales: { keyId: "AKIA", secret: "s3cret" } },
+  1,
+ );
+ assert.equal(text, document);
+ const icebergSecret = liveSecretName("manifest_sales", 1);
+ assert.equal(icebergSecret, "featherbi_live_manifest_sales_999999999");
+ assert.notEqual(manifestFetchSecretName("sales", 1), icebergSecret);
+ const creates = statements.filter((sql) =>
+  sql.includes("CREATE OR REPLACE TEMPORARY SECRET"),
+ );
+ assert.equal(creates.length, 1);
+ assert.match(creates[0], /"featherbi_fetch-manifest_sales_999999999"/);
+ assert.match(creates[0], /SCOPE 's3:\/\/manifests\/sales\/manifest\.json'/);
+ // No statement of the manifest resolution names the iceberg source's
+ // storage secret: it is neither replaced nor dropped.
+ assert.equal(
+  statements.some((sql) => sql.includes(icebergSecret)),
+  false,
+ );
+ const drops = statements.filter((sql) => sql.startsWith("DROP SECRET"));
+ assert.equal(drops.length, 1);
+ assert.match(drops[0], /"featherbi_fetch-manifest_sales_999999999"/);
 });

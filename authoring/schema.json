@@ -444,18 +444,22 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "uri",
         "auth"
       ],
       "properties": {
         "kind": {
           "enum": [
-            "parquet-set"
+            "parquet-set",
+            "iceberg"
           ]
         },
         "uri": {
           "type": "string",
           "pattern": "^(?:s3|https)://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+$"
+        },
+        "metadataUri": {
+          "type": "string",
+          "minLength": 1
         },
         "format": {
           "enum": [
@@ -504,6 +508,11 @@
       "allOf": [
         {
           "if": {
+            "properties": {
+              "kind": {
+                "const": "parquet-set"
+              }
+            },
             "required": [
               "kind"
             ]
@@ -532,6 +541,34 @@
         },
         {
           "if": {
+            "properties": {
+              "kind": {
+                "const": "iceberg"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "kind",
+              "metadataUri",
+              "auth",
+              "delivery"
+            ],
+            "properties": {
+              "kind": {
+                "const": "iceberg"
+              },
+              "delivery": {
+                "const": "live"
+              }
+            }
+          }
+        },
+        {
+          "if": {
             "not": {
               "required": [
                 "kind"
@@ -543,7 +580,8 @@
               "uri",
               "format",
               "auth"
-            ]
+            ],
+            "properties": {}
           }
         }
       ]

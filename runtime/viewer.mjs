@@ -479,10 +479,11 @@ function buildSources(container, sources) {
  replace.type = "button";
  replace.textContent = "Load selected files";
  container.append(replace);
- if (sources.some(({ remote }) => remote?.kind === "parquet-set")) {
-  // Explicit Refresh for pinned live Parquet sets (spec 2026-09-28-0004 §3):
-  // glob membership is fixed per generation, so only this control re-resolves
-  // it. There is no automatic refresh or background polling.
+ if (sources.some(({ remote }) => remote?.kind === "parquet-set" || remote?.kind === "iceberg")) {
+  // Explicit Refresh for pinned live sources (spec 2026-09-28-0004 §3):
+  // Parquet-set membership and Iceberg metadata documents are fixed per
+  // generation, so only this control re-resolves them. There is no
+  // automatic refresh or background polling.
   const refresh = document.createElement("button");
   refresh.id = "refresh-live";
   refresh.type = "button";
@@ -514,7 +515,13 @@ export function promptLiveCredentials(root, source, priorError) {
         ? `S3 endpoint ${remote.endpoint}`
         : "the default AWS S3 endpoint"
       }.`
-    : null;
+    : remote?.kind === "iceberg"
+      ? `Reads the Iceberg table identified by ${remote.metadataUri} from ${
+         remote.endpoint
+          ? `S3 endpoint ${remote.endpoint}`
+          : "the default AWS S3 endpoint"
+        }.`
+      : null;
   const note = Object.assign(document.createElement("p"), {
    textContent:
     "Used only for this session's reads; never stored or included in the dashboard.",

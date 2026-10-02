@@ -6,7 +6,10 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { validateConfig } from "../contract/config.mjs";
-import { DUCKDB_WASM_VERSION } from "../runtime/bootstrap.mjs";
+import {
+ DUCKDB_ICEBERG_CAPABILITY,
+ DUCKDB_WASM_VERSION,
+} from "../runtime/bootstrap.mjs";
 
 const rootDir = path.resolve(
  path.dirname(fileURLToPath(import.meta.url)),
@@ -28,6 +31,7 @@ const CHART_TYPES = new Set([
 ]);
 const CAPABILITY_VERSIONS = {
  core: "0.1.0",
+ iceberg: DUCKDB_WASM_VERSION,
  "ag-grid": "35.3.1",
  echarts: "6.1.0",
  perspective: "3.8.0",
@@ -40,6 +44,12 @@ const CAPABILITY_VERSIONS = {
 export function resolveCapabilities(config) {
  const ids = new Set(["core"]);
  const chart = config.layout.some(({ type }) => CHART_TYPES.has(type));
+ // The trusted Iceberg capability is selected only when the compiled
+ // dashboard declares an Iceberg source (spec §3); the runtime loads it by
+ // name from the pinned build's default trusted repository, and no project
+ // declaration can name an extension location.
+ if (config.data.sources.some(({ remote }) => remote?.kind === "iceberg"))
+  ids.add("iceberg");
  if (
   config.layout.some(({ type }) => type === "table") ||
   config.playground?.renderer === "ag-grid"
@@ -57,6 +67,7 @@ export function resolveCapabilities(config) {
  if (config.theme === "siemens-ix") ids.add("siemens-ix");
  return [
   "core",
+  "iceberg",
   "ag-grid",
   "echarts",
   "perspective",
@@ -188,6 +199,12 @@ export async function renderDashboard({ config, inputs = null }) {
 async function capabilityManifest(capabilities) {
  return Promise.all(
   capabilities.map(async (capability) => {
+   if (capability.id === "iceberg") {
+    // Record the exact pinned trusted artifact (ADR 0009); the runtime
+    // loads the extension by name from the build's default trusted
+    // repository, never from a project-authored location.
+    return { ...capability, ...DUCKDB_ICEBERG_CAPABILITY };
+   }
    if (capability.id !== "perspective") return capability;
    const assets = await Promise.all(
     [

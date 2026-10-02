@@ -74,7 +74,8 @@ export async function registerSources(engine, files, options = {}) {
   const sqlTypes = schemaTypes(id, schema);
   const remote = source.remote ?? null;
   const parquetSet = remote?.kind === "parquet-set";
-  const type = remote ? (parquetSet ? "parquet" : remoteFormat(id, remote)) : inputType(source, input);
+  const iceberg = remote?.kind === "iceberg";
+  const type = remote ? (parquetSet || iceberg ? "parquet" : remoteFormat(id, remote)) : inputType(source, input);
   const physicalName = `__featherbi_source_${generation}_${index}.${type}`;
   try {
    let columns;
@@ -120,6 +121,15 @@ export async function registerSources(engine, files, options = {}) {
      );
      readerName = remote.uri;
      readerPayload = { headers: columns, remote: true, parquetFiles: files };
+    } else if (iceberg) {
+     // One Iceberg table resolves through its metadata document exactly
+     // once per generation: the view pins the declared versioned metadata
+     // URI, so the scan — including delete files — always targets that one
+     // snapshot family until an explicit Refresh re-stages the same
+     // document (spec §2.2, §3; never read_parquet over the data files).
+     readerName = remote.metadataUri;
+     columns = await describeIceberg(engine.connection, id, readerName);
+     readerPayload = { headers: columns, remote: true, iceberg: true };
     } else {
      readerName = remote.uri;
      columns = await describeReader(
@@ -394,7 +404,25 @@ export function liveSecretSql(id, credentials, remote, generation = 0, scope = n
   // of this set never pick up another live source's credentials.
   options.push(`SCOPE ${stringLiteral(scope ?? remote.uri)}`);
  }
+ if (remote.kind === "iceberg") {
+  // Scope the secret to the table location so the metadata and data object
+  // reads share the recipient's credentials without covering other tables.
+  options.push(`SCOPE ${stringLiteral(icebergScope(remote.metadataUri))}`);
+ }
  return `CREATE OR REPLACE TEMPORARY SECRET ${identifier(liveSecretName(id, generation))} (TYPE s3, PROVIDER config, ${options.join(", ")})`;
+}
+
+/** S3 prefix scope for one Iceberg table's credentials: Iceberg lays out
+ * `metadata/` beside `data/` under the table location, so the metadata
+ * document's directory parent covers both kinds of reads; a flat layout
+ * scopes to the document's own directory (spec 2026-09-28-0004 §2.2). */
+export function icebergScope(metadataUri) {
+ const directory = String(metadataUri).slice(0, String(metadataUri).lastIndexOf("/") + 1);
+ const parent = directory.slice(0, -1);
+ if (parent.endsWith("/metadata")) {
+  return `${parent.slice(0, -"/metadata".length)}/`;
+ }
+ return directory;
 }
 
 /**
@@ -661,6 +689,23 @@ async function prepareRemoteSource(engine, source, id, liveCredentials, generati
  await runSql(engine.connection, "LOAD httpfs");
  const remote = source.remote;
  const parquetSet = remote.kind === "parquet-set";
+ const iceberg = remote.kind === "iceberg";
+ if (iceberg) {
+  // Trusted runtime code loads the Iceberg capability (spec §3): the
+  // pinned DuckDB-WASM build fetches the official version/platform artifact
+  // from its default trusted repository (ADR 0009) — the WASM build ignores
+  // custom extension repositories, and no project-authored location exists
+  // to accept. A failed load is a visible source error, never a fallback.
+  try {
+   await runSql(engine.connection, "LOAD iceberg");
+  } catch (error) {
+   throw sourceError(
+    id,
+    `cannot load the trusted Iceberg capability: ${error instanceof Error ? error.message : String(error)}; the pinned DuckDB build fetches it from its trusted extension repository, so check the browser's network access`,
+    "sources.iceberg-capability",
+   );
+  }
+ }
  let credentials = null;
  if (remote.auth === "s3") {
   credentials =
@@ -674,11 +719,12 @@ async function prepareRemoteSource(engine, source, id, liveCredentials, generati
     "sources.credentials-required",
    );
   }
- } else if (!parquetSet) {
+ } else if (!parquetSet && !iceberg) {
   return null;
  }
- // A public parquet-set still needs its endpoint/region secret for the
- // browser to resolve the s3:// prefix; it stays anonymous (no credentials).
+ // A public Parquet set or Iceberg table still needs its endpoint/region
+ // secret for the browser to resolve the s3:// location; it stays anonymous
+ // (no credentials).
  if (!credentials && !remote.region && !remote.endpoint) return null;
  await runSql(
   engine.connection,
@@ -695,6 +741,26 @@ async function describe(connection, name) {
 async function describeReader(connection, reader) {
  const table = await runSql(connection, `DESCRIBE SELECT * FROM ${reader}`);
  return table.toArray().map((row) => String(row.column_name));
+}
+
+/** Columns of one declared Iceberg table resolved through the pinned reader.
+ * The first resolve happens here, inside candidate staging, so an
+ * unreadable or unsupported table fails visibly and rolls the candidate
+ * generation back (LT-06). */
+async function describeIceberg(connection, id, metadataUri) {
+ try {
+  return await describeReader(
+   connection,
+   `iceberg_scan(${stringLiteral(metadataUri)})`,
+  );
+ } catch (error) {
+  if (error?.sourceId) throw error;
+  throw sourceError(
+   id,
+   `cannot read the Iceberg table at ${JSON.stringify(metadataUri)}: ${error instanceof Error ? error.message : String(error)}; check the metadata document, the table's objects, and CORS access for the browser`,
+   "sources.iceberg",
+  );
+ }
 }
 
 function headersFor(type, text, id) {
@@ -912,6 +978,12 @@ function missingColumns(id, schema, columns) {
 }
 
 function readerSql(type, name, payload) {
+ if (payload?.iceberg) {
+  // The pinned Iceberg reader resolves the declared versioned metadata
+  // document — snapshot and delete semantics — never the raw data files
+  // (LT-08; spec §2.2).
+  return `iceberg_scan(${stringLiteral(name)})`;
+ }
  if (type === "parquet") {
   // A pinned Parquet set reads its explicit resolved list; a single remote
   // or registered file reads its one URI/name.

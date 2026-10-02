@@ -17,7 +17,7 @@ const PRESET_TOKEN_FILES = {
 };
 const presetThemesDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "themes");
 const FORBIDDEN_SQL = /\b(?:ALTER|ATTACH|CALL|COPY|CREATE|DELETE|DETACH|DROP|EXPORT|IMPORT|INSERT|INSTALL|LOAD|MERGE|PRAGMA|TRUNCATE|UPDATE|VACUUM)\b/i;
-const FILE_READER = /\b(?:read_csv|read_csv_auto|read_json|read_json_auto|read_ndjson|read_parquet|parquet_scan|csv_scan)\s*\(/i;
+const FILE_READER = /\b(?:read_csv|read_csv_auto|read_json|read_json_auto|read_ndjson|read_parquet|parquet_scan|csv_scan|iceberg_scan)\s*\(/i;
 
 /** Compile one dashboard project into deterministic strict runtime contract 2. */
 export async function compileProject(projectPath) {
@@ -203,25 +203,83 @@ function validateRemoteSources(project, filename, document, lineCounter) {
   if (!source.remote) continue;
   const remote = source.remote;
   const parquetSet = remote.kind === "parquet-set";
+  const iceberg = remote.kind === "iceberg";
   const sourceNote = `source ${JSON.stringify(source.id)}: `;
-  const conflicts = ["format", "filename"].filter((field) => remote[field] !== undefined);
-  if (parquetSet && conflicts.length > 0) {
-   throw yamlError(
-    filename,
-    document,
-    lineCounter,
-    ["sources", index, "remote", conflicts[0]],
-    `${sourceNote}a parquet-set selector cannot declare ${conflicts.map((field) => JSON.stringify(field)).join(" and ")}; remove them or use a single-file remote`,
+  if (iceberg) {
+   // Iceberg tables are metadata-URI identified in this revision: a REST
+   // `catalog` identity is a later ticket and stays an unknown field, and
+   // file-shaped fields never apply to a table source (spec §2.2).
+   const conflicts = ["uri", "format", "selector", "filename"].filter(
+    (field) => remote[field] !== undefined,
    );
+   if (conflicts.length > 0) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", conflicts[0]],
+     `${sourceNote}an iceberg table cannot declare ${conflicts.map((field) => JSON.stringify(field)).join(" and ")}; it is identified by "metadataUri" alone`,
+    );
+   }
+   if (!/^s3:\/\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*\.metadata\.json$/.test(remote.metadataUri)) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "metadataUri"],
+     `${sourceNote}metadataUri must be an s3:// URI of a versioned .metadata.json document, such as "s3://reports/orders/metadata/v3.metadata.json"`,
+    );
+   }
+  } else {
+   const conflicts = ["format", "filename"].filter((field) => remote[field] !== undefined);
+   if (parquetSet && conflicts.length > 0) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", conflicts[0]],
+     `${sourceNote}a parquet-set selector cannot declare ${conflicts.map((field) => JSON.stringify(field)).join(" and ")}; remove them or use a single-file remote`,
+    );
+   }
+   if (!parquetSet && remote.selector !== undefined) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "selector"],
+     `${sourceNote}selector requires remote.kind: parquet-set`,
+    );
+   }
+   if (remote.metadataUri !== undefined) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "metadataUri"],
+     `${sourceNote}metadataUri requires remote.kind: iceberg`,
+    );
+   }
   }
-  if (!parquetSet && remote.selector !== undefined) {
-   throw yamlError(
-    filename,
-    document,
-    lineCounter,
-    ["sources", index, "remote", "selector"],
-    `${sourceNote}selector requires remote.kind: parquet-set`,
-   );
+  if (iceberg) {
+   if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(remote.metadataUri)) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "metadataUri"],
+     "metadataUri must not embed credentials; declare auth and keep credentials in the gitignored .env",
+    );
+   }
+   const metadataQuery = remote.metadataUri.match(/[?#](.*)$/)?.[1] ?? "";
+   if (looksLikeCredentialMaterial(metadataQuery)) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "metadataUri"],
+     "metadataUri must not contain credential or secret-looking query parameters",
+    );
+   }
   }
   if (parquetSet) {
    if (!remote.uri.endsWith("/")) {
@@ -285,7 +343,7 @@ function validateRemoteSources(project, filename, document, lineCounter) {
     }
    }
   }
-  if (/^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(remote.uri)) {
+  if (remote.uri !== undefined && /^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(remote.uri)) {
    throw yamlError(
     filename,
     document,
@@ -294,15 +352,17 @@ function validateRemoteSources(project, filename, document, lineCounter) {
     "remote uri must not embed credentials; declare auth and keep credentials in the gitignored .env",
    );
   }
-  const query = source.remote.uri.match(/[?#](.*)$/)?.[1] ?? "";
-  if (looksLikeCredentialMaterial(query)) {
-   throw yamlError(
-    filename,
-    document,
-    lineCounter,
-    ["sources", index, "remote", "uri"],
-    "remote uri must not contain credential or secret-looking query parameters",
-   );
+  if (remote.uri !== undefined) {
+   const query = source.remote.uri.match(/[?#](.*)$/)?.[1] ?? "";
+   if (looksLikeCredentialMaterial(query)) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "uri"],
+     "remote uri must not contain credential or secret-looking query parameters",
+    );
+   }
   }
   if (
    source.remote.endpoint &&
@@ -318,8 +378,8 @@ function validateRemoteSources(project, filename, document, lineCounter) {
    );
   }
   if (!remoteMemberName(source)) {
-   // Parquet sets are live-only prefixes, never packaged file members.
-   if (parquetSet) continue;
+   // Live-only kinds (Parquet sets, Iceberg tables) never package a member.
+   if (parquetSet || iceberg) continue;
    throw yamlError(
     filename,
     document,
@@ -335,6 +395,24 @@ function validateRemoteSources(project, filename, document, lineCounter) {
 function runtimeSource(source) {
  if (!source.remote) return source;
  const remote = source.remote;
+ if (remote.kind === "iceberg") {
+  // Live Iceberg table by metadata URI (spec 2026-09-28-0004 §2.2): the
+  // recipient's browser loads the pinned trusted Iceberg capability and
+  // scans the exact declared versioned metadata document. Only the declared
+  // non-secret identity travels; no snapshot inventory or credentials
+  // compile in.
+  return {
+   id: source.id,
+   schema: source.schema,
+   remote: {
+    kind: "iceberg",
+    metadataUri: remote.metadataUri,
+    auth: remote.auth,
+    ...(remote.region ? { region: remote.region } : {}),
+    ...(remote.endpoint ? { endpoint: remote.endpoint } : {}),
+   },
+  };
+ }
  if (remote.kind === "parquet-set") {
   // Live Parquet file set (spec 2026-09-28-0004 §2.1): the recipient's
   // browser resolves the prefix glob or fetches the manifest once per
@@ -383,6 +461,7 @@ function runtimeSource(source) {
 /** Safe ZIP member name for a remote source: declared filename or sanitized URI basename. */
 function remoteMemberName(source) {
  if (source.remote.filename) return source.remote.filename;
+ if (typeof source.remote.uri !== "string") return "";
  const path = source.remote.uri.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
  const base = path.split(/[?#]/)[0].split("/").filter(Boolean).pop() ?? "";
  return base.replace(/[/\\:\u0000-\u001f\u007f-\u009f]/g, "_");
@@ -692,6 +771,17 @@ function preferredSchemaError(errors, project) {
   const missing = errors.find((error) => error.instancePath === prefix && error.keyword === "required" && !["aggregation", "field"].includes(error.params.missingProperty));
   if (missing) return missing;
  }
+ // An unknown field is the actionable cause when it is the only problem:
+ // it names itself (and its source position), while the missing-required
+ // cascade it triggers does not. Errors from inside a `oneOf` alternative
+ // are competing-variant noise, not the cause, so they never win here
+ // (this keeps an Iceberg `catalog` identity naming source and field).
+ const unknown = errors.find(
+  (error) =>
+   error.keyword === "additionalProperties" &&
+   !error.schemaPath.includes("/oneOf/"),
+ );
+ if (unknown) return unknown;
  return errors[0];
 }
 

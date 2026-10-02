@@ -220,16 +220,23 @@ function collectSemanticIssues(config, issues) {
       );
     }
     if (source.remote) {
-      const query = source.remote.uri.match(/[?#](.*)$/)?.[1] ?? "";
-      if (
-        /^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(source.remote.uri) ||
-        looksLikeCredentialMaterial(query)
-      ) {
-        issue(
-          `${basePath}.remote.uri`,
-          "remote.credentials-in-uri",
-          "remote uri must not contain credentials or secret-looking query parameters",
-        );
+      // Live remote identities carry their location in `uri` (single-file,
+      // Parquet set) or `metadataUri` (Iceberg table); both get the same
+      // credential-material admission on the URI and its query/fragment.
+      for (const location of ["uri", "metadataUri"]) {
+        const value = source.remote[location];
+        if (typeof value !== "string") continue;
+        const query = value.match(/[?#](.*)$/)?.[1] ?? "";
+        if (
+          /^[a-z][a-z0-9+.-]*:\/\/[^/@]*@/i.test(value) ||
+          looksLikeCredentialMaterial(query)
+        ) {
+          issue(
+            `${basePath}.remote.${location}`,
+            "remote.credentials-in-uri",
+            `remote ${location} must not contain credentials or secret-looking query parameters`,
+          );
+        }
       }
       if (
         source.remote.endpoint &&

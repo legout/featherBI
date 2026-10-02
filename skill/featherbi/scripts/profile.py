@@ -29,6 +29,8 @@ PARQUET_SET_MAX_FILES = 10_000
 PARQUET_SET_MANIFEST_MAX_BYTES = 2 * 1024 * 1024
 # Shape one Parquet-set manifest URI must have (spec §2.1).
 PARQUET_SET_MANIFEST_URI = re.compile(r"^s3://[A-Za-z0-9._~/-]+\.json$")
+# Shape one declared Iceberg metadata URI must have (spec §2.2).
+ICEBERG_METADATA_URI = re.compile(r"^s3://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*\.metadata\.json$")
 
 
 def identifier(name):
@@ -47,6 +49,25 @@ def read_relation(con, input_path, format_name):
     if format_name == "ndjson":
         return con.read_json(input_path, format="newline_delimited")
     return con.read_parquet(input_path)
+
+
+def read_iceberg_relation(con, input_path, source_id):
+    """Read one declared Iceberg table through its metadata document with
+    true snapshot/delete semantics (never read_parquet over the data files).
+
+    The URI is validated against the strict metadata-URI shape first, so the
+    interpolated literal cannot carry quotes or escapes.
+    """
+    if not ICEBERG_METADATA_URI.fullmatch(input_path or ""):
+        raise ValueError(
+            f"source {source_id!r}: --iceberg-metadata requires an s3:// URI of "
+            "a versioned .metadata.json document, such as "
+            "'s3://reports/orders/metadata/v3.metadata.json'"
+        )
+    load_iceberg(con)
+    return con.sql(
+        f"SELECT * FROM iceberg_scan({sql_literal(input_path)})"
+    )
 
 
 def env_with_dotenv():
@@ -120,6 +141,15 @@ def load_httpfs(con):
     except duckdb.Error:
         con.execute("INSTALL httpfs")
         con.execute("LOAD httpfs")
+
+
+def load_iceberg(con):
+    """Load the native Iceberg extension (browser pin parity: 1.5.5)."""
+    try:
+        con.execute("LOAD iceberg")
+    except duckdb.Error:
+        con.execute("INSTALL iceberg")
+        con.execute("LOAD iceberg")
 
 
 def credential_chain_secret(con):
@@ -273,12 +303,15 @@ def value_json(value):
     return text if len(text) <= MAX_TEXT_LENGTH else text[:MAX_TEXT_LENGTH] + "…"
 
 
-def profile(input_path, source_id, format_name, auth="none", include_values=False, secret_values=None, region=None, endpoint=None, selector_glob=None, selector_manifest=None):
+def profile(input_path, source_id, format_name, auth="none", include_values=False, secret_values=None, region=None, endpoint=None, selector_glob=None, selector_manifest=None, iceberg_metadata=False):
     remote = is_remote(input_path)
-    if (selector_glob is not None or selector_manifest is not None) and not remote:
-        raise ValueError("a selector requires a remote s3:// prefix input")
-    if selector_glob is not None and selector_manifest is not None:
-        raise ValueError("a parquet-set selector requires exactly one of glob or manifest")
+    selector_count = (
+        (selector_glob is not None) + (selector_manifest is not None) + bool(iceberg_metadata)
+    )
+    if selector_count > 1:
+        raise ValueError("a live source selector requires exactly one of glob, manifest, or iceberg-metadata")
+    if selector_count and not remote:
+        raise ValueError("a selector requires a remote s3:// input")
     size = None if remote else os.path.getsize(input_path)
     con = duckdb.connect(":memory:")
     con.execute(f"SET memory_limit='{MEMORY_LIMIT}'")
@@ -288,7 +321,9 @@ def profile(input_path, source_id, format_name, auth="none", include_values=Fals
         configure_remote(con, input_path, source_id, auth, secret_values or {}, region, endpoint)
     files = None
     selector = None
-    if selector_glob is not None:
+    if iceberg_metadata:
+        relation = read_iceberg_relation(con, input_path, source_id)
+    elif selector_glob is not None:
         files = resolve_parquet_set(con, input_path, selector_glob, source_id)
         relation = con.read_parquet(files)
         selector = {"glob": selector_glob}
@@ -379,6 +414,12 @@ def profile(input_path, source_id, format_name, auth="none", include_values=Fals
         payload["selector"] = selector
         payload["limits"]["max_parquet_set_files"] = PARQUET_SET_MAX_FILES
         payload["limits"]["max_parquet_set_manifest_bytes"] = PARQUET_SET_MANIFEST_MAX_BYTES
+    if iceberg_metadata:
+        # Bounded Iceberg table profile: the snapshot's row count and schema
+        # summary only — no manifest/data-file inventory, metadata paths, or
+        # credentials reach the portable report (spec §5).
+        payload["kind"] = "iceberg"
+        payload["snapshot_rows"] = aggregate[0]
     return payload
 
 
@@ -394,6 +435,7 @@ def main():
     selector = parser.add_mutually_exclusive_group()
     selector.add_argument("--glob", help='relative Parquet-object pattern for one live Parquet set, e.g. "year=*/part-*.parquet" (requires --format parquet and an s3:// prefix input)')
     selector.add_argument("--manifest", help='s3:// URI of the .json manifest for one live Parquet set, e.g. "s3://reports/sales/manifest.json" (requires --format parquet and an s3:// prefix input)')
+    selector.add_argument("--iceberg-metadata", action="store_true", help="treat --input as one live Iceberg table's versioned s3:// .metadata.json document and profile it with true snapshot/delete semantics (requires --format parquet)")
     parser.add_argument("--output")
     args = parser.parse_args()
     if not SOURCE_ID.fullmatch(args.source_id):
@@ -422,6 +464,15 @@ def main():
             )
         if not args.input.startswith("s3://") or not args.input.endswith("/"):
             parser.error("--manifest requires an s3:// prefix input ending with '/'")
+    if args.iceberg_metadata:
+        if args.format != "parquet":
+            parser.error("--iceberg-metadata requires --format parquet")
+        if not ICEBERG_METADATA_URI.fullmatch(args.input):
+            parser.error(
+                '--iceberg-metadata requires an s3:// URI of a versioned '
+                '.metadata.json document such as '
+                '"s3://reports/orders/metadata/v3.metadata.json"'
+            )
     try:
         payload = profile(
             args.input,
@@ -434,6 +485,7 @@ def main():
             args.endpoint,
             args.glob,
             args.manifest,
+            args.iceberg_metadata,
         )
     except Exception as error:
         message = str(error)

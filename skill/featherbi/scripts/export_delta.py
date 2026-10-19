@@ -22,7 +22,6 @@ local paths and secrets.
 
 import argparse
 import json
-import re
 import time
 import uuid
 from pathlib import Path
@@ -31,7 +30,6 @@ from typing import NoReturn
 import duckdb  # pyright: ignore[reportMissingImports] # resolved by `uv run --script` from the PEP 723 block above
 from remote_common import configure_remote, env_with_dotenv, is_remote  # pyright: ignore[reportMissingImports] # sibling of this script
 
-DELTA_COMMIT = re.compile(r"^(\d{20})\.json$")
 DELTA_COMMIT_SQL = r"(\d{20})\.json$"
 
 
@@ -51,9 +49,8 @@ def current_delta_version(con, table):
         ).fetchone()
     except duckdb.Error:
         fail(
-            "cannot list the input's _delta_log; verify the location is a "
-            "readable Delta table with your S3 credentials (AWS chain or "
-            "gitignored .env)"
+            "cannot list the input's _delta_log; verify it is a readable "
+            "Delta table and any remote credentials are configured"
         )
     if row is None or row[0] is None:
         fail("input has no readable _delta_log commit files; it is not a Delta table location")
@@ -83,28 +80,30 @@ def main():
     parser.add_argument(
         "--input",
         required=True,
-        help="local directory or remote location (s3://) of a Delta table",
+        help="local directory or native-readable remote Delta table location",
     )
     parser.add_argument("--output", required=True, help="local export output directory")
     args = parser.parse_args()
-    table = args.input if is_remote(args.input) else Path(args.input)
+    remote_input = is_remote(args.input)
+    table = args.input if remote_input else Path(args.input)
     if isinstance(table, str):
         table = table.rstrip("/")
     elif not table.is_dir():
         fail("--input is not a readable directory")
     output = Path(args.output)
-    output.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
     try:
         con.execute("LOAD delta")
     except duckdb.Error:
         fail("the DuckDB Delta extension is not installed; featherbi does not download it")
-    if str(table).startswith("s3://"):
+    if remote_input:
+        auth = "s3" if args.input.lower().startswith("s3://") else "none"
         try:
-            configure_remote(con, "export delta", "s3", env_with_dotenv())
+            configure_remote(con, "export delta", auth, env_with_dotenv())
         except ValueError as error:
             fail(str(error))
     version = current_delta_version(con, table)
+    output.mkdir(parents=True, exist_ok=True)
     # gmtime is UTC by definition; the sidecar keeps the S3 evidence format
     # (for example "2026-10-19T14:23:40+00:00").
     moment = time.gmtime()

@@ -621,7 +621,7 @@ async function resolveManifestParquetSet(engine, source, id, liveCredentials, ge
 async function fetchPublicHttpsManifestText(id, manifestUri) {
  let response;
  try {
-  response = await fetch(manifestUri);
+  response = await fetch(manifestUri, { credentials: "omit" });
  } catch (error) {
   throw sourceError(
    id,

@@ -252,25 +252,36 @@ async function tableKeys(table) {
  * existing author credential conventions (`FTHR_S3_*`, test-only values,
  * never printed). ListObjectsV2 (with `prefix`/`start-after`) plus object
  * HEAD/GET with Range covers everything native DuckDB httpfs and the Delta
- * kernel request. `control.commitAfterDiscoveryListing` lands the v3 commit
- * in the callback after the first `_delta_log` listing response is flushed:
- * strictly after the exporter's version discovery, strictly before its
- * COPY scans — the review's concurrent-writer race, deterministic.
+ * kernel request. For the snapshot-race regression, the first `_delta_log`
+ * listing returns v2; after that response flushes, the fixture commits v3.
+ * Any later `_delta_log` listing waits until v3 is visible, guaranteeing the
+ * scan would see a different head without version pinning.
  */
 async function serveS3DeltaTable(table, control = {}) {
  let keys = await tableKeys(table);
  const reload = async () => {
   keys = await tableKeys(table);
  };
- const server = http.createServer((request, response) => {
+ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, "http://s3.local");
   if (url.pathname === "/reports" || url.pathname === "/reports/") {
    control.listings = (control.listings ?? 0) + 1;
    const prefix = url.searchParams.get("prefix") ?? "";
    const startAfter = url.searchParams.get("start-after") ?? "";
+   const isDeltaLogListing = prefix.includes("_delta_log");
+   if (isDeltaLogListing) {
+    control.deltaLogListings = (control.deltaLogListings ?? 0) + 1;
+   }
+   if (control.commitPromise && isDeltaLogListing) {
+    await control.commitPromise;
+   }
    const matched = [...keys.keys()]
     .filter((key) => key.startsWith(prefix) && key > startAfter)
     .sort();
+   const commitAfterThisListing =
+    control.commitAfterDiscoveryListing &&
+    isDeltaLogListing &&
+    !control.commitPromise;
    const entries = matched
     .map(
      (key) =>
@@ -282,19 +293,28 @@ async function serveS3DeltaTable(table, control = {}) {
     "Content-Type": "application/xml",
     "Content-Length": Buffer.byteLength(body),
    });
+   if (commitAfterThisListing) {
+    control.commitPromise = new Promise((resolve) => {
+     control.resolveCommit = resolve;
+    });
+   }
    response.end(body, () => {
-    if (
-     control.commitAfterDiscoveryListing &&
-     !control.committed &&
-     prefix.includes("_delta_log")
-    ) {
-     control.committed = true;
-     stat(path.join(table, "f3.parquet")).then((info) =>
-      writeFile(
-       path.join(table, logFile(3)),
-       commit([commitInfo(3, "WRITE"), add("f3.parquet", info.size)]),
-      ).then(reload),
-     );
+    if (commitAfterThisListing) {
+     (async () => {
+      try {
+       const info = await stat(path.join(table, "f3.parquet"));
+       await writeFile(
+        path.join(table, logFile(3)),
+        commit([commitInfo(3, "WRITE"), add("f3.parquet", info.size)]),
+       );
+       await reload();
+       control.committed = true;
+      } catch (error) {
+       control.commitError = error;
+      } finally {
+       control.resolveCommit();
+      }
+     })();
     }
    });
    return;
@@ -370,9 +390,6 @@ async function s3AuthorEnv(host) {
  }
  env.HOME = home;
  env.UV_OFFLINE = "1";
- // The pinned duckdb==1.5.5 wheel is cached for the uv-managed 3.14
- // interpreter only, so offline resolution pins it explicitly.
- env.UV_PYTHON = "3.14";
  if (!env.UV_CACHE_DIR) {
   const cache = path.join(realHome, ".cache", "uv");
   if ((await stat(cache).catch(() => null))?.isDirectory()) env.UV_CACHE_DIR = cache;
@@ -551,8 +568,13 @@ test("a commit between version discovery and the scan cannot be misidentified by
  try {
   const env = await s3AuthorEnv(fixture.host);
   await runExport("s3://reports/table", output, env);
+  await control.commitPromise;
+  assert.equal(control.commitError, undefined, "the fixture must commit v3 successfully");
   assert.equal(control.committed, true, "the fixture must have raced a v3 commit in");
-  assert.ok(control.listings >= 1);
+  assert.ok(
+   control.deltaLogListings >= 2,
+   "the scan must list the Delta log again after the version discovery",
+  );
   const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
   const sidecar = JSON.parse(await readFile(path.join(output, "export.json"), "utf8"));
   // The sidecar identifies the exact exported snapshot: version 2, not the

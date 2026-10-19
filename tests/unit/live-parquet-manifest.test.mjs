@@ -383,9 +383,6 @@ test("the native profiler resolves a manifest set with dedupe and no private pat
  }
  env.HOME = new URL("../../.artifacts/test-home", import.meta.url).pathname;
  env.UV_OFFLINE = "1";
- // The pinned duckdb==1.5.5 wheel is cached for the uv-managed 3.14
- // interpreter only, so offline resolution pins it explicitly.
- env.UV_PYTHON = "3.14";
  // Offline: the isolated HOME still reaches uv's package cache and the
  // already-installed DuckDB extensions, so nothing downloads.
  if (!env.UV_CACHE_DIR) {

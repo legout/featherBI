@@ -40,6 +40,7 @@ Without a global link, run from a checkout: `npm ci`, then `node bin/featherbi.m
    ```sh
    featherbi compile --project path/to/project/dashboard.yaml
    featherbi build \
+     --target zip \
      --config path/to/project/.featherbi/dashboard.config.json \
      --source inspections=/absolute/local/file.parquet \
      --output path/to/project/.featherbi/dashboard.zip

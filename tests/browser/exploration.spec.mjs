@@ -39,7 +39,7 @@ test.beforeAll(async ({ browser }) => {
  await cp(path.join(rootDir, "examples", "exploration-dashboard"), project, { recursive: true });
  await writeFile(data, JSON.stringify(Array.from({ length: 12 }, (_, index) => ({ station: `S${index % 3}`, amount: index + 1 }))));
  await cli("compile", "--project", path.join(project, "dashboard.yaml"));
- await cli("build", "--config", path.join(project, ".featherbi", "dashboard.config.json"), "--source", `inspections=${data}`, "--output", archive);
+ await cli("build", "--target", "zip", "--config", path.join(project, ".featherbi", "dashboard.config.json"), "--source", `inspections=${data}`, "--output", archive);
  await mkdir(extracted, { recursive: true });
  await execFileAsync("uv", ["run", "python", "-m", "zipfile", "-e", archive, extracted]);
 });

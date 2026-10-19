@@ -7,14 +7,22 @@ import { preflightBuild } from "./preflight.mjs";
 
 const ZIP_MTIME = new Date("1980-01-01T00:00:00.000Z");
 
-/** Build and atomically publish one ZIP artifact with external data members. */
+/** Build and atomically publish one artifact: static single-file HTML or an external-data ZIP. */
 export async function buildArtifact({
  configPath,
  sources,
  outPath,
  overwrite = false,
+ target,
 }) {
- const { config, inputs, cleanup } = await preflightBuild({ configPath, sources });
+ if (target !== "static" && target !== "zip") {
+  throw new Error(
+   target === undefined
+    ? "missing required --target; use static or zip"
+    : `unknown target ${JSON.stringify(target)}; use static or zip`,
+  );
+ }
+ const { config, inputs, cleanup } = await preflightBuild({ configPath, sources, target });
  const resolvedOut = path.resolve(outPath);
  try {
   if (
@@ -30,6 +38,20 @@ export async function buildArtifact({
   }
 
   const rendered = await renderDashboard({ config });
+  if (target === "static") {
+   // The static artifact is exactly the self-contained dashboard.html
+   // (spec 2026-10-19-0005 §2); preflight admitted only live sources, so no
+   // dataset member exists and the browser reads each URI at open time.
+   const artifact = rendered.html;
+   await publishFile(resolvedOut, artifact, overwrite);
+   return {
+    outPath: resolvedOut,
+    artifactSha256: createHash("sha256").update(artifact).digest("hex"),
+    bytes: artifact.length,
+    duckdbWasm: rendered.duckdbWasm,
+    echarts: rendered.echarts,
+   };
+  }
   // Live remote sources read in the browser; only packaged sources are members.
   const packagedSources = config.data.sources.filter(({ remote }) => !remote);
   const members = [

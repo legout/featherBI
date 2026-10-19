@@ -112,6 +112,7 @@ try {
    sources: options.sources,
    outPath: required(options.output, "--output"),
    overwrite: options.overwrite,
+   target: required(options.target, "--target"),
   });
   console.log(
    `wrote ${result.outPath} (${result.bytes} bytes, sha256 ${result.artifactSha256})`,
@@ -165,7 +166,7 @@ function parseArgs(args, { sources, build }) {
    options.sources[id] = assignment.slice(split + 1);
    continue;
   }
-  const key = { "--config": "config", "--output": "output" }[flag];
+  const key = { "--config": "config", "--output": "output", "--target": "target" }[flag];
   if (!key || (!build && key !== "config")) {
    throw new Error(`unknown option ${JSON.stringify(flag)}`);
   }
@@ -237,7 +238,7 @@ console.log(`featherbi setup [--global] [--agent ID] [--yes|--no] [--design]
 featherbi profile --input FILE|URI --source-id ID --format csv|json|ndjson|parquet [--auth none|s3] [--region REGION] [--endpoint ENDPOINT] [--glob PATTERN | --manifest URI | --iceberg-metadata | --iceberg-catalog --catalog-warehouse ID --catalog-namespace ID --catalog-table ID --catalog-auth none|bearer] [--output FILE] [--include-values]
 featherbi compile --project DASHBOARD.yaml [--output .featherbi/dashboard.config.json]
 featherbi validate --config CONFIG
-featherbi build --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]
+featherbi build --target static|zip --config CONFIG --source ID=FILE [--source ID=FILE ...] --output FILE [--overwrite]
 featherbi export delta --input DELTA_TABLE_LOCATION --output DIRECTORY
 
 setup checks Node, uv, and desktop Chrome, then offers the official DuckDB agent skills install. Without --agent it targets the shared universal directories (.agents/skills in the project, ~/.agents/skills with --global) for both the bundled featherbi skill and the DuckDB skills; --agent pi|claude|cursor|gemini installs into that agent's own directories instead. With --global it also verifies the featherbi CLI is on PATH, links this package's skill into the global skills dir, and installs the DuckDB skills with -g; --design adds the opt-in design skill, never by default. Profiles, compiles, builds, and exports local artifacts only; it never publishes or uploads dashboard data. export delta writes immutable Parquet part files plus a root manifest.json and export.json sidecar into the output directory; the author publishes that directory themselves as a live Parquet set.`);

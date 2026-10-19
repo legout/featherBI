@@ -11,7 +11,8 @@
 **Dependencies:** plan 0006 phases B–E may run in parallel where file targets do not overlap. Spikes write disposable harnesses plus an evidence note under `project/research/`; harness code is not merged.
 
 - S1 evidence (2026-10-19): [static hosting, CORS, and CSP probe](../research/static-hosting-cors-csp-probe.md) — working CSP shape for T4 (#43) and CORS behavior for SL-07.
-- S2 evidence (2026-10-19): [DuckLake extension gate probe](../research/ducklake-extension-gate-probe.md) — feasibility passed; the exact artifact URL and SHA-256 are recorded for the still-open G3 trust decision.
+- S2 evidence (2026-10-19): [DuckLake extension gate probe](../research/ducklake-extension-gate-probe.md) — feasibility passed; the exact artifact URL and owner-approved SHA-256 are recorded in G3.
+- S3 evidence (2026-10-19): [native Delta export probe](../research/delta-native-export-probe.md) — update/delete counts match `delta_scan`, and the exported manifest loads through the browser selector; the extension has no native DML writer, relevant to T2 (#41).
 
 ## Gates
 
@@ -53,7 +54,7 @@
 - A CSP may block DuckDB-WASM loads; S1 gates T4.
 - Data owners must configure CORS on their hosts; the viewer shows the remedy but cannot fix host configuration.
 - Publishing data at a public URL is an author decision; the README trust limits apply.
-- Delta extension availability for native DuckDB 1.5.5 is unverified until S3.
+- The native Delta extension is read-only in DuckDB 1.5.5; see S3 evidence for the disposable log-fixture approach and implications for T2 (#41).
 
 ## Not in this plan
 

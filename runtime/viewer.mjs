@@ -272,9 +272,10 @@ export async function mountDashboard({
   if (!controller) return;
   try {
    // An empty replacement re-stages the dashboard through the existing
-   // candidate path: every live Parquet set resolves its glob anew and
+   // candidate path: every live source re-resolves its identity (a Parquet
+   // set's glob or manifest, Iceberg metadata, a single file's URI) and
    // publishes atomically; on failure the controller retains the active
-   // generation's results with a source-specific error (LT-06).
+   // generation's results with a source-specific error (LT-06, SL-03).
    await controller.replaceFiles({});
   } catch {
    // Either a replacement is already pending, or the controller has already
@@ -486,11 +487,11 @@ function buildSources(container, sources) {
  replace.type = "button";
  replace.textContent = "Load selected files";
  container.append(replace);
- if (sources.some(({ remote }) => remote?.kind === "parquet-set" || remote?.kind === "iceberg")) {
-  // Explicit Refresh for pinned live sources (spec 2026-09-28-0004 §3):
-  // Parquet-set membership and Iceberg metadata documents are fixed per
-  // generation, so only this control re-resolves them. There is no
-  // automatic refresh or background polling.
+ if (sources.some(({ remote }) => remote)) {
+  // Explicit Refresh for pinned live sources (spec 2026-10-19-0005 §3):
+  // Parquet-set membership, Iceberg metadata documents, and single-file
+  // remotes are fixed per generation, so only this control re-resolves or
+  // re-reads them. There is no automatic refresh or background polling.
   const refresh = document.createElement("button");
   refresh.id = "refresh-live";
   refresh.type = "button";

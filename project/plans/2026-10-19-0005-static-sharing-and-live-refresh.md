@@ -11,6 +11,7 @@
 **Dependencies:** plan 0006 phases B–E may run in parallel where file targets do not overlap. Spikes write disposable harnesses plus an evidence note under `project/research/`; harness code is not merged.
 
 - S1 evidence (2026-10-19): [static hosting, CORS, and CSP probe](../research/static-hosting-cors-csp-probe.md) — working CSP shape for T4 (#43) and CORS behavior for SL-07.
+- S2 evidence (2026-10-19): [DuckLake extension gate probe](../research/ducklake-extension-gate-probe.md) — feasibility passed; the exact artifact URL and SHA-256 are recorded for the still-open G3 trust decision.
 
 ## Gates
 

@@ -46,7 +46,7 @@ Phase order: B quick wins, C setup, D opt-in docs, E theme, G process. Parallel 
 
 ## Global validation
 
-`npm run check` after #46, #47, #49, #50, #52, #53. `npm run test:browser` after #47, #48, #53. Documentation edits: link and diff inspection. One parent-owned fix pass and one delta recheck per candidate; remaining blockers go to the owner.
+Per ticket, run only its assigned focused validation obligation; runtime/browser tickets use the focused browser scenario required by the ticket. Per owner direction (2026-10-19), defer aggregate `npm run check`, the full `npm run test:browser` suite, and assembled-candidate validation until all #37–#54 tickets are implemented. Then run both suites on the assembled candidate. Documentation edits: link and diff inspection.
 
 ## Residual risks
 

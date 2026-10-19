@@ -7,7 +7,7 @@
 - One writer per worktree. A lane is a worktree; lanes in the same wave touch disjoint files (table below).
 - Waves integrate in order: a wave's lanes merge (sequentially, through the integration gate) before the next wave starts code that depends on them.
 - Spikes write only `project/research/` evidence and disposable harnesses; they never block lanes that do not consume them.
-- Owner decision points: **G3** (DuckLake artifact trust, after #38) and the visual token approval inside #52.
+- Owner decision points: G3 was approved after #38 for the exact artifact recorded in ADR 0009; the remaining owner decision is visual token approval inside #52.
 
 ## File ownership per ticket
 
@@ -38,7 +38,7 @@
 | 1b | #38 S2 | Gates #44 and produces the G3 decision basis. |
 | 1c | #39 S3 | Gates #41. |
 
-After #38: owner decides G3 (only if positive). After #37: CSP shape recorded for #43.
+After #38: S2 passed and G3 was approved for the exact artifact recorded in ADR 0009. After #37: CSP shape recorded for #43.
 
 ### Wave 2 — quick wins and independent tracks (four lanes, disjoint files)
 
@@ -76,7 +76,7 @@ Conflict notes: #41 and #42/#43 both touch `bin/featherbi.mjs` — they sit in d
 
 ## Validation per wave
 
-`npm run check` after every code merge; `npm run test:browser` after #40, #42, #43, #44, #47, #48, #53 and on each assembled wave candidate. Spikes: evidence-note review only.
+Per ticket, run only its assigned focused validation obligation; runtime/browser tickets use their focused required browser scenario. Per owner direction (2026-10-19), defer aggregate `npm run check`, the full `npm run test:browser` suite, and assembled-wave validation until all #37–#54 tickets are implemented. Then run both suites on the assembled candidate. Spikes: evidence-note review only.
 
 ## Not decided here
 

@@ -13,6 +13,7 @@
 - S1 evidence (2026-10-19): [static hosting, CORS, and CSP probe](../research/static-hosting-cors-csp-probe.md) — working CSP shape for T4 (#43) and CORS behavior for SL-07.
 - S2 evidence (2026-10-19): [DuckLake extension gate probe](../research/ducklake-extension-gate-probe.md) — feasibility passed; the exact artifact URL and owner-approved SHA-256 are recorded in G3.
 - S3 evidence (2026-10-19): [native Delta export probe](../research/delta-native-export-probe.md) — update/delete counts match `delta_scan`, and the exported manifest loads through the browser selector; the extension has no native DML writer, relevant to T2 (#41).
+- Owner clarifications during #41 (2026-10-19): export inputs may be local or native-readable remote locations (S3 uses existing author credential conventions); a Parquet-set manifest may be hosted at public HTTPS. Ticket #41 owns the focused reader/schema/profiler updates needed to honor the approved spec.
 
 ## Gates
 

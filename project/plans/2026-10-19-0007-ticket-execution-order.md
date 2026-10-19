@@ -1,13 +1,13 @@
 # Ticket execution order: issues #37–#54
 
-**Status:** proposed scheduling map, 2026-10-19. Orders the approved tickets of [plan 0005](./2026-10-19-0005-static-sharing-and-live-refresh.md) (#37–#45) and [plan 0006](2026-10-19-0006-simplification-and-standard-theme.md) (#46–#54). The issues own the task bodies; this file owns only sequence and parallelism. Execution start, candidate assembly, integration, and push remain separate owner gates.
+**Status:** proposed scheduling map, 2026-10-19. Orders the approved tickets of [plan 0005](./2026-10-19-0005-static-sharing-and-live-refresh.md) (#37–#45) and [plan 0006](2026-10-19-0006-simplification-and-standard-theme.md) (#46–#54). The issues own the task bodies; this file owns only sequence and parallelism. Per owner direction, implementation is serial in ticket order #37–#54; the wave/lane descriptions below are dependency and file-ownership maps, not permission for concurrent tickets. Execution start, candidate assembly, integration, and push remain separate owner gates.
 
 ## Rules
 
 - One writer per worktree. A lane is a worktree; lanes in the same wave touch disjoint files (table below).
 - Waves integrate in order: a wave's lanes merge (sequentially, through the integration gate) before the next wave starts code that depends on them.
 - Spikes write only `project/research/` evidence and disposable harnesses; they never block lanes that do not consume them.
-- Owner decision points: G3 was approved after #38 for the exact artifact recorded in ADR 0009; the remaining owner decision is visual token approval inside #52.
+- Owner decision points: G3 was approved after #38 for the exact artifact recorded in ADR 0009; ticket #41 clarifications are recorded in specs 0004/0005; the remaining owner decision is visual token approval inside #52.
 
 ## File ownership per ticket
 
@@ -15,7 +15,7 @@
 | --- | --- |
 | #37–#39 | `project/research/` only (disposable harnesses elsewhere) |
 | #40 | `runtime/viewer.mjs`, `runtime/controller.mjs` |
-| #41 | `skill/featherbi/scripts/export_delta.py` (new), `bin/featherbi.mjs`, `project-reference.md` |
+| #41 | `skill/featherbi/scripts/export_delta.py` (new), `bin/featherbi.mjs`, `project-reference.md`; HTTPS manifest support also touches `runtime/sources.mjs`, `authoring/compiler.mjs`, `contract/schema-v2.json`, `profile.py`, and focused tests |
 | #42, #43 | `packager/*`, `scripts/build.mjs`, `bin/featherbi.mjs` |
 | #44 | `runtime/sources.mjs`, `runtime/bootstrap.mjs`, `authoring/compiler.mjs`, schemas, fixtures |
 | #45 | `README.md`, `SKILL.md`, `project-reference.md`, `CHANGELOG.md` |
@@ -70,7 +70,7 @@ Conflict notes: #41 and #42/#43 both touch `bin/featherbi.mjs` — they sit in d
 
 ## Parallelism summary
 
-- **Maximum useful concurrency:** 4 lanes (wave 2). More lanes only add integration overhead.
+- **Maximum active ticket concurrency for this owner-directed run:** 1. The proposed four-lane layout remains a dependency/file-ownership reference only.
 - **Never parallel:** #40 with #47/#48 (shared runtime files); #46/#41/#49 with each other (shared python/skill files); #44 with #52 (shared compiler/schemas); #45 with anything editing README/SKILL.
 - **Always sequential per lane**, and every lane merges through the integration gate before dependents start.
 

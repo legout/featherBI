@@ -18,7 +18,7 @@
 
 ## Tickets — canonical task bodies
 
-Phase order: B quick wins, C setup, D opt-in docs, E theme, G process. Parallel across phases only where file targets do not overlap; one sequential writer otherwise.
+Phase order: B quick wins, C setup, D opt-in docs, E theme, G process. Per owner direction, issue tickets #37–#54 execute one at a time in order; these phase groups describe dependencies, not permission for parallel writers.
 
 | Ticket | Task | Phase | Blocked by |
 | --- | --- | --- | --- |

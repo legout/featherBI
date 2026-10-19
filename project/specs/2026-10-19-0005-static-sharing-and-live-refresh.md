@@ -2,6 +2,8 @@
 
 **Status:** approved revision 1, 2026-10-19. Owner approved the specification, [plan 0005](../plans/2026-10-19-0005-static-sharing-and-live-refresh.md), and [plan 0006](../plans/2026-10-19-0006-simplification-and-standard-theme.md) in chat on 2026-10-19, including Refresh for single-file live sources. Decisions: [ADR 0010](../adr/0010-owner-simplification-decisions.md).
 
+> **Owner clarifications during ticket #41 (2026-10-19):** Delta export accepts local or native-readable remote table locations; S3 uses the existing author credential chain and gitignored `.env` conventions, with no new auth flags. A published Parquet-set manifest may use a public HTTPS URI as well as S3; the existing selector must support that URI.
+
 ## 1. Purpose and authority
 
 This specification defines the primary sharing path (a statically hosted `dashboard.html` reading live sources), refresh for every live source, the Delta source-export path, the DuckLake gate, and the ZIP fallback. It amends, and does not replace:
@@ -29,7 +31,7 @@ Rationale: ADR 0010, with amendments to ADR 0005, 0007, and 0009.
 ## 4. Delta source export
 
 - Browser reads of Delta tables are out of scope ([ADR 0009](../adr/0009-browser-only-lakehouse-readers.md), [ADR 0010](../adr/0010-owner-simplification-decisions.md)).
-- `featherbi export delta --input <table location> --output <directory>` runs on the author's machine with native DuckDB and the Delta extension. The input is readable by native DuckDB. Output: the Delta snapshot as immutable Parquet part files `<export-id>/part-NNN.parquet`, plus a root `manifest.json` `{"files": [...]}`, plus an `export.json` sidecar with the Delta version and export time.
+- `featherbi export delta --input <table location> --output <directory>` runs on the author's machine with native DuckDB and the Delta extension. The input may be local or a remote location readable by native DuckDB; S3 credentials follow the existing author credential chain and gitignored `.env` conventions. Output is local: the Delta snapshot as immutable Parquet part files `<export-id>/part-NNN.parquet`, plus a root `manifest.json` `{"files": [...]}`, plus an `export.json` sidecar with the exact Delta version and export time.
 - A new export writes new immutable part files. It overwrites only `manifest.json` and `export.json`.
 - featherBI does not upload. The author publishes the output directory at a public `https://` location.
 - The project declares the table as a live Parquet set with `selector: {manifest: https://…/manifest.json}`. Refresh re-fetches the manifest.

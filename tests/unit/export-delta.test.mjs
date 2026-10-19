@@ -15,7 +15,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -88,18 +89,19 @@ def counts(con, relation):
     )
 
 
-def compare(table, parts):
+def compare(table, parts, version=None):
     con = duckdb.connect()
     con.execute("LOAD delta")
-    delta = counts(con, "delta_scan(" + lit(table) + ")")
+    pinned = "" if version is None else ", version := " + str(version)
+    delta = counts(con, "delta_scan(" + lit(table) + pinned + ")")
     exported = counts(con, "read_parquet(" + json.dumps(parts) + ")")
     left = con.execute(
-        "SELECT count(*) FROM (SELECT * FROM delta_scan(" + lit(table)
+        "SELECT count(*) FROM (SELECT * FROM delta_scan(" + lit(table) + pinned
         + ") EXCEPT ALL SELECT * FROM read_parquet(" + json.dumps(parts) + "))"
     ).fetchone()[0]
     right = con.execute(
         "SELECT count(*) FROM (SELECT * FROM read_parquet(" + json.dumps(parts)
-        + ") EXCEPT ALL SELECT * FROM delta_scan(" + lit(table) + "))"
+        + ") EXCEPT ALL SELECT * FROM delta_scan(" + lit(table) + pinned + "))"
     ).fetchone()[0]
     print(json.dumps({
         "delta": delta,
@@ -111,8 +113,12 @@ def compare(table, parts):
 if __name__ == "__main__":
     if sys.argv[1] == "write-parts":
         write_parts(sys.argv[2])
-    else:
+    elif sys.argv[1] == "compare":
         compare(sys.argv[2], sys.argv[3:])
+    else:
+        # compare-pinned <table> <version> <parts...>: the oracle reads the
+        # exact pinned snapshot, not the table's current head.
+        compare(sys.argv[2], sys.argv[4:], version=int(sys.argv[3]))
 `;
 
 const SCHEMA_STRING = JSON.stringify({
@@ -155,7 +161,7 @@ const remove = (name) => ({
 const logFile = (version) =>
  path.join("_delta_log", `${String(version).padStart(20, "0")}.json`);
 
-async function runExport(table, output) {
+async function runExport(table, output, env = process.env) {
  return execFileAsync(
   process.execPath,
   [
@@ -165,7 +171,7 @@ async function runExport(table, output) {
    "--input", table,
    "--output", output,
   ],
-  { maxBuffer: 100_000 },
+  { env, maxBuffer: 100_000 },
  );
 }
 
@@ -180,19 +186,11 @@ async function sha256(file) {
  return createHash("sha256").update(await readFile(file)).digest("hex");
 }
 
-test("export delta matches delta_scan after update and delete, and a re-export never rewrites a part", async () => {
- const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-export-delta-"));
- const table = path.join(dir, "table");
- const output = path.join(dir, "published");
- await mkdir(path.join(table, "_delta_log"), { recursive: true });
- const helper = path.join(dir, "oracle.py");
- await writeFile(helper, HELPER, "utf8");
- await execFileAsync("uv", ["run", "--script", helper, "write-parts", table]);
+/** Write the fixture's v0–v2 `_delta_log` commits (the post-update,
+ * post-delete 8-row snapshot; f3.parquet already sits on disk unreferenced
+ * until a v3 commit lands). */
+async function writeFixtureLog(table) {
  const size = async (name) => (await stat(path.join(table, name))).size;
-
- // v0: 12 rows in f1 + f2. v1 update: ids 1 and 4 become 'fixed' (remove f1,
- // rewritten add). v2 delete: station XX rows disappear with f2 (remove f2,
- // keep surviving ids 7 and 12). Current snapshot: 8 rows, 2 fixed, 0 XX.
  await writeFile(
   path.join(table, logFile(0)),
   commit([
@@ -228,6 +226,192 @@ test("export delta matches delta_scan after update and delete, and a re-export n
    add("f2-kept.parquet", await size("f2-kept.parquet")),
   ]),
  );
+}
+
+/** One `key -> bytes` map of the table directory below the path-style
+ * bucket root `/reports/`, the URL shape native DuckDB httpfs requests with
+ * `URL_STYLE 'path'`. */
+async function tableKeys(table) {
+ const keys = new Map();
+ for (const entry of await readdir(table, {
+  recursive: true,
+  withFileTypes: true,
+ })) {
+  if (entry.isFile()) {
+   const file = path.join(entry.parentPath ?? entry.path, entry.name);
+   const relative = path.relative(table, file).split(path.sep).join("/");
+   keys.set(`table/${relative}`, await readFile(file));
+  }
+ }
+ return keys;
+}
+
+/**
+ * Serve the local Delta fixture as a path-style S3-compatible bucket over
+ * plain HTTP from 127.0.0.1 — an isolated local fixture driven through the
+ * existing author credential conventions (`FTHR_S3_*`, test-only values,
+ * never printed). ListObjectsV2 (with `prefix`/`start-after`) plus object
+ * HEAD/GET with Range covers everything native DuckDB httpfs and the Delta
+ * kernel request. `control.commitAfterDiscoveryListing` lands the v3 commit
+ * in the callback after the first `_delta_log` listing response is flushed:
+ * strictly after the exporter's version discovery, strictly before its
+ * COPY scans — the review's concurrent-writer race, deterministic.
+ */
+async function serveS3DeltaTable(table, control = {}) {
+ let keys = await tableKeys(table);
+ const reload = async () => {
+  keys = await tableKeys(table);
+ };
+ const server = http.createServer((request, response) => {
+  const url = new URL(request.url, "http://s3.local");
+  if (url.pathname === "/reports" || url.pathname === "/reports/") {
+   control.listings = (control.listings ?? 0) + 1;
+   const prefix = url.searchParams.get("prefix") ?? "";
+   const startAfter = url.searchParams.get("start-after") ?? "";
+   const matched = [...keys.keys()]
+    .filter((key) => key.startsWith(prefix) && key > startAfter)
+    .sort();
+   const entries = matched
+    .map(
+     (key) =>
+      `<Contents><Key>${key}</Key><LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>&quot;etag&quot;</ETag><Size>${keys.get(key).length}</Size><StorageClass>STANDARD</StorageClass></Contents>`,
+    )
+    .join("");
+   const body = `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>reports</Name><Prefix>${prefix}</Prefix><KeyCount>${matched.length}</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated>${entries}</ListBucketResult>`;
+   response.writeHead(200, {
+    "Content-Type": "application/xml",
+    "Content-Length": Buffer.byteLength(body),
+   });
+   response.end(body, () => {
+    if (
+     control.commitAfterDiscoveryListing &&
+     !control.committed &&
+     prefix.includes("_delta_log")
+    ) {
+     control.committed = true;
+     stat(path.join(table, "f3.parquet")).then((info) =>
+      writeFile(
+       path.join(table, logFile(3)),
+       commit([commitInfo(3, "WRITE"), add("f3.parquet", info.size)]),
+      ).then(reload),
+     );
+    }
+   });
+   return;
+  }
+  const key = url.pathname.replace(/^\/reports\//, "");
+  const bytes = keys.get(key);
+  if (bytes === undefined) {
+   response.writeHead(404, { "Content-Length": 0 });
+   response.end();
+   return;
+  }
+  if (request.method === "HEAD") {
+   response.writeHead(200, {
+    "Content-Length": bytes.length,
+    "Accept-Ranges": "bytes",
+   });
+   response.end();
+   return;
+  }
+  const range = /bytes=(\d*)-(\d*)/.exec(request.headers.range ?? "");
+  if (range) {
+   const start =
+    range[1] === "" ? Math.max(0, bytes.length - Number(range[2])) : Number(range[1]);
+   const end =
+    range[2] === "" || range[1] === ""
+     ? bytes.length - 1
+     : Math.min(Number(range[2]), bytes.length - 1);
+   const slice = bytes.subarray(start, end + 1);
+   response.writeHead(206, {
+    "Content-Range": `bytes ${start}-${end}/${bytes.length}`,
+    "Content-Length": slice.length,
+    "Accept-Ranges": "bytes",
+   });
+   response.end(slice);
+   return;
+  }
+  response.writeHead(200, {
+   "Content-Length": bytes.length,
+   "Accept-Ranges": "bytes",
+  });
+  response.end(bytes);
+ });
+ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+ return {
+  host: `127.0.0.1:${server.address().port}`,
+  close: () => new Promise((resolve) => server.close(resolve)),
+ };
+}
+
+/**
+ * Author-credential environment for the S3-compatible input: a fresh HOME so
+ * the AWS credential chain finds nothing and the `FTHR_S3_*` fallback (with
+ * its endpoint override) applies — the developer's real credentials never
+ * reach the fixture — while the already-installed DuckDB extensions and the
+ * uv cache stay reachable so nothing downloads (offline).
+ */
+async function s3AuthorEnv(host) {
+ const realHome = os.homedir();
+ const installed = path.join(realHome, ".duckdb", "extensions", "v1.5.5");
+ assert.equal(
+  (await stat(installed)).isDirectory(),
+  true,
+  "the pinned DuckDB v1.5.5 extension cache (delta, httpfs) must already be installed",
+ );
+ const home = path.join(rootDir, ".artifacts", "export-delta-home");
+ const extensions = path.join(home, ".duckdb", "extensions");
+ await mkdir(extensions, { recursive: true });
+ await rm(path.join(extensions, "v1.5.5"), { recursive: true, force: true });
+ await symlink(installed, path.join(extensions, "v1.5.5"));
+ const env = {};
+ for (const [key, value] of Object.entries(process.env)) {
+  if (!/^(AWS|FTHR_S3)_/.test(key)) env[key] = value;
+ }
+ env.HOME = home;
+ env.UV_OFFLINE = "1";
+ // The pinned duckdb==1.5.5 wheel is cached for the uv-managed 3.14
+ // interpreter only, so offline resolution pins it explicitly.
+ env.UV_PYTHON = "3.14";
+ if (!env.UV_CACHE_DIR) {
+  const cache = path.join(realHome, ".cache", "uv");
+  if ((await stat(cache).catch(() => null))?.isDirectory()) env.UV_CACHE_DIR = cache;
+ }
+ // uv's managed interpreters live under the real HOME too; without them the
+ // fresh HOME falls back to a PATH Python whose pinned duckdb wheel is not
+ // cached, which offline resolution cannot satisfy.
+ if (!env.UV_PYTHON_INSTALL_DIR) {
+  const pythons = path.join(realHome, ".local", "share", "uv", "python");
+  if ((await stat(pythons).catch(() => null))?.isDirectory()) env.UV_PYTHON_INSTALL_DIR = pythons;
+ }
+ // Test-only values for the local fixture; never printed anywhere.
+ env.FTHR_S3_KEY_ID = "featherbi-test-key";
+ env.FTHR_S3_SECRET = "featherbi-test-secret";
+ env.FTHR_S3_REGION = "us-east-1";
+ env.FTHR_S3_ENDPOINT = host;
+ env.FTHR_S3_USE_SSL = "false";
+ return env;
+}
+
+/** Build the shared fixture (parts + v0–v2 log) at `<dir>/table`. */
+async function buildTable(dir) {
+ const table = path.join(dir, "table");
+ await mkdir(path.join(table, "_delta_log"), { recursive: true });
+ const helper = path.join(dir, "oracle.py");
+ await writeFile(helper, HELPER, "utf8");
+ await execFileAsync("uv", ["run", "--script", helper, "write-parts", table]);
+ await writeFixtureLog(table);
+ return { table, helper };
+}
+
+test("export delta matches delta_scan after update and delete, and a re-export never rewrites a part", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-export-delta-"));
+ const { table, helper } = await buildTable(dir);
+ const output = path.join(dir, "published");
+
+ // v0: 12 rows in f1 + f2. v1 update: ids 1 and 4 become 'fixed' (remove f1,
+ // rewritten add). v2 delete: station XX rows disappear with f2 (remove f2,
+ // keep surviving ids 7 and 12). Current snapshot: 8 rows, 2 fixed, 0 XX.
 
  // First export of the current (post-update, post-delete) snapshot.
  const first = await runExport(table, output);
@@ -280,7 +464,7 @@ test("export delta matches delta_scan after update and delete, and a re-export n
   path.join(table, logFile(3)),
   commit([
    commitInfo(3, "WRITE"),
-   add("f3.parquet", await size("f3.parquet")),
+   add("f3.parquet", (await stat(path.join(table, "f3.parquet"))).size),
   ]),
  );
  const second = await runExport(table, output);
@@ -319,4 +503,76 @@ test("export delta matches delta_scan after update and delete, and a re-export n
  assert.deepEqual(secondCheck.exported, [9, 2, 0]);
  assert.deepEqual(secondCheck.delta, [9, 2, 0]);
  assert.equal(secondCheck.symmetric_difference, 0);
+});
+
+test("a native-readable s3 table location exports its snapshot", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-export-delta-"));
+ const { table, helper } = await buildTable(dir);
+ const output = path.join(dir, "published");
+ const fixture = await serveS3DeltaTable(table);
+ try {
+  const env = await s3AuthorEnv(fixture.host);
+  const result = await runExport("s3://reports/table", output, env);
+  assert.equal(result.stdout.includes(dir), false, "stdout must not leak local paths");
+  const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
+  assert.deepEqual(Object.keys(manifest), ["files"]);
+  assert.ok(manifest.files.length >= 1);
+  for (const entry of manifest.files) {
+   assert.match(entry, /^exp-\d{8}-[0-9a-f]{4}\/part-\d{3}\.parquet$/);
+  }
+  const sidecar = JSON.parse(await readFile(path.join(output, "export.json"), "utf8"));
+  assert.equal(sidecar.delta_version, 2);
+  assert.ok(!Number.isNaN(Date.parse(sidecar.exported_at)));
+  // The exported rows equal native delta_scan of the same fixture (8 rows,
+  // 2 fixed, 0 XX after the update and delete), not the exporter's claim.
+  const check = await runHelper(helper, [
+   "compare",
+   table,
+   ...manifest.files.map((entry) => path.join(output, entry)),
+  ]);
+  assert.deepEqual(check.exported, [8, 2, 0]);
+  assert.deepEqual(check.delta, [8, 2, 0]);
+  assert.equal(check.symmetric_difference, 0);
+ } finally {
+  await fixture.close();
+ }
+});
+
+test("a commit between version discovery and the scan cannot be misidentified by the sidecar", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-export-delta-"));
+ const { table, helper } = await buildTable(dir);
+ const output = path.join(dir, "published");
+ // The fixture server lands the v3 commit (f3.parquet adds id 13) in the
+ // flush callback of the exporter's first `_delta_log` listing: after
+ // version discovery recorded 2, before the COPY scans. Unpinned, that scan
+ // would export 9 rows while export.json still says version 2.
+ const control = { commitAfterDiscoveryListing: true };
+ const fixture = await serveS3DeltaTable(table, control);
+ try {
+  const env = await s3AuthorEnv(fixture.host);
+  await runExport("s3://reports/table", output, env);
+  assert.equal(control.committed, true, "the fixture must have raced a v3 commit in");
+  assert.ok(control.listings >= 1);
+  const manifest = JSON.parse(await readFile(path.join(output, "manifest.json"), "utf8"));
+  const sidecar = JSON.parse(await readFile(path.join(output, "export.json"), "utf8"));
+  // The sidecar identifies the exact exported snapshot: version 2, not the
+  // v3 that landed mid-export.
+  assert.equal(sidecar.delta_version, 2);
+  const parts = manifest.files.map((entry) => path.join(output, entry));
+  // The pinned native oracle (delta_scan at version 2) matches the export
+  // byte-for-byte in row multiset: 8 rows, 2 fixed, 0 XX.
+  const pinned = await runHelper(helper, ["compare-pinned", table, "2", ...parts]);
+  assert.deepEqual(pinned.exported, [8, 2, 0]);
+  assert.deepEqual(pinned.delta, [8, 2, 0]);
+  assert.equal(pinned.symmetric_difference, 0);
+  // The raced commit is real: the table's current head is v3 with 9 rows —
+  // different from what was exported — so the pinned snapshot above is not
+  // vacuously equal to the head.
+  const current = await runHelper(helper, ["compare", table, ...parts]);
+  assert.deepEqual(current.delta, [9, 2, 0]);
+  assert.deepEqual(current.exported, [8, 2, 0]);
+  assert.equal(current.symmetric_difference, 1);
+ } finally {
+  await fixture.close();
+ }
 });

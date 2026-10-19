@@ -13,8 +13,12 @@ const INPUT_TYPES = new Set(["csv", "parquet", "json", "ndjson"]);
 const PARQUET_SET_MAX_FILES = 10_000;
 /** Upper bound on one Parquet-set manifest document (spec §2.1). */
 const PARQUET_SET_MANIFEST_MAX_BYTES = 2 * 1024 * 1024;
-/** Shape every Parquet-set manifest document must have (spec §2.1). */
-const PARQUET_SET_MANIFEST_URI = /^s3:\/\/[A-Za-z0-9._~/-]+\.json$/;
+/** Shape every Parquet-set manifest document URI must have (spec §2.1 and
+ * 2026-10-19-0005 §4): an s3:// .json object read through the storage
+ * secret machinery, or a public https:// .json document fetched by the page
+ * itself. The optional numeric port is the only `:` admitted — userinfo
+ * credentials, queries, and fragments never parse. */
+const PARQUET_SET_MANIFEST_URI = /^(?:s3|https):\/\/[A-Za-z0-9._~-]+(?::[0-9]{1,5})?\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]+\.json$/;
 /** Shape every Iceberg metadata document URI must have, declared or
  * resolved from a catalog (spec §2.2): the versioned s3:// .metadata.json
  * document the T3 reader path and storage secret machinery pin to. */
@@ -582,13 +586,19 @@ async function resolveManifestParquetSet(engine, source, id, liveCredentials, ge
  if (typeof manifestUri !== "string" || !PARQUET_SET_MANIFEST_URI.test(manifestUri)) {
   throw sourceError(
    id,
-   `invalid manifest selector ${JSON.stringify(manifestUri)}; use an s3:// .json object such as "s3://reports/sales/manifest.json"`,
+   `invalid manifest selector ${JSON.stringify(manifestUri)}; use an s3:// or https:// .json object such as "s3://reports/sales/manifest.json"`,
    "sources.parquet-set-manifest",
   );
  }
  let text;
  try {
-  text = await fetchManifestText(engine, source, id, manifestUri, liveCredentials, generation);
+  // A public HTTPS manifest is fetched by the page itself with no
+  // credentials at all, so the S3 storage secret can never reach the
+  // manifest origin (spec 2026-10-19-0005 §4). S3 manifests keep the
+  // httpfs path with its manifest-scoped one-shot secret below.
+  text = manifestUri.startsWith("https://")
+   ? await fetchPublicHttpsManifestText(id, manifestUri)
+   : await fetchManifestText(engine, source, id, manifestUri, liveCredentials, generation);
  } catch (error) {
   if (error?.sourceId) throw error;
   throw sourceError(
@@ -598,6 +608,43 @@ async function resolveManifestParquetSet(engine, source, id, liveCredentials, ge
   );
  }
  return manifestParquetFiles(id, remote.uri, manifestUri, text);
+}
+
+/** Fetch one public HTTPS manifest document with the page's own fetch and
+ * no credentials or custom headers, so no S3 secret is ever forwarded to the
+ * manifest origin. Errors carry fixed descriptions naming the manifest:
+ * an origin-controlled body or status line is never echoed back.
+ * @param {string} id
+ * @param {string} manifestUri
+ * @returns {Promise<string>}
+ */
+async function fetchPublicHttpsManifestText(id, manifestUri) {
+ let response;
+ try {
+  response = await fetch(manifestUri);
+ } catch (error) {
+  throw sourceError(
+   id,
+   `manifest ${JSON.stringify(manifestUri)} could not be reached (${error instanceof Error ? error.message : String(error)}); check the manifest location and its CORS access for the browser`,
+   "sources.parquet-set-manifest",
+  );
+ }
+ if (!response.ok) {
+  throw sourceError(
+   id,
+   `manifest ${JSON.stringify(manifestUri)} is not readable (HTTP ${response.status}); check that the manifest location is public`,
+   "sources.parquet-set-manifest",
+  );
+ }
+ const text = await response.text();
+ if (typeof text !== "string" || text.trim() === "") {
+  throw sourceError(
+   id,
+   `manifest ${JSON.stringify(manifestUri)} is empty or unreadable`,
+   "sources.parquet-set-manifest",
+  );
+ }
+ return text;
 }
 
 /**
@@ -612,6 +659,7 @@ async function resolveManifestParquetSet(engine, source, id, liveCredentials, ge
 export async function fetchManifestText(engine, source, id, manifestUri, liveCredentials, generation) {
  const remote = source.remote;
  const needsFetchSecret =
+  manifestUri.startsWith("s3://") &&
   !manifestUri.startsWith(remote.uri) &&
   (remote.auth === "s3" || remote.region || remote.endpoint);
  if (needsFetchSecret) {

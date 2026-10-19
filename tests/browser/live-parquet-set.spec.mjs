@@ -9,6 +9,7 @@
 
 import { execFile } from "node:child_process";
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
@@ -17,7 +18,6 @@ import { pathToFileURL } from "node:url";
 import { test } from "@playwright/test";
 import { renderDashboard } from "../../scripts/build.mjs";
 import {
- closeHarness,
  expect,
  requireInstalledDesktopChrome,
  rootDir,
@@ -507,6 +507,196 @@ test("a credential retry re-stages the pinned membership until an explicit Refre
   await rm(pagePath, { force: true });
   await context.close();
   await fixture.close();
+ }
+});
+
+/**
+ * Serve one public HTTPS JSON manifest from 127.0.0.1 with permissive CORS,
+ * recording every manifest request's Authorization header so the regression
+ * can prove no S3 credential is ever forwarded to the public manifest
+ * origin (spec 2026-10-19-0005 §4). `control.manifest` is the mutable
+ * document; `control.failManifest` makes only the manifest unreadable.
+ */
+async function servePublicHttpsManifest(tls, control) {
+ const server = https.createServer(
+  { key: tls.key, cert: tls.cert },
+  (request, response) => {
+   response.setHeader("Access-Control-Allow-Origin", "*");
+   response.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, HEAD, OPTIONS",
+   );
+   const allow = request.headers["access-control-request-headers"];
+   response.setHeader("Access-Control-Allow-Headers", allow ?? "Range");
+   if (request.method === "OPTIONS") {
+    response.writeHead(204);
+    response.end();
+    return;
+   }
+   if (request.url !== "/manifest.json") {
+    response.writeHead(404, { "Content-Length": 0 });
+    response.end();
+    return;
+   }
+   control.requests.push({
+    authorization: request.headers.authorization ?? null,
+   });
+   if (control.failManifest) {
+    response.writeHead(404, { "Content-Length": 0 });
+    response.end();
+    return;
+   }
+   const body = Buffer.from(JSON.stringify({ files: control.manifest.files }));
+   response.writeHead(200, { "Content-Length": body.length });
+   response.end(body);
+  },
+ );
+ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+ return {
+  origin: `https://127.0.0.1:${server.address().port}`,
+  close: () => new Promise((resolve) => server.close(resolve)),
+ };
+}
+
+test("a public https manifest selector resolves without the private bucket's credential", async ({
+ browser,
+}) => {
+ const bytes = await readFile(
+  path.join(rootDir, ".artifacts", "fixtures", "inspections.parquet"),
+ );
+ // Each part serves the same 5-row fixture (3 rows station SJ per part).
+ const keys = new Set(["reports/part-1.parquet", "reports/part-2.parquet"]);
+ const s3Control = { failObjects: false };
+ const manifestControl = {
+  failManifest: false,
+  manifest: { files: ["part-1.parquet", "part-2.parquet"] },
+  requests: [],
+ };
+ const s3Tls = await selfSignedLocalhostCert();
+ const manifestTls = await selfSignedLocalhostCert();
+ const bucket = await serveS3StyleBucket(s3Tls, bytes, keys, s3Control);
+ const manifestOrigin = await servePublicHttpsManifest(manifestTls, manifestControl);
+ const pagePath = path.join(
+  rootDir,
+  ".artifacts",
+  "browser",
+  "live-parquet-https-manifest.html",
+ );
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  const { html } = await renderDashboard({
+   config: {
+    contract: 2,
+    app: "grid",
+    title: "Live parquet https manifest set",
+    data: {
+     mode: "upload",
+     sources: [
+      {
+       id: "sales",
+       schema: {
+        order_number: { type: "string", nullable: false },
+        test_station_identifier: { type: "string", nullable: false },
+       },
+       remote: {
+        kind: "parquet-set",
+        // The declared data prefix stays S3 and private; only the manifest
+        // is a public HTTPS JSON URI (spec 2026-10-19-0005 §4).
+        uri: "s3://reports/reports/",
+        selector: {
+         manifest: `${manifestOrigin.origin}/manifest.json`,
+        },
+        auth: "s3",
+        endpoint: new URL(bucket.origin).host,
+       },
+      },
+     ],
+    },
+    filters: [
+     {
+      id: "station",
+      kind: "select",
+      source: "sales",
+      column: "test_station_identifier",
+      default: null,
+     },
+    ],
+    queries: {
+     records: {
+      sql: "SELECT count(*) AS records FROM sales WHERE ($station IS NULL OR test_station_identifier = $station)",
+      params: ["station"],
+     },
+    },
+    layout: [
+     {
+      id: "kpi_records",
+      type: "kpi",
+      query: "records",
+      field: "records",
+      label: "Sales records",
+      x: 1,
+      y: 1,
+      width: 12,
+      height: 1,
+     },
+    ],
+    theme: "neutral",
+   },
+  });
+  await writeFile(pagePath, html, "utf8");
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+
+  // The private prefix prompts for S3 credentials; the parts themselves
+  // keep reading through the bucket's signed requests.
+  await expect(page.locator("dialog [data-credential-destination]")).toContainText(
+   "s3://reports/reports/",
+  );
+  await page.locator('dialog input[aria-label="Key ID"]').fill("https-manifest-key");
+  await page.locator('dialog input[aria-label="Secret"]').fill("https-manifest-secret");
+  await page.locator('dialog button[type="submit"]').click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  // Both parts joined the source through the private bucket: 2 x 5 rows.
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "10",
+  );
+
+  // The manifest was fetched from its public HTTPS origin with no S3
+  // Authorization header: the storage secret never left the bucket.
+  assert.ok(
+   manifestControl.requests.length >= 1,
+   "the viewer must have fetched the https manifest",
+  );
+  for (const request of manifestControl.requests) {
+   assert.equal(
+    request.authorization,
+    null,
+    "no S3 credential may reach the public manifest origin",
+   );
+  }
+
+  // Refresh re-fetches the manifest through the same credential-free path.
+  const fetched = manifestControl.requests.length;
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "10",
+  );
+  assert.ok(manifestControl.requests.length > fetched);
+  for (const request of manifestControl.requests) {
+   assert.equal(request.authorization, null);
+  }
+ } finally {
+  await rm(pagePath, { force: true });
+  await context.close();
+  await bucket.close();
+  await manifestOrigin.close();
  }
 });
 

@@ -391,13 +391,13 @@ function validateRemoteSources(project, filename, document, lineCounter) {
     );
    }
    if (declared[0] === "manifest") {
-    if (!/^s3:\/\/[A-Za-z0-9._~/-]+\.json$/.test(selector.manifest)) {
+    if (!/^(?:s3|https):\/\/[A-Za-z0-9._~-]+(?::[0-9]{1,5})?\/(?:[A-Za-z0-9._~-]+\/)*[A-Za-z0-9._~-]+\.json$/.test(selector.manifest)) {
      throw yamlError(
       filename,
       document,
       lineCounter,
       ["sources", index, "remote", "selector", "manifest"],
-      `${sourceNote}manifest must be an s3:// URI of a .json object, such as "s3://reports/sales/manifest.json"`,
+      `${sourceNote}manifest must be an s3:// or public https:// URI of a .json object, such as "s3://reports/sales/manifest.json"`,
      );
     }
    } else {

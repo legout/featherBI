@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { looksLikeCredentialMaterial, validateConfig } from "../contract/config.mjs";
+import { staticContentSecurityPolicy } from "../scripts/build.mjs";
 
 const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(
@@ -153,6 +154,7 @@ async function materializeRemote(remote, scratchDir) {
 
 /** Validate an upload-mode authoring config and its explicit source assignments. */
 export async function preflightBuild({ configPath, sources, target = "zip" }) {
+ let csp;
  const config = await loadConfig(configPath);
  if (config.data.mode !== "upload") {
   throw new Error("artifact builds require an upload-mode authoring config");
@@ -188,6 +190,10 @@ export async function preflightBuild({ configPath, sources, target = "zip" }) {
   for (const id of assigned.keys()) {
    throw new Error(staticTargetRejection(id));
   }
+  // #43 (spec 0005 §7): the artifact CSP lists exact origins, so a live
+  // source whose actual request origin resolves only at runtime fails
+  // here, before rendering or output; the zip target accepts every shape.
+  csp = staticContentSecurityPolicy(config);
  }
  for (const id of assigned.keys()) {
   if (remoteById.has(id)) {
@@ -237,7 +243,7 @@ export async function preflightBuild({ configPath, sources, target = "zip" }) {
   await cleanup?.();
   throw error;
  }
- return { config, inputs, cleanup };
+ return { config, inputs, cleanup, csp };
 }
 
 /** SL-01 remedy: name the source and the two ways to make the build legal. */

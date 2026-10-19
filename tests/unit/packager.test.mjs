@@ -267,6 +267,93 @@ test("static target rejects local sources before reading them and requires --tar
  assert.deepEqual(await readdir(dir), ["config.json"], "no artifact may be written");
 });
 
+/** Minimal one-live-source config for the static-origin checks. */
+function liveSourceConfig(remote) {
+ return {
+  ...localSourceConfig(),
+  title: "Live source",
+  data: {
+   mode: "upload",
+   sources: [
+    {
+     id: "live",
+     schema: { station: { type: "string", nullable: false } },
+     remote,
+    },
+   ],
+  },
+ };
+}
+
+/**
+ * Owner decision 2026-10-19 (#43, spec 0005 §7): the static CSP lists exact
+ * origins, so an s3 live source with neither region nor endpoint — whose
+ * actual request host DuckDB resolves at runtime — fails the static build
+ * before any artifact is written. The zip target still accepts it.
+ */
+test("static target rejects s3 sources without region or endpoint", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-static-s3-"));
+ const configPath = path.join(dir, "config.json");
+ await writeFile(
+  configPath,
+  JSON.stringify(
+   liveSourceConfig({
+    uri: "s3://reports/orders.parquet",
+    format: "parquet",
+    auth: "s3",
+   }),
+  ),
+ );
+ await assert.rejects(
+  () =>
+   buildArtifact({
+    configPath,
+    outPath: path.join(dir, "dashboard.html"),
+    target: "static",
+   }),
+  /static target cannot derive an exact origin for s3 source "live": declare region or endpoint for its bucket, or use the zip target/,
+ );
+ assert.deepEqual(await readdir(dir), ["config.json"], "no artifact may be written");
+});
+
+/**
+ * Owner decision 2026-10-19 (#43, spec 0005 §7): an Iceberg REST catalog
+ * supplies the storage bucket at open time, so only an explicit endpoint
+ * yields the exact connect-src origin; a declared region or the catalog
+ * endpoint never substitutes.
+ */
+test("static target rejects iceberg catalog sources without a storage endpoint", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-static-catalog-"));
+ const configPath = path.join(dir, "config.json");
+ await writeFile(
+  configPath,
+  JSON.stringify(
+   liveSourceConfig({
+    kind: "iceberg",
+    auth: "none",
+    catalogAuth: "none",
+    region: "eu-central-1",
+    catalog: {
+     endpoint: "https://catalog.example.com",
+     warehouse: "analytics",
+     namespace: "default",
+     table: "orders",
+    },
+   }),
+  ),
+ );
+ await assert.rejects(
+  () =>
+   buildArtifact({
+    configPath,
+    outPath: path.join(dir, "dashboard.html"),
+    target: "static",
+   }),
+  /static target cannot derive an exact origin for catalog iceberg source "live": the catalog resolves the bucket at open time, so declare endpoint, or use the zip target/,
+ );
+ assert.deepEqual(await readdir(dir), ["config.json"], "no artifact may be written");
+});
+
 test("build materializes a remote source into the standard ZIP and fails atomically", async () => {
  const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-remote-pack-"));
  await mkdir(path.join(dir, "queries"));

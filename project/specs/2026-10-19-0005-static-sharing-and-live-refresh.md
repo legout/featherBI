@@ -3,6 +3,7 @@
 **Status:** approved revision 1, 2026-10-19. Owner approved the specification, [plan 0005](../plans/2026-10-19-0005-static-sharing-and-live-refresh.md), and [plan 0006](../plans/2026-10-19-0006-simplification-and-standard-theme.md) in chat on 2026-10-19, including Refresh for single-file live sources. Decisions: [ADR 0010](../adr/0010-owner-simplification-decisions.md).
 
 > **Owner clarifications during ticket #41 (2026-10-19):** Delta export accepts local or native-readable remote table locations; S3 uses the existing author credential chain and gitignored `.env` conventions, with no new auth flags. A published Parquet-set manifest may use a public HTTPS URI as well as S3; the existing selector must support that URI.
+> **Owner clarifications during ticket #43 (2026-10-19):** the static CSP lists exact origins only; S3-backed live sources need `region` or `endpoint` and Iceberg REST-catalog sources need `remote.endpoint`, so every `connect-src` origin is derivable at build time (§7).
 
 ## 1. Purpose and authority
 
@@ -53,6 +54,7 @@ The ZIP path keeps its current rules: local and packaged sources, explicit file 
 - The static HTML contains no credentials, paths, or dataset bytes. The build verifies this.
 - Cross-origin live reads require the data host to allow CORS for the static page's origin. Same-origin reads need no CORS. A CORS failure shows the visible error with the remedy "host the data on the same origin or allow CORS". The packaged-delivery remedy applies only to the zip target.
 - Content-Security-Policy: the existing specifications refer to an artifact CSP. The generated test HTML contains none (checked in `build/` and `.artifacts/browser/`). The static target emits a CSP whose `connect-src` lists the declared live origins and the pinned DuckDB-WASM asset origins. Spike S1 verifies that the policy does not block legitimate reads or extension loads.
+- Owner decision (2026-10-19, ticket #43): the static CSP lists exact origins only — no wildcards. Every origin must be derivable at build time: from the declared HTTP(S) URL, the configured S3 `endpoint` (the runtime reads it path-style), or the declared bucket plus `region` (regional AWS endpoints). The static target therefore rejects an S3-backed source with neither `remote.region` nor `remote.endpoint`, and rejects an Iceberg REST-catalog source without `remote.endpoint`, because the catalog supplies the storage bucket at open time (`remote.catalog.endpoint` is not a substitute). Both failures name the source and the zip-target alternative; the zip target keeps accepting every live shape.
 - Hosting, upload, DNS, and access control are outside this specification. Source-system access controls do not follow published data.
 
 ## 8. Acceptance

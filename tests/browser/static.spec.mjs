@@ -203,6 +203,33 @@ test("the static dashboard.html loads its live source cross-origin without file 
  assert.ok(!html.includes(workDir), "HTML must not contain absolute local paths");
  assert.ok(!html.includes(CREDENTIAL_SENTINEL), "HTML must not contain credentials");
 
+ // #43 (spec 0005 §7, S1 probe): the artifact embeds its own CSP before any
+ // executable content; connect-src lists the declared live origin and the
+ // pinned DuckDB-WASM asset origins exactly — no wildcard. The boot and
+ // cross-origin read below then prove the policy blocks nothing the real
+ // artifact needs, including the dynamic httpfs extension load.
+ const cspTag = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(html);
+ assert.ok(cspTag, "static dashboard.html must embed a Content-Security-Policy meta tag");
+ const policy = cspTag[1];
+ assert.ok(
+  html.indexOf(cspTag[0]) < html.indexOf("<style"),
+  "the CSP meta tag must precede executable content",
+ );
+ const connectSrc = /connect-src ([^;]*)/.exec(policy)?.[1] ?? "";
+ assert.ok(
+  connectSrc.includes(liveHost.origin),
+  `connect-src must list the declared live origin ${liveHost.origin}`,
+ );
+ assert.ok(
+  connectSrc.includes("https://cdn.jsdelivr.net"),
+  "connect-src must list the pinned DuckDB-WASM asset origin",
+ );
+ assert.ok(
+  connectSrc.includes("https://extensions.duckdb.org"),
+  "connect-src must list the DuckDB extension repository origin",
+ );
+ assert.ok(!policy.includes("*"), "the policy must not use wildcards");
+
  // SL-04: separate origins, no file picker, results on open.
  const context = await browser.newContext({ ignoreHTTPSErrors: true });
  const page = await context.newPage();

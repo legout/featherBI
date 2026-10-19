@@ -22,7 +22,7 @@ export async function buildArtifact({
     : `unknown target ${JSON.stringify(target)}; use static or zip`,
   );
  }
- const { config, inputs, cleanup } = await preflightBuild({ configPath, sources, target });
+ const { config, inputs, cleanup, csp } = await preflightBuild({ configPath, sources, target });
  const resolvedOut = path.resolve(outPath);
  try {
   if (
@@ -37,7 +37,10 @@ export async function buildArtifact({
    bytesBySource.set(input.source.id, await readFile(input.path));
   }
 
-  const rendered = await renderDashboard({ config });
+  // Live remote sources read in the browser; only packaged sources are members.
+ // The static target alone carries its CSP (spec 0005 §7); zip and preview
+ // render identically to before.
+ const rendered = await renderDashboard({ config, csp: csp ?? null });
   if (target === "static") {
    // The static artifact is exactly the self-contained dashboard.html
    // (spec 2026-10-19-0005 §2); preflight admitted only live sources, so no

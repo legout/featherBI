@@ -354,6 +354,38 @@ test("static target rejects iceberg catalog sources without a storage endpoint",
  assert.deepEqual(await readdir(dir), ["config.json"], "no artifact may be written");
 });
 
+test("static CSP includes both Iceberg catalog and storage origins", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-static-catalog-origins-"));
+ const configPath = path.join(dir, "config.json");
+ const outPath = path.join(dir, "dashboard.html");
+ await writeFile(
+  configPath,
+  JSON.stringify(
+   liveSourceConfig({
+    kind: "iceberg",
+    auth: "none",
+    catalogAuth: "none",
+    endpoint: "storage.example.com:9000",
+    region: "eu-central-1",
+    catalog: {
+     endpoint: "https://catalog.example.com",
+     warehouse: "analytics",
+     namespace: "default",
+     table: "orders",
+    },
+   }),
+  ),
+ );
+ await buildArtifact({ configPath, outPath, target: "static" });
+ const html = await readFile(outPath, "utf8");
+ const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html)?.[1];
+ assert.ok(policy, "static artifact has a CSP meta tag");
+ const connect = policy.split("; ").find((directive) => directive.startsWith("connect-src "));
+ assert.ok(connect, "CSP declares connect-src");
+ assert.ok(connect.includes("https://catalog.example.com"));
+ assert.ok(connect.includes("https://storage.example.com:9000"));
+});
+
 test("build materializes a remote source into the standard ZIP and fails atomically", async () => {
  const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-remote-pack-"));
  await mkdir(path.join(dir, "queries"));

@@ -133,6 +133,7 @@ function liveSourceOrigins(config) {
     );
    }
    origins.add(urlOrigin(remote.catalog.endpoint, id));
+   origins.add(s3EndpointOrigin(id, remote.endpoint));
   }
   for (const location of [
    remote.uri,
@@ -150,6 +151,14 @@ function liveSourceOrigins(config) {
  return [...origins].sort();
 }
 
+/** Exact origin of an S3 endpoint; author config may omit its HTTPS scheme. */
+function s3EndpointOrigin(id, endpoint) {
+ const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)
+  ? endpoint
+  : `https://${endpoint}`;
+ return urlOrigin(url, id);
+}
+
 /** Exact origins of one s3:// location under its source's S3 settings. */
 function s3Origins(id, location, remote) {
  const bucket = location.slice("s3://".length).split("/")[0];
@@ -158,12 +167,7 @@ function s3Origins(id, location, remote) {
    `static target cannot derive an exact origin for s3 source ${id}: bucket ${JSON.stringify(bucket)} is not a derivable endpoint host, or use the zip target`,
   );
  }
- if (remote.endpoint) {
-  const endpoint = /^[a-z][a-z0-9+.-]*:\/\//i.test(remote.endpoint)
-   ? remote.endpoint
-   : `https://${remote.endpoint}`;
-  return [urlOrigin(endpoint, id)];
- }
+ if (remote.endpoint) return [s3EndpointOrigin(id, remote.endpoint)];
  if (!remote.region) {
   throw new Error(
    `static target cannot derive an exact origin for s3 source ${id}: declare region or endpoint for its bucket, or use the zip target`,

@@ -38,7 +38,7 @@ Rationale: ADR 0010, with amendments to ADR 0005, 0007, and 0009.
 ## 5. DuckLake gate
 
 - DuckLake is read live only after spike S2 in [plan 0005](../plans/2026-10-19-0005-static-sharing-and-live-refresh.md) passes. The gate requires: the pinned DuckDB v1.5.5 `wasm_eh` extension artifact (exact URL recorded in the capability manifest), a public catalog attached over `https://`, and one table read in desktop Chrome.
-- Implementation requires an explicit owner trust decision for the extension artifact, following the ADR 0009 Iceberg precedent.
+- The owner approved the exact DuckDB v1.5.5 `wasm_eh` DuckLake extension URL and SHA-256 after S2; see [ADR 0009](../adr/0009-browser-only-lakehouse-readers.md). A different URL or hash requires a new trust decision.
 - If S2 fails, DuckLake stays out of the live scope. Authors export DuckLake tables with the same export mechanism as Delta, using native DuckDB.
 
 ## 6. ZIP fallback
@@ -70,4 +70,4 @@ Automatic polling or background refresh; featherBI uploading or publishing data;
 
 ## 10. Open items
 
-- DuckLake trust decision after spike S2 (gate G3 in plan 0005).
+None.

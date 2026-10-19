@@ -17,7 +17,7 @@
 
 - **G1** Approved 2026-10-19: owner approved this plan and spec 2026-10-19-0005.
 - **G2** Approved 2026-10-19: Refresh applies to single-file live sources (CSV, JSON, Parquet file).
-- **G3** Open: owner approves trust for the DuckLake extension artifact (URL and hash from S2), following the ADR 0009 Iceberg precedent. Blocks T5 only.
+- **G3** Approved 2026-10-19: owner approved the exact DuckLake v1.5.5 `wasm_eh` artifact in [ADR 0009](../adr/0009-browser-only-lakehouse-readers.md) after S2: `https://extensions.duckdb.org/v1.5.5/wasm_eh/ducklake.duckdb_extension.wasm`, SHA-256 `154f2504ac3e92de146e5193012ac898ce97f62d5b4701f534176d49aae5594a`. Approval is limited to those bytes at that pinned URL/version.
 
 ## Tickets — canonical task bodies
 

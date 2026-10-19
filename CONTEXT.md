@@ -15,11 +15,17 @@ _Avoid_: Generated application code.
 
 **Recipient**: A person opening a shared dashboard to inspect, filter, or replace its data, rather than edit its queries or layout.
 
-**Artifact**: The distributable dashboard, delivered as a ZIP bundle.
+**Artifact**: The distributable dashboard: a static `dashboard.html` (primary) or a ZIP bundle (fallback).
 
 **ZIP bundle**: An artifact containing an HTML viewer and separate data files that the recipient extracts and explicitly selects.
 
-**Upload mode**: The delivery mode in which the recipient selects local files for the dashboard. “Upload” does not mean transferring those files to a server.
+**Upload mode**: The fallback delivery mode in which the recipient selects local files for the dashboard. “Upload” does not mean transferring those files to a server.
+
+**Static dashboard**: A `dashboard.html` hosted on a static host whose sources are read live from declared URIs. It contains no dataset bytes.
+
+**Refresh**: An explicit recipient action that re-resolves or re-reads a live source and replaces the active generation only on success.
+
+**Source export**: An author-side conversion of a table, such as Delta, into immutable Parquet part files and a manifest that a live Parquet set reads.
 
 ### Authoring
 

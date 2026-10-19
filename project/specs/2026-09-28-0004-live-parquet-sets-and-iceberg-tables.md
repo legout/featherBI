@@ -1,5 +1,7 @@
 # Live Parquet file sets and Iceberg tables
 
+> **Amendments (ADR 0010, 2026-10-19):** Delta tables are not read in the browser. They reach recipients through the author-side export in spec 2026-10-19-0005 §4, which produces a manifest-based Parquet set. The Refresh behavior described here applies to all live kinds.
+
 **Status:** approved revision 1. The owner approved the design and then reviewed and approved this written specification in chat on 2026-09-28. Approved scope: live, unbundled Parquet file sets (glob and manifest), live Iceberg tables (REST catalog and metadata URI), per-load pinning and explicit refresh, memory-only recipient credentials, and deferral of true Delta Lake support. Specification approval does not authorize implementation.
 
 **Authority:** extends [remote sources v1](remote-sources-v1.md) for these new source kinds; preserves [dashboard project and runtime v2](dashboard-project-and-runtime-v2.md), [ADR 0003](../adr/0003-single-worker-source-generations.md), and [ADR 0007](../adr/0007-remote-sources-and-recipient-credentials.md) for existing sources. [ADR 0009](../adr/0009-browser-only-lakehouse-readers.md) records the browser-only boundary; [CONTEXT.md](../../CONTEXT.md) owns vocabulary.

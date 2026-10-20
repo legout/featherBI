@@ -15,6 +15,7 @@
 - **G-E2** Name approved: the standard theme is `vercel`. Visual token approval happens inside [#52](https://github.com/legout/featherBI/issues/52) (owner review against the mockup, not pixel equality).
 - **G-F** Resolved 2026-10-19: the metric catalog stays as an opt-in feature. No task.
 - **G-G** Approved 2026-10-19: remove the managed `pi-implementation-orchestrator` block from `AGENTS.md`.
+- **G-H** Owner clarification 2026-10-20 for [#47](https://github.com/legout/featherBI/issues/47): implement global query-level sorting over the complete result using the typed sort model (so the >100-row max-first acceptance passes); page-local column filters on paged tables are disabled so the UI cannot imply a filter covers the full result. Broader global filtering in SQL stays unimplemented (operators/semantics unspecified); the issue's alternative to disable both sort and filter is not chosen.
 
 ## Tickets — canonical task bodies
 

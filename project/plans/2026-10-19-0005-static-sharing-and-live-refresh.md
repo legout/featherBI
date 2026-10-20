@@ -49,7 +49,7 @@
 
 ## Global validation
 
-Per ticket, run only its assigned focused validation obligation; runtime/browser tickets use the focused browser scenario required by the ticket. Per owner direction (2026-10-19), defer aggregate `npm run check`, the full `npm run test:browser` suite, and assembled-candidate validation until all #37–#54 tickets are implemented. Then run both suites on the assembled candidate. Documentation edits: link and diff inspection.
+Per ticket, run only its assigned focused validation obligation; runtime/browser tickets use the focused browser scenario required by the ticket. Per owner direction (2026-10-19), defer aggregate `npm run check`, the full `npm run test:browser` suite, and assembled-candidate validation until all #37–#54 tickets are implemented. Then run both suites on the assembled candidate. Documentation edits: link and diff inspection. Owner exception (2026-10-20, #45): the issue-required `npm run check` runs now with ticket #45; the full browser suite and the remaining assembled-candidate validation still wait until all planned tickets are implemented.
 
 ## Residual risks
 

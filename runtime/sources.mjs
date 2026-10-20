@@ -23,6 +23,15 @@ const PARQUET_SET_MANIFEST_URI = /^(?:s3|https):\/\/[A-Za-z0-9._~-]+(?::[0-9]{1,
  * resolved from a catalog (spec §2.2): the versioned s3:// .metadata.json
  * document the T3 reader path and storage secret machinery pin to. */
 const ICEBERG_METADATA_URI = /^s3:\/\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*\.metadata\.json$/;
+/** Shape every DuckLake catalog URI must have (spec 2026-10-19-0005 §5): a
+ * public https:// catalog URL the trusted runtime attaches as
+ * `ducklake:<uri>` — userinfo credentials, queries, and fragments never
+ * parse, and s3:// or otherwise private catalogs are not part of the
+ * approved source shape. */
+const DUCKLAKE_URI = /^https:\/\/[A-Za-z0-9._~-]+(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~-]+)*\/[A-Za-z0-9._~-]+$/;
+/** One explicitly named DuckLake table: a plain SQL identifier, never a
+ * qualified or dotted reference. */
+const DUCKLAKE_TABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Per-generation secret tags count down so newer generations sort first in
  * DuckDB's equal-score secret selection (verified against the pinned
  * DuckDB-WASM build): a staged candidate must shadow the active generation's
@@ -68,6 +77,7 @@ export async function registerSources(engine, files, options = {}) {
  const pinnedIcebergMetadataUris = options.pinnedIcebergMetadataUris ?? null;
  const registeredPhysicalNames = [];
  const createdSecretNames = [];
+ const attachedDucklakeNames = [];
  if (generationSchema) {
   await runSql(
    engine.connection,
@@ -90,7 +100,12 @@ export async function registerSources(engine, files, options = {}) {
   const remote = source.remote ?? null;
   const parquetSet = remote?.kind === "parquet-set";
   const iceberg = remote?.kind === "iceberg";
-  const type = remote ? (parquetSet || iceberg ? "parquet" : remoteFormat(id, remote)) : inputType(source, input);
+  const ducklake = remote?.kind === "ducklake";
+  const type = remote
+   ? parquetSet || iceberg || ducklake
+     ? "parquet"
+     : remoteFormat(id, remote)
+   : inputType(source, input);
   const physicalName = `__featherbi_source_${generation}_${index}.${type}`;
   try {
    let columns;
@@ -99,6 +114,7 @@ export async function registerSources(engine, files, options = {}) {
    let secretName = null;
    let resolvedParquetFiles = null;
    let resolvedMetadataUri = null;
+   let ducklakeAttachName = null;
    if (remote) {
     // An Iceberg catalog identity resolves before its storage secret exists
     // (the resolved location scopes it); every other remote read prepares
@@ -185,6 +201,30 @@ export async function registerSources(engine, files, options = {}) {
      columns = await describeIceberg(engine.connection, id, readerName);
      readerPayload = { headers: columns, remote: true, iceberg: true };
      resolvedMetadataUri = metadataUri;
+    } else if (ducklake) {
+     // One DuckLake catalog attaches exactly once per generation (spec
+     // 2026-10-19-0005 §5): trusted runtime code constructs the
+     // `ducklake:<uri>` attach string from the declared public https:// URL
+     // and the view pins the explicitly named table, so only an explicit
+     // Refresh re-attaches and re-reads the catalog.
+     ducklakeAttachName = `__featherbi_ducklake_${generation}_${index}`;
+     await attachDuckLakeCatalog(
+      engine.connection,
+      id,
+      ducklakeAttachName,
+      remote,
+     );
+     // An ATTACH that succeeded must never outlive its failed generation;
+     // the catch path below detaches exactly these names on rollback.
+     attachedDucklakeNames.push(ducklakeAttachName);
+     readerName = `${identifier(ducklakeAttachName)}.${identifier(remote.table)}`;
+     columns = await describeDuckLake(
+      engine.connection,
+      id,
+      readerName,
+      remote,
+     );
+     readerPayload = { headers: columns, remote: true, ducklake: true };
     } else {
      readerName = remote.uri;
      columns = await describeReader(
@@ -244,8 +284,16 @@ export async function registerSources(engine, files, options = {}) {
    };
    if (resolvedParquetFiles) registration.parquetFiles = resolvedParquetFiles;
    if (resolvedMetadataUri) registration.icebergMetadataUri = resolvedMetadataUri;
+   if (ducklakeAttachName) registration.ducklakeAttach = ducklakeAttachName;
    sources[id] = registration;
   } catch (error) {
+   for (const name of attachedDucklakeNames) {
+    try {
+     await runSql(engine.connection, `DETACH DATABASE ${identifier(name)}`);
+    } catch {
+     // A failed attach may not have left a detachable catalog behind.
+    }
+   }
    if (generationSchema) {
     await discardGeneration(
      engine,
@@ -829,6 +877,7 @@ async function prepareRemoteSource(engine, source, id, liveCredentials, generati
  const remote = source.remote;
  const parquetSet = remote.kind === "parquet-set";
  const iceberg = remote.kind === "iceberg";
+ const ducklake = remote.kind === "ducklake";
  if (iceberg) {
   // Trusted runtime code loads the Iceberg capability (spec §3): the
   // pinned DuckDB-WASM build fetches the official version/platform artifact
@@ -842,6 +891,25 @@ async function prepareRemoteSource(engine, source, id, liveCredentials, generati
     id,
     `cannot load the trusted Iceberg capability: ${error instanceof Error ? error.message : String(error)}; the pinned DuckDB build fetches it from its trusted extension repository, so check the browser's network access`,
     "sources.iceberg-capability",
+   );
+  }
+ }
+ if (ducklake) {
+  // Trusted runtime code loads the DuckLake capability (spec
+  // 2026-10-19-0005 §5): INSTALL fetches the official version/platform
+  // artifact from the pinned build's default trusted repository — the
+  // exact owner-approved URL and SHA-256 (ADR 0009, plan 0005 G3) — and the
+  // WASM build ignores custom extension repositories, so no
+  // project-authored location exists to accept. A failed load is a visible
+  // source error, never a fallback.
+  try {
+   await runSql(engine.connection, "INSTALL 'ducklake'");
+   await runSql(engine.connection, "LOAD 'ducklake'");
+  } catch (error) {
+   throw sourceError(
+    id,
+    `cannot load the trusted DuckLake capability: ${error instanceof Error ? error.message : String(error)}; the pinned DuckDB build fetches it from its trusted extension repository, so check the browser's network access`,
+    "sources.ducklake-capability",
    );
   }
  }
@@ -904,6 +972,57 @@ async function describeIceberg(connection, id, metadataUri) {
    id,
    `cannot read the Iceberg table at ${JSON.stringify(metadataUri)}: ${error instanceof Error ? error.message : String(error)}; check the metadata document, the table's objects, and CORS access for the browser`,
    "sources.iceberg",
+  );
+ }
+}
+
+/** Attach one declared public DuckLake catalog under a generation-unique
+ * name. Trusted runtime code constructs the `ducklake:<uri>` attach string
+ * (spec 2026-10-19-0005 §5); a declaration only ever carries the ordinary
+ * public https:// URL, and the quoted identifiers keep the statement a fixed
+ * shape. */
+async function attachDuckLakeCatalog(connection, id, attachName, remote) {
+ if (!DUCKLAKE_URI.test(remote.uri ?? "")) {
+  throw sourceError(
+   id,
+   `invalid ducklake catalog uri ${JSON.stringify(remote.uri)}; use a public https:// URL such as "https://host.example/reports/space.ducklake"`,
+   "sources.ducklake-uri",
+  );
+ }
+ if (!DUCKLAKE_TABLE.test(remote.table ?? "")) {
+  throw sourceError(
+   id,
+   `invalid ducklake table ${JSON.stringify(remote.table)}; name one table with a plain identifier such as "astronauts"`,
+   "sources.ducklake-table",
+  );
+ }
+ try {
+  await runSql(
+   connection,
+   `ATTACH ${stringLiteral(`ducklake:${remote.uri}`)} AS ${identifier(attachName)}`,
+  );
+ } catch (error) {
+  if (error?.sourceId) throw error;
+  throw sourceError(
+   id,
+   `cannot attach the DuckLake catalog at ${JSON.stringify(remote.uri)}: ${error instanceof Error ? error.message : String(error)}; check the catalog URL and its CORS access for the browser`,
+   "sources.ducklake",
+  );
+ }
+}
+
+/** Columns of one declared DuckLake table in its attached catalog. The
+ * first resolve happens here, inside candidate staging, so an unreadable or
+ * unsupported table fails visibly and rolls the candidate generation back. */
+async function describeDuckLake(connection, id, relation, remote) {
+ try {
+  return await describeReader(connection, relation);
+ } catch (error) {
+  if (error?.sourceId) throw error;
+  throw sourceError(
+   id,
+   `cannot read the DuckLake table ${JSON.stringify(remote.table)} in the catalog at ${JSON.stringify(remote.uri)}: ${error instanceof Error ? error.message : String(error)}; check the table name, its data files, and CORS access for the browser`,
+   "sources.ducklake",
   );
  }
 }
@@ -1228,6 +1347,11 @@ function missingColumns(id, schema, columns) {
 }
 
 function readerSql(type, name, payload) {
+ if (payload?.ducklake) {
+  // The attached catalog's explicitly named table — the view pins this
+  // one relation for the whole generation (spec 2026-10-19-0005 §5).
+  return name;
+ }
  if (payload?.iceberg) {
   // The pinned Iceberg reader resolves the declared versioned metadata
   // document — snapshot and delete semantics — never the raw data files

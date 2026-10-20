@@ -7,7 +7,7 @@
 
 ## 1. Purpose and authority
 
-This specification defines the primary sharing path (a statically hosted `dashboard.html` reading live sources), refresh for every live source, the Delta source-export path, the DuckLake gate, and the ZIP fallback. It amends, and does not replace:
+This specification defines the primary sharing path (a statically hosted `dashboard.html` reading live sources), refresh for every live source, the Delta source-export path, the DuckLake live source, and the ZIP fallback. It amends, and does not replace:
 
 - [dashboard v2 §11](dashboard-project-and-runtime-v2.md) (packaging becomes the fallback path);
 - [remote sources v1 §4–§5](remote-sources-v1.md) (delivery defaults, refresh);
@@ -24,7 +24,7 @@ Rationale: ADR 0010, with amendments to ADR 0005, 0007, and 0009.
 
 ## 3. Live sources and refresh
 
-- Live sources are CSV, JSON, and Parquet files (`delivery: live`, `https://` or `s3://` with session credentials), Parquet file sets (glob or manifest), and Iceberg tables (metadata URI or REST catalog). DuckLake is live only after the gate in §5.
+- Live sources are CSV, JSON, and Parquet files (`delivery: live`, `https://` or `s3://` with session credentials), Parquet file sets (glob or manifest), Iceberg tables (metadata URI or REST catalog), and DuckLake tables (a public `https://` catalog URI plus one explicitly named table; §5).
 - Every live source has a **Refresh** control. Refresh re-resolves the source's identity (Parquet-set membership, manifest, Iceberg snapshot or catalog metadata), or re-reads the URI of a single file. The new generation is staged and replaces the active one only when staging succeeds.
 - When a refresh fails, the previous results stay visible with a source-specific error. This is the existing rule.
 - There is no automatic polling and no background refresh. Filter changes never trigger a refresh, because generations are pinned.
@@ -38,11 +38,12 @@ Rationale: ADR 0010, with amendments to ADR 0005, 0007, and 0009.
 - The project declares the table as a live Parquet set with `selector: {manifest: https://…/manifest.json}`. Refresh re-fetches the manifest.
 - Freshness equals the export cadence. The recipient sees new data after Refresh.
 
-## 5. DuckLake gate
+## 5. DuckLake live source
 
-- DuckLake is read live only after spike S2 in [plan 0005](../plans/2026-10-19-0005-static-sharing-and-live-refresh.md) passes. The gate requires: the pinned DuckDB v1.5.5 `wasm_eh` extension artifact (exact URL recorded in the capability manifest), a public catalog attached over `https://`, and one table read in desktop Chrome.
-- The owner approved the exact DuckDB v1.5.5 `wasm_eh` DuckLake extension URL and SHA-256 after S2; see [ADR 0009](../adr/0009-browser-only-lakehouse-readers.md). A different URL or hash requires a new trust decision.
-- If S2 fails, DuckLake stays out of the live scope. Authors export DuckLake tables with the same export mechanism as Delta, using native DuckDB.
+- The gate passed: S2 proved feasibility in desktop Chrome, and the owner approved the exact DuckDB v1.5.5 `wasm_eh` DuckLake extension artifact (URL and SHA-256) after S2 — [ADR 0009](../adr/0009-browser-only-lakehouse-readers.md), plan 0005 G3. A different URL or hash requires a new trust decision.
+- A DuckLake source declares `remote: {kind: ducklake, uri: <public https:// catalog URL>, table: <one explicitly named table>, auth: none, delivery: live}`. The `uri` is the ordinary HTTPS URL of the catalog; trusted runtime code constructs the DuckDB `ducklake:<uri>` attach string, so a declaration never carries it.
+- The recipient's browser loads the pinned trusted DuckLake capability (the exact approved artifact recorded in the capability manifest) and attaches the catalog once per generation. The source exposes only the explicitly named table. Refresh re-attaches and re-reads the catalog.
+- There are no credentials: `auth: none` is the only value, and `s3://` catalogs, private DuckLake credential flows, and REST-catalog APIs are out of scope.
 
 ## 6. ZIP fallback
 
@@ -64,7 +65,7 @@ The ZIP path keeps its current rules: local and packaged sources, explicit file 
 - **SL-03** For each live kind, Refresh re-resolves or re-reads the source. After a failed refresh the previous results stay visible with a source-specific error.
 - **SL-04** CSV, JSON, and Parquet-file live sources load from a static test origin without file selection.
 - **SL-05** A Delta fixture with an update and a delete exports with row counts equal to native `delta_scan`. The manifest loads through the existing manifest selector in the browser.
-- **SL-06** DuckLake appears only if S2 passes. If it passes, the table reads live in Chrome. Otherwise DuckLake is absent from the release.
+- **SL-06** S2 passed and G3 approved the exact artifact: a DuckLake source — public `https://` catalog URI plus one explicitly named table, `auth: none` — reads its named table live in Chrome through the pinned trusted capability, with no prompt. A different artifact URL or hash requires a new owner decision.
 - **SL-07** The static page reads a cross-origin public source where CORS allows it, and shows the CORS remedy where it does not.
 - **SL-08** Owner acceptance on real data: the owner's dataset is published at a URL the owner controls, the static page opens from that host without file selection, and the AP baseline (AP-01–AP-07) matches.
 

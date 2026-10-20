@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { validateConfig } from "../contract/config.mjs";
 import {
+ DUCKDB_DUCKLAKE_CAPABILITY,
  DUCKDB_ICEBERG_CAPABILITY,
  DUCKDB_WASM_BUNDLES,
  DUCKDB_WASM_VERSION,
@@ -33,6 +34,7 @@ const CHART_TYPES = new Set([
 const CAPABILITY_VERSIONS = {
  core: "0.1.0",
  iceberg: DUCKDB_WASM_VERSION,
+ ducklake: DUCKDB_WASM_VERSION,
  "ag-grid": "35.3.1",
  echarts: "6.1.0",
  perspective: "3.8.0",
@@ -51,6 +53,12 @@ export function resolveCapabilities(config) {
  // declaration can name an extension location.
  if (config.data.sources.some(({ remote }) => remote?.kind === "iceberg"))
   ids.add("iceberg");
+ // The trusted DuckLake capability is selected only when the compiled
+ // dashboard declares a DuckLake source (spec 2026-10-19-0005 §5); the
+ // runtime loads it by name from the pinned build's default trusted
+ // repository, and no project declaration can name an extension location.
+ if (config.data.sources.some(({ remote }) => remote?.kind === "ducklake"))
+  ids.add("ducklake");
  if (
   config.layout.some(({ type }) => type === "table") ||
   config.playground?.renderer === "ag-grid"
@@ -69,6 +77,7 @@ export function resolveCapabilities(config) {
  return [
   "core",
   "iceberg",
+  "ducklake",
   "ag-grid",
   "echarts",
   "perspective",
@@ -335,6 +344,13 @@ async function capabilityManifest(capabilities) {
     // loads the extension by name from the build's default trusted
     // repository, never from a project-authored location.
     return { ...capability, ...DUCKDB_ICEBERG_CAPABILITY };
+   }
+   if (capability.id === "ducklake") {
+    // Record the exact owner-approved pinned artifact and its SHA-256
+    // (ADR 0009, plan 0005 G3); the runtime loads the extension by name
+    // from the build's default trusted repository, never from a
+    // project-authored location.
+    return { ...capability, ...DUCKDB_DUCKLAKE_CAPABILITY };
    }
    if (capability.id !== "perspective") return capability;
    const assets = await Promise.all(

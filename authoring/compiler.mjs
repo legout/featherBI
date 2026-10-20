@@ -204,6 +204,7 @@ function validateRemoteSources(project, filename, document, lineCounter) {
   const remote = source.remote;
   const parquetSet = remote.kind === "parquet-set";
   const iceberg = remote.kind === "iceberg";
+  const ducklake = remote.kind === "ducklake";
   const sourceNote = `source ${JSON.stringify(source.id)}: `;
   if (iceberg) {
    // Iceberg tables carry exactly one identity (spec §2.2): a REST catalog
@@ -291,6 +292,62 @@ function validateRemoteSources(project, filename, document, lineCounter) {
      );
     }
    }
+  } else if (ducklake) {
+   // A live DuckLake table (spec 2026-10-19-0005 §5) is one explicitly
+   // named table of a public HTTPS catalog: the ordinary catalog URL plus
+   // the table name. The trusted runtime constructs the `ducklake:<uri>`
+   // attach string, so no file-shaped, S3, or catalog identity field ever
+   // applies to it.
+   const conflicts = [
+    "format",
+    "selector",
+    "metadataUri",
+    "catalog",
+    "catalogAuth",
+    "region",
+    "endpoint",
+    "filename",
+   ].filter((field) => remote[field] !== undefined);
+   if (conflicts.length > 0) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", conflicts[0]],
+     `${sourceNote}a ducklake table cannot declare ${conflicts.map((field) => JSON.stringify(field)).join(" and ")}; it is a public https:// catalog URI plus an explicit table name`,
+    );
+   }
+   if (
+    !/^https:\/\/[A-Za-z0-9._~-]+(?::[0-9]{1,5})?(?:\/[A-Za-z0-9._~-]+)*\/[A-Za-z0-9._~-]+$/.test(
+     remote.uri ?? "",
+    )
+   ) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "uri"],
+     `${sourceNote}ducklake uri must be a public https:// URL of the catalog, such as "https://host.example/reports/space.ducklake"`,
+    );
+   }
+   if (remote.table === undefined) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote"],
+     `${sourceNote}a ducklake source requires "table", the one explicitly named table it exposes`,
+    );
+   }
+   if (remote.auth !== "none") {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "auth"],
+     `${sourceNote}ducklake requires auth: none; the catalog must be publicly readable over https`,
+    );
+   }
   } else {
    const conflicts = ["format", "filename"].filter((field) => remote[field] !== undefined);
    if (parquetSet && conflicts.length > 0) {
@@ -336,6 +393,15 @@ function validateRemoteSources(project, filename, document, lineCounter) {
      lineCounter,
      ["sources", index, "remote", "catalogAuth"],
      `${sourceNote}catalogAuth requires remote.kind: iceberg`,
+    );
+   }
+   if (remote.table !== undefined) {
+    throw yamlError(
+     filename,
+     document,
+     lineCounter,
+     ["sources", index, "remote", "table"],
+     `${sourceNote}table requires remote.kind: ducklake`,
     );
    }
   }
@@ -457,8 +523,9 @@ function validateRemoteSources(project, filename, document, lineCounter) {
    );
   }
   if (!remoteMemberName(source)) {
-   // Live-only kinds (Parquet sets, Iceberg tables) never package a member.
-   if (parquetSet || iceberg) continue;
+   // Live-only kinds (Parquet sets, Iceberg tables, DuckLake tables) never
+   // package a member.
+   if (parquetSet || iceberg || ducklake) continue;
    throw yamlError(
     filename,
     document,
@@ -474,6 +541,22 @@ function validateRemoteSources(project, filename, document, lineCounter) {
 function runtimeSource(source) {
  if (!source.remote) return source;
  const remote = source.remote;
+ if (remote.kind === "ducklake") {
+  // Live DuckLake table (spec 2026-10-19-0005 §5): the recipient's browser
+  // attaches the public catalog and reads the one explicitly named table
+  // through the pinned trusted DuckLake capability. Only the declared
+  // public identity travels; no catalog bytes or credentials compile in.
+  return {
+   id: source.id,
+   schema: source.schema,
+   remote: {
+    kind: "ducklake",
+    uri: remote.uri,
+    table: remote.table,
+    auth: remote.auth,
+   },
+  };
+ }
  if (remote.kind === "iceberg") {
   // Live Iceberg table (spec 2026-09-28-0004 §2.2): the recipient's browser
   // loads the pinned trusted Iceberg capability and — for a catalog

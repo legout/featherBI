@@ -909,6 +909,12 @@ function liveReadError(config, error) {
      : kind === "network"
       ? "the browser could not reach the bucket endpoint for the table metadata or object reads (a CORS block looks the same); check the endpoint and the bucket's CORS access for this page"
       : "the live Iceberg table read failed; check the metadata document, the table's object access, its CORS configuration, and the credentials"
+  : source.remote.kind === "ducklake"
+   ? kind === "credentials"
+    ? "the catalog host rejected the anonymous read; the catalog and its data files must be publicly readable over https"
+    : kind === "network"
+     ? "the browser could not reach the catalog or its data files (a CORS block looks the same); check the catalog URL, the data file locations, and their CORS access for this page"
+     : "the live DuckLake table read failed; check the catalog URL, the named table, its data files, and their CORS access for the browser"
   : kind === "credentials"
    ? "the remote host rejected the credentials; if they are wrong or expired, the source will ask for them again"
    : kind === "network"
@@ -936,6 +942,17 @@ async function retireGeneration(engine, generation) {
     await engine.db.dropFile(source.physicalName);
    } catch {
     // Failed candidates can already have removed their physical registrations.
+   }
+  }
+  if (source.ducklakeAttach) {
+   // Each generation owns its attached DuckLake catalog: detaching here
+   // retires exactly this generation's catalog, and a Refresh stages a
+   // fresh attach (spec 2026-10-19-0005 §5).
+   try {
+    // pi-lens-ignore: ast-grep:no-sql-in-code-js
+    await engine.connection.query(`DETACH DATABASE ${identifier(source.ducklakeAttach)}`);
+   } catch {
+    // The active snapshot has already moved; cleanup remains best effort.
    }
   }
  }

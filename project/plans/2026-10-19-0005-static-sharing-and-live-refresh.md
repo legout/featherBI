@@ -33,7 +33,7 @@
 | [#41](https://github.com/legout/featherBI/issues/41) | T2: Delta export command | #39 |
 | [#42](https://github.com/legout/featherBI/issues/42) | T3: Static build target | #37, #40 |
 | [#43](https://github.com/legout/featherBI/issues/43) | T4: Content-Security-Policy for the static target | #42 |
-| [#44](https://github.com/legout/featherBI/issues/44) | T5: DuckLake live source (conditional; cancelled if S2 fails) | #38 + G3 |
+| [#44](https://github.com/legout/featherBI/issues/44) | T5: DuckLake live source (S2 ✓, G3 ✓; shape: public `https://` catalog `uri` + explicit `table`, `auth: none`, trusted runtime attaches `ducklake:<uri>`) | #38 + G3 |
 | [#45](https://github.com/legout/featherBI/issues/45) | T6: Documentation and owner acceptance | #40–#43 |
 
 ## Requirement-to-task map

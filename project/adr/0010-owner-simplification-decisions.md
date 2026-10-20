@@ -22,7 +22,7 @@ Recorded 2026-10-19 from owner answers after four read-only analyses (runtime, a
 
 ## Open
 
-- DuckLake extension trust decision after spike S2 (plan 0005, gate G3).
+- DuckLake extension trust decision after spike S2 (plan 0005, gate G3): resolved 2026-10-19 — G3 approved the exact artifact and SHA-256 recorded in [ADR 0009](0009-browser-only-lakehouse-readers.md); the live source ships in #44.
 - Visual approval of the `vercel` token values (inside the E1 ticket).
 
 ## Consequences when implemented (separate approval)

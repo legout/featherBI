@@ -450,12 +450,17 @@
         "kind": {
           "enum": [
             "parquet-set",
-            "iceberg"
+            "iceberg",
+            "ducklake"
           ]
         },
         "uri": {
           "type": "string",
           "pattern": "^(?:s3|https)://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+$"
+        },
+        "table": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
         "metadataUri": {
           "type": "string",
@@ -590,6 +595,33 @@
             "properties": {
               "kind": {
                 "const": "iceberg"
+              },
+              "delivery": {
+                "const": "live"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "ducklake"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "kind",
+              "auth",
+              "delivery"
+            ],
+            "properties": {
+              "kind": {
+                "const": "ducklake"
               },
               "delivery": {
                 "const": "live"

@@ -45,6 +45,47 @@ CATALOG_TOKEN_ENV = "FTHR_ICEBERG_TOKEN"
 # Catalog REST table URL shape (T0 verdict, ticket #34): the warehouse is the
 # path prefix segment under /v1.
 CATALOG_TABLE_PATH = "/v1/{warehouse}/namespaces/{namespace}/tables/{table}"
+# DuckDB type names (as str(relation.types) prints them) mapped to the six
+# featherBI column types from authoring/schema.json definitions.columnType,
+# so profile reports never need hand transcription. Aliases (CHAR, REAL,
+# TIMESTAMPTZ, INT) normalize away before reaching this map; DECIMAL(w,s)
+# carries parameters and is matched by prefix.
+COLUMN_TYPES = {
+    "VARCHAR": "string",
+    "BOOLEAN": "boolean",
+    "TINYINT": "integer",
+    "SMALLINT": "integer",
+    "INTEGER": "integer",
+    "BIGINT": "integer",
+    "HUGEINT": "integer",
+    "UTINYINT": "integer",
+    "USMALLINT": "integer",
+    "UINTEGER": "integer",
+    "UBIGINT": "integer",
+    "UHUGEINT": "integer",
+    "FLOAT": "number",
+    "DOUBLE": "number",
+    "DATE": "date",
+    "TIMESTAMP": "timestamp",
+    "TIMESTAMP WITH TIME ZONE": "timestamp",
+    "TIMESTAMP_S": "timestamp",
+    "TIMESTAMP_MS": "timestamp",
+    "TIMESTAMP_NS": "timestamp",
+}
+
+
+def featherbi_type(column_name, type_name):
+    upper = type_name.upper()
+    mapped = COLUMN_TYPES.get(upper)
+    if mapped is None and upper.startswith("DECIMAL"):
+        mapped = "number"
+    if mapped is None:
+        raise ValueError(
+            f"column {column_name!r}: DuckDB type {type_name!r} has no featherBI type; "
+            "cast the column to string, boolean, integer, number, date, or timestamp "
+            "before profiling, or extend COLUMN_TYPES in profile.py with an explicit mapping"
+        )
+    return mapped
 
 
 def identifier(name):
@@ -474,7 +515,7 @@ def profile(input_path, source_id, format_name, auth="none", include_values=Fals
         cursor += 2
         item = {
             "name": name,
-            "type": type_name,
+            "type": featherbi_type(name, type_name),
             "null_count": null_count,
             "approximate_distinct_count": approximate_distinct,
             "distinct_count_kind": "approximate",

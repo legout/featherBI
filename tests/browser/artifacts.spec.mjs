@@ -62,6 +62,7 @@ test.beforeAll(async ({ browser }) => {
  await cli("compile", "--project", path.join(projectDir, "dashboard.yaml"));
  await cli(
   "build",
+  "--target", "zip",
   "--config",
   path.join(projectDir, ".featherbi", "dashboard.config.json"),
   "--source",

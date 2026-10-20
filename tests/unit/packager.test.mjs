@@ -114,6 +114,7 @@ test("packaging produces one deterministic external-data ZIP", async () => {
  const options = {
   configPath,
   sources: { ap: sourcePath },
+  target: "zip",
  };
  await buildArtifact({ ...options, outPath: zip });
  await buildArtifact({ ...options, outPath: zipCopy });
@@ -164,6 +165,225 @@ test("packaging produces one deterministic external-data ZIP", async () => {
   (await readdir(dir)).some((name) => name.endsWith(".tmp")),
   false,
  );
+});
+
+/** Minimal one-local-source config shared by the static-target checks. */
+function localSourceConfig() {
+ return {
+  contract: 2,
+  app: "grid",
+  theme: "neutral",
+  title: "Local source",
+  data: {
+   mode: "upload",
+   sources: [
+    {
+     id: "ap",
+     type: "json",
+     file: "ap.json",
+     schema: { station: { type: "string", nullable: false } },
+    },
+   ],
+  },
+  filters: [],
+  queries: {
+   summary: { sql: "SELECT count(*) AS records FROM ap", params: [] },
+  },
+  layout: [
+   {
+    id: "records",
+    type: "kpi",
+    query: "summary",
+    field: "records",
+    label: "Records",
+    x: 1,
+    y: 1,
+    width: 12,
+    height: 1,
+   },
+  ],
+ };
+}
+
+/**
+ * SL-01 (spec 2026-10-19-0005 §2): the static target rejects a local source
+ * before its bytes are read — the assignment points at a missing file, so a
+ * stat-first preflight would report "cannot read source" instead of the
+ * source-naming remedy — and the CLI requires an explicit --target.
+ */
+test("static target rejects local sources before reading them and requires --target", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-static-"));
+ const configPath = path.join(dir, "config.json");
+ await writeFile(configPath, JSON.stringify(localSourceConfig()));
+ const missingSource = path.join(dir, "missing.json");
+ const out = path.join(dir, "dashboard.html");
+
+ const missingTarget = await execFileAsync(
+  process.execPath,
+  [
+   path.join(rootDir, "bin", "featherbi.mjs"),
+   "build",
+   "--config", configPath,
+   "--source", `ap=${missingSource}`,
+   "--output", out,
+  ],
+ ).then(
+  () => {
+   throw new Error("build without --target must fail");
+  },
+  (error) => error,
+ );
+ assert.match(missingTarget.stderr, /missing required --target/);
+
+ await assert.rejects(
+  () =>
+   buildArtifact({
+    configPath,
+    sources: { ap: missingSource },
+    outPath: out,
+    target: "static",
+   }),
+  /static target cannot package source "ap": declare delivery: live with a public https:\/\/ URI, or use the zip target/,
+ );
+ await assert.rejects(
+  () =>
+   buildArtifact({
+    configPath,
+    sources: { ap: missingSource },
+    outPath: out,
+   }),
+  /missing required --target; use static or zip/,
+ );
+ await assert.rejects(
+  () =>
+   buildArtifact({
+    configPath,
+    sources: { ap: missingSource },
+    outPath: out,
+    target: "tar",
+   }),
+  /unknown target "tar"; use static or zip/,
+ );
+ assert.deepEqual(await readdir(dir), ["config.json"], "no artifact may be written");
+});
+
+/** Minimal one-live-source config for the static-origin checks. */
+function liveSourceConfig(remote) {
+ return {
+  ...localSourceConfig(),
+  title: "Live source",
+  data: {
+   mode: "upload",
+   sources: [
+    {
+     id: "live",
+     schema: { station: { type: "string", nullable: false } },
+     remote,
+    },
+   ],
+  },
+ };
+}
+
+/**
+ * Owner decision 2026-10-19 (#43, spec 0005 §7): the static CSP lists exact
+ * origins, so an s3 live source with neither region nor endpoint — whose
+ * actual request host DuckDB resolves at runtime — fails the static build
+ * before any artifact is written. The zip target still accepts it.
+ */
+test("static target rejects s3 sources without region or endpoint", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-static-s3-"));
+ const configPath = path.join(dir, "config.json");
+ await writeFile(
+  configPath,
+  JSON.stringify(
+   liveSourceConfig({
+    uri: "s3://reports/orders.parquet",
+    format: "parquet",
+    auth: "s3",
+   }),
+  ),
+ );
+ await assert.rejects(
+  () =>
+   buildArtifact({
+    configPath,
+    outPath: path.join(dir, "dashboard.html"),
+    target: "static",
+   }),
+  /static target cannot derive an exact origin for s3 source "live": declare region or endpoint for its bucket, or use the zip target/,
+ );
+ assert.deepEqual(await readdir(dir), ["config.json"], "no artifact may be written");
+});
+
+/**
+ * Owner decision 2026-10-19 (#43, spec 0005 §7): an Iceberg REST catalog
+ * supplies the storage bucket at open time, so only an explicit endpoint
+ * yields the exact connect-src origin; a declared region or the catalog
+ * endpoint never substitutes.
+ */
+test("static target rejects iceberg catalog sources without a storage endpoint", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-static-catalog-"));
+ const configPath = path.join(dir, "config.json");
+ await writeFile(
+  configPath,
+  JSON.stringify(
+   liveSourceConfig({
+    kind: "iceberg",
+    auth: "none",
+    catalogAuth: "none",
+    region: "eu-central-1",
+    catalog: {
+     endpoint: "https://catalog.example.com",
+     warehouse: "analytics",
+     namespace: "default",
+     table: "orders",
+    },
+   }),
+  ),
+ );
+ await assert.rejects(
+  () =>
+   buildArtifact({
+    configPath,
+    outPath: path.join(dir, "dashboard.html"),
+    target: "static",
+   }),
+  /static target cannot derive an exact origin for catalog iceberg source "live": the catalog resolves the bucket at open time, so declare endpoint, or use the zip target/,
+ );
+ assert.deepEqual(await readdir(dir), ["config.json"], "no artifact may be written");
+});
+
+test("static CSP includes both Iceberg catalog and storage origins", async () => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), "featherbi-static-catalog-origins-"));
+ const configPath = path.join(dir, "config.json");
+ const outPath = path.join(dir, "dashboard.html");
+ await writeFile(
+  configPath,
+  JSON.stringify(
+   liveSourceConfig({
+    kind: "iceberg",
+    auth: "none",
+    catalogAuth: "none",
+    endpoint: "storage.example.com:9000",
+    region: "eu-central-1",
+    catalog: {
+     endpoint: "https://catalog.example.com",
+     warehouse: "analytics",
+     namespace: "default",
+     table: "orders",
+    },
+   }),
+  ),
+ );
+ await buildArtifact({ configPath, outPath, target: "static" });
+ const html = await readFile(outPath, "utf8");
+ const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html)?.[1];
+ assert.ok(policy, "static artifact has a CSP meta tag");
+ const connect = policy.split("; ").find((directive) => directive.startsWith("connect-src "));
+ assert.ok(connect, "CSP declares connect-src");
+ assert.ok(connect.includes("https://catalog.example.com"));
+ assert.ok(connect.includes("https://storage.example.com:9000"));
 });
 
 test("build materializes a remote source into the standard ZIP and fails atomically", async () => {
@@ -221,7 +441,7 @@ layout:
  const notesPath = path.join(dir, "local_notes.json");
  await writeFile(notesPath, '[{"note":"n"}]');
  const zip = path.join(dir, "dashboard.zip");
- const options = { configPath, sources: { local_notes: notesPath }, outPath: zip };
+ const options = { configPath, sources: { local_notes: notesPath }, outPath: zip, target: "zip" };
 
  // Owner machines materialize the declared https URI; tests substitute the
  // localhost fixture so the identical build path runs without external network.

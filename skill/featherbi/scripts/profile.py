@@ -30,8 +30,12 @@ ENV_PREFIX = "FTHR_S3_"
 PARQUET_SET_MAX_FILES = 10_000
 # Upper bound on one Parquet-set manifest document (spec §2.1).
 PARQUET_SET_MANIFEST_MAX_BYTES = 2 * 1024 * 1024
-# Shape one Parquet-set manifest URI must have (spec §2.1).
-PARQUET_SET_MANIFEST_URI = re.compile(r"^s3://[A-Za-z0-9._~/-]+\.json$")
+# Shape one Parquet-set manifest URI must have (spec §2.1; a public https://
+# JSON URI is admissible since spec 2026-10-19-0005 §4; the optional numeric
+# port is the only ':' admitted, so userinfo credentials never parse).
+PARQUET_SET_MANIFEST_URI = re.compile(
+    r"^(?:s3|https)://[A-Za-z0-9._~-]+(?::[0-9]{1,5})?/(?:[A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]+\.json$"
+)
 # Shape one declared Iceberg metadata URI must have (spec §2.2).
 ICEBERG_METADATA_URI = re.compile(r"^s3://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*\.metadata\.json$")
 # Catalog bearer token environment variable (spec §2.2: environment or a
@@ -329,8 +333,9 @@ def resolve_manifest_set(con, input_path, manifest, source_id):
     """
     if not PARQUET_SET_MANIFEST_URI.fullmatch(manifest or ""):
         raise ValueError(
-            f"source {source_id!r}: manifest must be an s3:// URI of a .json "
-            "object, such as 's3://reports/sales/manifest.json'"
+            f"source {source_id!r}: manifest must be an s3:// or public "
+            "https:// URI of a .json object, such as "
+            "'s3://reports/sales/manifest.json'"
         )
     text = con.execute(
         f"SELECT content FROM read_text({sql_literal(manifest)})"
@@ -570,8 +575,8 @@ def main():
             parser.error("--manifest requires --format parquet")
         if not PARQUET_SET_MANIFEST_URI.fullmatch(args.manifest):
             parser.error(
-                '--manifest must be an s3:// URI of a .json object such as '
-                '"s3://reports/sales/manifest.json"'
+                '--manifest must be an s3:// or public https:// URI of a '
+                '.json object such as "s3://reports/sales/manifest.json"'
             )
         if not args.input.startswith("s3://") or not args.input.endswith("/"):
             parser.error("--manifest requires an s3:// prefix input ending with '/'")

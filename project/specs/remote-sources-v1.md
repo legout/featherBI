@@ -1,5 +1,7 @@
 # featherBI remote sources specification v1
 
+> **Amendments (ADR 0010, 2026-10-19):** §4: `packaged` stays the declaration default, and static-target projects declare `live`. §5: every live source gets a Refresh control (spec 2026-10-19-0005 §3). RS-03 also holds for a static `https://` origin.
+
 Status: owner-approved design captured in the 2026-09-17 shaping session (full-design approval); written-review gate pending.
 
 ## 1. Purpose and authority

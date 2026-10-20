@@ -37,6 +37,7 @@ test.beforeAll(async ({ browser }) => {
  await cli("compile", "--project", path.join(projectDir, "dashboard.yaml"));
  await cli(
   "build",
+  "--target", "zip",
   "--config", configPath,
   "--source", `inspections=${sourcePath}`,
   "--output", zipPath,

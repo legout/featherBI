@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { looksLikeCredentialMaterial, validateConfig } from "../contract/config.mjs";
+import { staticContentSecurityPolicy } from "../scripts/build.mjs";
 
 const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(
@@ -152,7 +153,8 @@ async function materializeRemote(remote, scratchDir) {
 }
 
 /** Validate an upload-mode authoring config and its explicit source assignments. */
-export async function preflightBuild({ configPath, sources }) {
+export async function preflightBuild({ configPath, sources, target = "zip" }) {
+ let csp;
  const config = await loadConfig(configPath);
  if (config.data.mode !== "upload") {
   throw new Error("artifact builds require an upload-mode authoring config");
@@ -173,6 +175,25 @@ export async function preflightBuild({ configPath, sources }) {
     `stale remote source declaration for ${JSON.stringify(remote.id)}: the source is declared live; recompile the project`,
    );
   }
+ }
+ if (target === "static") {
+  // Static artifacts admit only live sources (spec 2026-10-19-0005 §2): a
+  // local file or a packaged remote fails here, before any local read or
+  // remote materialization, so no dataset bytes, paths, or credentials can
+  // reach the single-file HTML. A compiled config marks live sources with
+  // `remote`; packaged remotes compile to plain file sources.
+  for (const source of config.data.sources) {
+   if (!source.remote) {
+    throw new Error(staticTargetRejection(source.id));
+   }
+  }
+  for (const id of assigned.keys()) {
+   throw new Error(staticTargetRejection(id));
+  }
+  // #43 (spec 0005 §7): the artifact CSP lists exact origins, so a live
+  // source whose actual request origin resolves only at runtime fails
+  // here, before rendering or output; the zip target accepts every shape.
+  csp = staticContentSecurityPolicy(config);
  }
  for (const id of assigned.keys()) {
   if (remoteById.has(id)) {
@@ -222,5 +243,10 @@ export async function preflightBuild({ configPath, sources }) {
   await cleanup?.();
   throw error;
  }
- return { config, inputs, cleanup };
+ return { config, inputs, cleanup, csp };
+}
+
+/** SL-01 remedy: name the source and the two ways to make the build legal. */
+function staticTargetRejection(id) {
+ return `static target cannot package source ${JSON.stringify(id)}: declare delivery: live with a public https:// URI, or use the zip target`;
 }

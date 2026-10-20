@@ -39,6 +39,7 @@ Build one artifact with an explicit local file for every source ID:
 
 ```sh
 node bin/featherbi.mjs build \
+  --target zip \
   --config examples/basic-dashboard/.featherbi/dashboard.config.json \
   --source inspections=path/to/inspections.parquet \
   --output examples/basic-dashboard/.featherbi/dashboard.zip

@@ -56,6 +56,26 @@ export const DUCKDB_ICEBERG_CAPABILITY = {
  url: "https://extensions.duckdb.org/v1.5.5/wasm_eh/iceberg.duckdb_extension.wasm",
 };
 
+/** Pinned trusted DuckLake extension asset (ADR 0009, owner decision
+ * 2026-10-19 after the S2 gate probe, plan 0005 G3): the exact DuckDB
+ * official version/platform artifact for DuckDB v1.5.5 `wasm_eh`, together
+ * with its owner-approved SHA-256 — approval covers only these bytes at
+ * this pinned URL/version, and a different URL or hash needs a new owner
+ * decision. `INSTALL/LOAD ducklake` fetches from the pinned build's default
+ * trusted repository (the WASM build ignores `custom_extension_repository`),
+ * so this constant records what that load resolves to for the capability
+ * manifest. Project declarations can never choose an extension repository
+ * or artifact URL; there is no authored surface for one (schema-unknown
+ * fields are compile errors). */
+export const DUCKDB_DUCKLAKE_CAPABILITY = {
+ id: "ducklake",
+ version: DUCKDB_WASM_VERSION,
+ duckdbVersion: "v1.5.5",
+ platform: "wasm_eh",
+ url: "https://extensions.duckdb.org/v1.5.5/wasm_eh/ducklake.duckdb_extension.wasm",
+ sha256: "154f2504ac3e92de146e5193012ac898ce97f62d5b4701f534176d49aae5594a",
+};
+
 /** Bounded boot timeout (cold CDN fetch of the ~50 MB EH module included). */
 const DEFAULT_BOOT_TIMEOUT_MS = 120_000;
 

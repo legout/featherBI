@@ -10,7 +10,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -196,6 +196,16 @@ test("a manifest selector compiles its declaration without any file inventory", 
  // The compiled config carries only the declared non-secret locations.
  assert.equal(json.includes("manifest.json"), true);
  assert.equal(json.includes("part-1.parquet"), false);
+ // A published Parquet set may declare its manifest as a public HTTPS JSON
+ // URI while the data prefix stays S3 (spec 2026-10-19-0005 §4).
+ const https = await project(
+  `{kind: parquet-set, uri: s3://reports/sales/, selector: {manifest: https://reports.example.com/sales/manifest.json}, auth: none, delivery: live}`,
+ );
+ const httpsResult = await compileProject(https);
+ assert.deepEqual(httpsResult.config.data.sources[0].remote.selector, {
+  manifest: "https://reports.example.com/sales/manifest.json",
+ });
+ assert.equal(validateConfig(httpsResult.config).ok, true);
 });
 
 test("selector conflicts and invalid manifest URIs fail naming the source and field", async () => {
@@ -213,8 +223,21 @@ test("selector conflicts and invalid manifest URIs fail naming the source and fi
    match: /dashboard\.yaml:\d+:\d+.*source "sales".*exactly one of "glob" or "manifest"/,
   },
   {
-   remote: `{kind: parquet-set, uri: s3://reports/sales/, selector: {manifest: https://example.com/manifest.json}, auth: none, delivery: live}`,
-   match: /dashboard\.yaml:\d+:\d+.*source "sales".*manifest.*s3:\/\/.*\.json/,
+   remote: `{kind: parquet-set, uri: s3://reports/sales/, selector: {manifest: http://reports.example.com/manifest.json}, auth: none, delivery: live}`,
+   match: /dashboard\.yaml:\d+:\d+.*source "sales".*manifest.*\.json/,
+  },
+  {
+   remote: `{kind: parquet-set, uri: s3://reports/sales/, selector: {manifest: gs://reports/manifest.json}, auth: none, delivery: live}`,
+   match: /dashboard\.yaml:\d+:\d+.*source "sales".*manifest.*\.json/,
+  },
+  {
+   // Credentials in the URI never reach a declaration, S3 or HTTPS.
+   remote: `{kind: parquet-set, uri: s3://reports/sales/, selector: {manifest: https://key:secret@reports.example.com/manifest.json}, auth: none, delivery: live}`,
+   match: /dashboard\.yaml:\d+:\d+.*source "sales".*manifest.*\.json/,
+  },
+  {
+   remote: `{kind: parquet-set, uri: s3://reports/sales/, selector: {manifest: s3://key:secret@reports/manifest.json}, auth: none, delivery: live}`,
+   match: /dashboard\.yaml:\d+:\d+.*source "sales".*manifest.*\.json/,
   },
   {
    remote: `{kind: parquet-set, uri: s3://reports/sales/, selector: {manifest: s3://reports/sales/manifest.txt}, auth: none, delivery: live}`,
@@ -269,11 +292,21 @@ const BASE_RUNTIME_CONFIG = {
 
 test("runtime configs accept exactly one manifest selector shape", () => {
  assert.equal(validateConfig(BASE_RUNTIME_CONFIG).ok, true);
+ // A public HTTPS manifest URI is admissible alongside s3:// (spec
+ // 2026-10-19-0005 §4): the Parquet files stay below the S3 prefix.
+ const https = structuredClone(BASE_RUNTIME_CONFIG);
+ https.data.sources[0].remote.selector = {
+  manifest: "https://reports.example.com/manifest.json",
+ };
+ assert.equal(validateConfig(https).ok, true);
  for (const selector of [
   { glob: "part-*.parquet", manifest: "s3://reports/sales/manifest.json" },
   {},
   { manifest: "s3://reports/sales/manifest.txt" },
-  { manifest: "https://example.com/manifest.json" },
+  // Arbitrary schemes and URI credentials stay rejected.
+  { manifest: "http://reports.example.com/manifest.json" },
+  { manifest: "gs://reports/sales/manifest.json" },
+  { manifest: "https://key:secret@reports.example.com/manifest.json" },
   { manifest: "s3://reports/sales/manifest.json", extra: true },
  ]) {
   const config = structuredClone(BASE_RUNTIME_CONFIG);
@@ -349,6 +382,26 @@ test("the native profiler resolves a manifest set with dedupe and no private pat
   if (!/^(AWS|FTHR_S3)_/.test(key)) env[key] = value;
  }
  env.HOME = new URL("../../.artifacts/test-home", import.meta.url).pathname;
+ env.UV_OFFLINE = "1";
+ // Offline: the isolated HOME still reaches uv's package cache and the
+ // already-installed DuckDB extensions, so nothing downloads.
+ if (!env.UV_CACHE_DIR) {
+  const cache = path.join(os.homedir(), ".cache", "uv");
+  if ((await stat(cache).catch(() => null))?.isDirectory()) env.UV_CACHE_DIR = cache;
+ }
+ if (!env.UV_PYTHON_INSTALL_DIR) {
+  const pythons = path.join(os.homedir(), ".local", "share", "uv", "python");
+  if ((await stat(pythons).catch(() => null))?.isDirectory()) env.UV_PYTHON_INSTALL_DIR = pythons;
+ }
+ {
+  const extensions = path.join(env.HOME, ".duckdb", "extensions");
+  await mkdir(extensions, { recursive: true });
+  await rm(path.join(extensions, "v1.5.5"), { recursive: true, force: true });
+  await symlink(
+   path.join(os.homedir(), ".duckdb", "extensions", "v1.5.5"),
+   path.join(extensions, "v1.5.5"),
+  );
+ }
  env.FTHR_S3_USE_SSL = "false";
  const runProfile = () =>
   execFileAsync(
@@ -386,6 +439,45 @@ test("the native profiler resolves a manifest set with dedupe and no private pat
  } finally {
   await new Promise((resolve) => server.close(resolve));
  }
+});
+
+test("the native profiler admits a public https manifest URI", async () => {
+ const { execFile } = await import("node:child_process");
+ const { promisify } = await import("node:util");
+ const execFileAsync = promisify(execFile);
+ const env = {};
+ for (const [key, value] of Object.entries(process.env)) {
+  if (!/^(AWS|FTHR_S3)_/.test(key)) env[key] = value;
+ }
+ env.UV_OFFLINE = "1";
+ const runProfile = (manifest) =>
+  execFileAsync(
+   process.execPath,
+   [
+    new URL("../../bin/featherbi.mjs", import.meta.url).pathname,
+    "profile",
+    "--input", "s3://reports/reports/",
+    "--source-id", "sales",
+    "--format", "parquet",
+    "--auth", "none",
+    "--manifest", manifest,
+   ],
+   { env, maxBuffer: 100_000 },
+  );
+ // The https shape is admitted: an unreachable manifest fails as a read
+ // failure naming the manifest, never as an s3://-only shape rejection.
+ await assert.rejects(runProfile("https://127.0.0.1:9/manifest.json"), (error) => {
+  assert.match(error.stderr, /cannot profile source 'sales'/);
+  assert.match(error.stderr, /manifest/);
+  assert.doesNotMatch(error.stderr, /manifest must be an/);
+  return true;
+ });
+ // Arbitrary schemes stay rejected before any fetch.
+ await assert.rejects(runProfile("gs://reports/manifest.json"), (error) => {
+  assert.match(error.stderr, /manifest must be an/);
+  assert.match(error.stderr, /\.json object/);
+  return true;
+ });
 });
 
 test("an iceberg source's storage secret survives another source's out-of-prefix manifest fetch", async () => {

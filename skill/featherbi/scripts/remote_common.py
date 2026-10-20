@@ -90,7 +90,9 @@ def s3_credentials(source_id, values, region=None, endpoint=None):
     if endpoint:
         # ponytail: path-style for explicit endpoints; add a URL_STYLE override if a virtual-hosted S3-compatible endpoint appears.
         options.append("URL_STYLE 'path'")
-    return " ".join(options)
+    # DuckDB secret options are comma-separated; a space join is a parse error
+    # (profile.py's copy of this plumbing documents the same rule).
+    return ", ".join(options)
 
 
 def credential_chain_secret(con):

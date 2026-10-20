@@ -229,12 +229,17 @@
             "kind": {
               "enum": [
                 "parquet-set",
-                "iceberg"
+                "iceberg",
+                "ducklake"
               ]
             },
             "uri": {
               "type": "string",
               "pattern": "^(?:s3|https)://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+$"
+            },
+            "table": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
             },
             "format": {
               "enum": [
@@ -289,7 +294,7 @@
                 "manifest": {
                   "type": "string",
                   "minLength": 1,
-                  "pattern": "^s3://[A-Za-z0-9._~/-]+\\.json$"
+                  "pattern": "^(?:s3|https)://[A-Za-z0-9._~-]+(?::[0-9]{1,5})?/(?:[A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]+\\.json$"
                 }
               }
             },
@@ -359,7 +364,8 @@
                   "format": false,
                   "metadataUri": false,
                   "catalog": false,
-                  "catalogAuth": false
+                  "catalogAuth": false,
+                  "table": false
                 }
               }
             },
@@ -390,6 +396,7 @@
                   "uri": false,
                   "format": false,
                   "selector": false,
+                  "table": false,
                   "catalog": {
                     "type": "object",
                     "additionalProperties": false,
@@ -452,6 +459,49 @@
             },
             {
               "if": {
+                "properties": {
+                  "kind": {
+                    "const": "ducklake"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "kind",
+                  "uri",
+                  "table",
+                  "auth"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "ducklake"
+                  },
+                  "uri": {
+                    "type": "string",
+                    "pattern": "^https://[A-Za-z0-9._~-]+(?::[0-9]{1,5})?/(?:[A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]+$"
+                  },
+                  "table": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                  },
+                  "auth": {
+                    "const": "none"
+                  },
+                  "format": false,
+                  "selector": false,
+                  "metadataUri": false,
+                  "catalog": false,
+                  "catalogAuth": false,
+                  "region": false,
+                  "endpoint": false
+                }
+              }
+            },
+            {
+              "if": {
                 "not": {
                   "required": [
                     "kind"
@@ -468,7 +518,8 @@
                   "selector": false,
                   "metadataUri": false,
                   "catalog": false,
-                  "catalogAuth": false
+                  "catalogAuth": false,
+                  "table": false
                 }
               }
             }

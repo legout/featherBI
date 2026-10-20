@@ -1,5 +1,14 @@
 # featherBI dashboard project and runtime contract v2
 
+> **Amendments (ADR 0010, 2026-10-19; proposed with plan 0006 and spec 2026-10-19-0005):**
+> - §3.3: the metrics catalog is optional. SQL is the standard authoring path.
+> - §5: the shell proposal follows the standard theme once plan 0006 phase E lands.
+> - §6.2: `perspective-first` stays opt-in.
+> - §6.3: the default shell changes from `neutral` to the standard preset. `neutral`, `daisyui`, and the Siemens presets stay selectable.
+> - §9: the playground stays opt-in and is not part of the standard path.
+> - §11: the ZIP is the fallback. The primary path is the static target in spec 2026-10-19-0005.
+> - V2-10 applies to the ZIP fallback. Static acceptance is SL-01 to SL-08.
+
 Status: owner-approved target specification captured from the 2026-09-16 grilling/design session; written-review gate pending. The staged v2 migration is complete: this specification is the implemented behavior, and runtime contract v1 is removed.
 
 ## 1. Purpose and authority

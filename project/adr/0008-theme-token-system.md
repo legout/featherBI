@@ -1,5 +1,7 @@
 # ADR 0008: Theme token system
 
+> **Amended 2026-10-19 by [ADR 0010](0010-owner-simplification-decisions.md):** the standard theme changes from `neutral` to a new token-based preset, `vercel` (name approved 2026-10-19; plan 0006, phase E). `neutral` and `daisyui` stay legacy string themes, as decided above. Agents create token files from style prompts.
+
 **Status:** accepted (owner approved with spec 2026-09-28-0003 on 2026-09-28).
 
 ## Context

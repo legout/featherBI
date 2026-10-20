@@ -39,11 +39,16 @@ async function harnessCall(page, method, ...args) {
  * runtime contract admits only `s3://` and `https://` URIs); `control.fail`
  * destroys the connection without a response to simulate network loss, and
  * `control.delayMs` stalls each response to widen race windows deterministically.
+ * `getContent` serves mutable per-request bytes (same fileName path) instead of
+ * the fixed fixture file, for refresh scenarios whose fixture content changes.
  */
-async function serveFixture(fileName, { tls = null, control = null } = {}) {
- const bytes = await readFile(
-  path.join(rootDir, ".artifacts", "fixtures", fileName),
- );
+async function serveFixture(
+ fileName,
+ { tls = null, control = null, getContent = null } = {},
+) {
+ const fixtureBytes = getContent
+  ? null
+  : await readFile(path.join(rootDir, ".artifacts", "fixtures", fileName));
  const server = (tls ? https : http).createServer(
   tls ? { key: tls.key, cert: tls.cert } : {},
   (request, response) => {
@@ -52,6 +57,7 @@ async function serveFixture(fileName, { tls = null, control = null } = {}) {
      request.socket.destroy();
      return;
     }
+    const bytes = getContent ? getContent() : fixtureBytes;
     response.setHeader("Access-Control-Allow-Origin", "*");
     response.setHeader(
      "Access-Control-Allow-Methods",
@@ -503,5 +509,138 @@ test("a queued option-search failure keeps the accepted revision it raced", asyn
   await context.close();
   await queryFixture.close();
   await optionFixture.close();
+ }
+});
+
+/**
+ * SL-03 for single-file live sources (spec 2026-10-19-0005 §3, G2): every
+ * live kind gets the Refresh control. Refresh re-reads the file's URI into a
+ * staged generation that replaces the active one only on success; a failed
+ * refresh keeps the prior generation's results with a source-specific error.
+ */
+test("a single-file live source refresh re-reads its URI and keeps prior results on failure", async ({
+ browser,
+}) => {
+ const control = { fail: false };
+ const content = {
+  csv: "order_number,station\n7001,SJ\n7002,SJ\n7003,KA\n7004,KA\n7005,SJ\n",
+ };
+ const tls = await selfSignedLocalhostCert();
+ const fixture = await serveFixture("orders.csv", {
+  tls,
+  control,
+  getContent: () => Buffer.from(content.csv, "utf8"),
+ });
+ const pagePath = path.join(
+  rootDir,
+  ".artifacts",
+  "browser",
+  "live-single-file-refresh.html",
+ );
+ const context = await browser.newContext({ ignoreHTTPSErrors: true });
+ const page = await context.newPage();
+ try {
+  const { html } = await renderDashboard({
+   config: {
+    contract: 2,
+    app: "grid",
+    title: "Live single-file refresh",
+    data: {
+     mode: "upload",
+     sources: [
+      {
+       id: "remote_orders",
+       schema: {
+        order_number: { type: "string", nullable: false },
+        station: { type: "string", nullable: false },
+       },
+       remote: {
+        uri: `${fixture.origin}/orders.csv`,
+        format: "csv",
+        auth: "none",
+       },
+      },
+     ],
+    },
+    filters: [],
+    queries: {
+     records: {
+      sql: "SELECT count(*) AS records FROM remote_orders",
+      params: [],
+     },
+    },
+    layout: [
+     {
+      id: "kpi_records",
+      type: "kpi",
+      query: "records",
+      field: "records",
+      label: "Orders",
+      x: 1,
+      y: 1,
+      width: 12,
+      height: 1,
+     },
+    ],
+    theme: "neutral",
+   },
+  });
+  await writeFile(pagePath, html, "utf8");
+  await page.goto(pathToFileURL(pagePath).href, { waitUntil: "load" });
+
+  // Open: the single-file live source reads its URI (5 rows).
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "5",
+  );
+  // SL-03: every live kind, not only parquet-set and iceberg, offers Refresh.
+  await expect(page.locator("#refresh-live")).toBeVisible();
+
+  // The fixture file changes at its URI; only Refresh re-reads it.
+  content.csv =
+   "order_number,station\n7001,SJ\n7002,SJ\n7003,KA\n7004,KA\n7005,SJ\n7006,SJ\n7007,KA\n";
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "7",
+  );
+
+  // A refresh whose read fails keeps the prior generation's results with a
+  // source-specific error and never publishes a partial refresh.
+  content.csv =
+   "order_number,station\n7001,SJ\n7002,SJ\n7003,KA\n7004,KA\n7005,SJ\n7006,SJ\n7007,KA\n7008,SJ\n7009,SJ\n";
+  control.fail = true;
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "error",
+  );
+  const failure = await page.locator("#dashboard-status").textContent();
+  expect(failure).toContain("remote_orders");
+  expect(failure).toContain("Showing prior results");
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "7",
+  );
+
+  // The source recovers: the next Refresh publishes the re-read generation.
+  control.fail = false;
+  await page.locator("#refresh-live").click();
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  await expect(page.locator("#component-kpi_records [data-value]")).toHaveText(
+   "9",
+  );
+ } finally {
+  await rm(pagePath, { force: true });
+  await context.close();
+  await fixture.close();
  }
 });

@@ -207,6 +207,7 @@ test("AP dashboard keeps one population across bounded views", async ({
   for (const [id, value] of Object.entries(expected)) {
    await expect(page.locator(`#component-kpi_${id} [data-value]`)).toHaveText(value);
   }
+  await expect(page.locator("#snapshot-note")).toBeVisible();
   await expect(page.locator("#snapshot-note")).toContainText(
    "2026-08-26 may be incomplete",
   );
@@ -305,6 +306,31 @@ test("AP dashboard keeps one population across bounded views", async ({
    "Showing prior results",
   );
   await expect(page.locator("#component-kpi_records [data-value]")).toHaveText("0");
+ } finally {
+  await context.close();
+ }
+});
+
+test("snapshot note hidden and empty without a latest-days date-range filter", async ({
+ browser,
+}) => {
+ const context = await browser.newContext();
+ const page = await context.newPage();
+ try {
+  // The standard fixture's date-range default is fixed, not latest-days.
+  await page.goto(
+   pathToFileURL(
+    path.join(rootDir, ".artifacts/browser/standard-runtime.html"),
+   ).href,
+   { waitUntil: "load" },
+  );
+  await expect(page.locator("#dashboard-status")).toHaveAttribute(
+   "data-state",
+   "ready",
+  );
+  const note = page.locator("#snapshot-note");
+  await expect(note).toBeHidden();
+  await expect(note).toHaveText("");
  } finally {
   await context.close();
  }

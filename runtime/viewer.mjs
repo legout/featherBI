@@ -985,10 +985,15 @@ function renderState(root, config, state, capabilities, ui = {}) {
   ({ kind, default: value }) =>
    kind === "date-range" && value.kind === "latest-days",
  );
- root.querySelector("#snapshot-note").textContent =
-  latest && state.filterValues[`${latest.id}_to`]
-   ? `Snapshot end ${addDays(state.filterValues[`${latest.id}_to`], -1)} may be incomplete.`
-   : "Snapshot end unavailable.";
+ const note = root.querySelector("#snapshot-note");
+ // The shell always carries this paragraph; without a latest-days filter
+ // there is no snapshot end to explain, and CSS styles an empty one.
+ note.hidden = !latest;
+ note.textContent = latest
+  ? state.filterValues[`${latest.id}_to`]
+    ? `Snapshot end ${addDays(state.filterValues[`${latest.id}_to`], -1)} may be incomplete.`
+    : "Snapshot end unavailable."
+  : "";
 
  for (const component of config.layout) {
   const rows = state.results[component.query] ?? [];

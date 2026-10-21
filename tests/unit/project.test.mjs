@@ -13,6 +13,7 @@ async function project(overrides = {}) {
   overrides.yaml ??
   `project: 1
 title: Example dashboard
+theme: neutral
 sources:
   - id: inspections
     type: json

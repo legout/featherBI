@@ -95,7 +95,7 @@ Chrome is the supported browser for this release. Edge and offline operation are
 
 ## Exploration capabilities
 
-Contract-v2 projects may select `rendererPreset: standard | perspective-first`, add typed `perspective` components, and enable the session-only SQL playground with `playground.renderer: ag-grid | perspective`. Tables use AG Grid Community only. Playground SQL is one engine-admitted SELECT/CTE over declared sources/models and is limited to 10,000 rows, 8 MiB Arrow IPC, and 30 seconds; cancellation uses DuckDB-WASM's `AsyncDuckDBConnection.send()` and `cancelSent()` on a dedicated connection.
+Exploration is opt-in, not part of the standard dashboard path: a standard project uses the typed featherBI components and authored SQL, and nothing here should be proposed unprompted. Only on explicit request may a contract-v2 project select `rendererPreset: perspective-first`, add typed `perspective` components, or enable the session-only SQL playground with `playground.renderer: ag-grid | perspective`. Tables use AG Grid Community only. Playground SQL is one engine-admitted SELECT/CTE over declared sources/models and is limited to 10,000 rows, 8 MiB Arrow IPC, and 30 seconds; cancellation uses DuckDB-WASM's `AsyncDuckDBConnection.send()` and `cancelSent()` on a dedicated connection.
 
 Perspective 3.8.0 receives only completed bounded Arrow results. The `file://` build embeds the three published WASM assets and registers the chart through the package's published `@finos/perspective-viewer-d3fc/column` export; it does not rewrite installed package files. Capability metadata in the artifact lists stable selected versions and Perspective asset hashes. See `examples/exploration-dashboard` for the complete source shape.
 

@@ -49,7 +49,7 @@ Schema violations (unknown or missing keys, invalid colors, unsafe font stacks, 
 ## Renderer presets
 
 - `standard`: typed featherBI components (ECharts, AG Grid, filters, Markdown).
-- `perspective-first`: shell and shared filters stay featherBI-owned; primary analytical regions render in Perspective with its toolbar and plugins.
+- `perspective-first`: shell and shared filters stay featherBI-owned; primary analytical regions render in Perspective with its toolbar and plugins. Opt-in only — select it just when the user explicitly asks for Perspective exploration, never as a proposed default.
 
 ## Author CSS (`theme.css`)
 

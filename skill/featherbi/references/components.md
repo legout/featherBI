@@ -8,8 +8,8 @@ Every component has an `id`, `label`, grid placement (`x`, `y`, `width`, `height
 - **Metrics:** `kpi` (`field`, optional `decimals`) and `metric-group` (`fields`, optional `decimals`); each metric-group metric renders as one label-over-value row (`[data-metric-row]` wrapper, `[data-metric-label]` label above the `[data-metric]` value), never concatenated inline.
 - **Charts (ECharts, typed fields):** `bar` (`orientation: horizontal` for station-style activity), `line`, `area`, `scatter`, `pie`/`donut` (`name`/`value`), `heatmap` (`xField`/`yField`/`value`), `treemap`, `sankey` (`source`/`target`/`value`), `gauge`, `boxplot` (`xField`, `min`/`q1`/`median`/`q3`/`max`). Charts accept `annotations: [{at: YYYY-MM-DD, label}]` on bar/line and `series` for split-by.
 - **Table:** `table` with `columns: [{field, label}]`; AG Grid Community features only, server-side paging, no Enterprise options such as `rowGroup`.
-- **Exploration:** `perspective` components or `rendererPreset: perspective-first`; they receive one named bounded query result.
-- **SQL playground:** `playground: {renderer: ag-grid | perspective}` enables a session-only recipient query console (one admitted SELECT/CTE, 10,000 rows, 8 MiB, 30 s).
+- **Exploration (opt-in):** `perspective` components or `rendererPreset: perspective-first`; they receive one named bounded query result. Not part of the standard path — add them only when the user explicitly asks for Perspective exploration.
+- **SQL playground (opt-in):** `playground: {renderer: ag-grid | perspective}` enables a session-only recipient query console (one admitted SELECT/CTE, 10,000 rows, 8 MiB, 30 s). Enable it only when the user explicitly asks for a recipient SQL playground.
 
 ## Filters (shared, typed)
 

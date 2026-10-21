@@ -16,6 +16,13 @@ from pathlib import Path
 from urllib.parse import quote
 
 import duckdb  # pyright: ignore[reportMissingImports] # resolved by `uv run --script` from the PEP 723 block above
+from remote_common import (  # pyright: ignore[reportMissingImports]
+    ENV_PREFIX,
+    env_with_dotenv,
+    is_remote,
+    s3_credentials,
+    sql_literal,
+)
 
 MAX_COLUMNS = 100
 MAX_TEXT_LENGTH = 256
@@ -24,8 +31,6 @@ SOURCE_ID = re.compile(r"^[a-z][a-z0-9_]*$")
 LOW_CARDINALITY_LIMIT = 1000
 MEMORY_LIMIT = "512MB"
 THREADS = 4
-REMOTE_INPUT = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
-ENV_PREFIX = "FTHR_S3_"
 # Upper bound on one profiled Parquet file set (spec 2026-09-28-0004 §2.1).
 PARQUET_SET_MAX_FILES = 10_000
 # Upper bound on one Parquet-set manifest document (spec §2.1).
@@ -90,10 +95,6 @@ def featherbi_type(column_name, type_name):
 
 def identifier(name):
     return '"' + name.replace('"', '""') + '"'
-
-
-def is_remote(input_path):
-    return bool(REMOTE_INPUT.match(input_path))
 
 
 def read_relation(con, input_path, format_name):
@@ -203,70 +204,6 @@ def resolve_catalog_metadata_location(values, endpoint, warehouse, namespace, ta
             "can be pinned; check the warehouse, namespace, and table"
         )
     return location
-
-
-def env_with_dotenv():
-    """Process environment overlaid with a manually parsed .env from cwd upward."""
-    values = dict(os.environ)
-    for directory in [Path.cwd(), *Path.cwd().parents]:
-        candidate = directory / ".env"
-        if candidate.is_file():
-            for line in candidate.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                line = line.removeprefix("export ")
-                key, sep, value = line.partition("=")
-                if not sep or not key.strip():
-                    continue
-                value = value.strip().strip('"').strip("'")
-                values.setdefault(key.strip(), value)
-            break
-    return values
-
-
-def sql_literal(value):
-    return "'" + str(value).replace("'", "''") + "'"
-
-
-def s3_credentials(source_id, values, auth="s3", region=None, endpoint=None):
-    """Resolve S3 credentials for one source; raise with the required secret named."""
-    def get(name):
-        return values.get(f"{ENV_PREFIX}{name}", "")
-
-    key_id = get("KEY_ID")
-    secret = get("SECRET")
-    if auth == "s3" and (not key_id or not secret):
-        raise ValueError(
-            f"source {source_id!r} requires S3 credentials; set {ENV_PREFIX}KEY_ID "
-            f"and {ENV_PREFIX}SECRET in the process environment or in a gitignored "
-            ".env file (see .env.example), or configure the AWS credential chain"
-        )
-    region = region or get("REGION")
-    endpoint = endpoint or get("ENDPOINT")
-    options = []
-    # Anonymous sets (auth none) on an S3-compatible endpoint still need the
-    # endpoint secret; they simply carry no key material.
-    if auth == "s3" and key_id and secret:
-        options.append(f"KEY_ID {sql_literal(key_id)}")
-        options.append(f"SECRET {sql_literal(secret)}")
-        session_token = get("SESSION_TOKEN")
-        if session_token:
-            options.append(f"SESSION_TOKEN {sql_literal(session_token)}")
-    for value, sql_name in (
-        (region, "REGION"),
-        (endpoint, "ENDPOINT"),
-    ):
-        if value:
-            options.append(f"{sql_name} {sql_literal(value)}")
-    use_ssl = get("USE_SSL").lower()
-    if use_ssl in ("true", "false"):
-        options.append(f"USE_SSL {use_ssl}")
-    if endpoint:
-        # ponytail: path-style for explicit endpoints; add a URL_STYLE override if a virtual-hosted S3-compatible endpoint appears.
-        options.append("URL_STYLE 'path'")
-    # DuckDB secret options are comma-separated; a space join is a parse error.
-    return ", ".join(options)
 
 
 def load_httpfs(con):

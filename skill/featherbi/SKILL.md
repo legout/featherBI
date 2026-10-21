@@ -29,7 +29,7 @@ Without a global link, run from a checkout: `npm ci`, then `node bin/featherbi.m
      --output path/to/project/.featherbi/profile.json
    ```
 
-   Remote sources are profiled the same way with a read-only `s3://` or `https://` URI and `--auth none|s3`. For `auth: s3`, set up credentials once via the AWS credential chain or the gitignored `.env` created from the repository's `.env.example`; missing credentials fail naming the source and the required secret. Report material row/schema/null/cardinality evidence and stop on profile errors — never guess a schema. `--include-values` requires explicit permission and stays bounded. Details: [references/failures.md](references/failures.md).
+   Remote sources are profiled the same way with a read-only `s3://` or `https://` URI and `--auth none|s3`. For `auth: s3`, credentials follow the authoring credential rule in [references/project-reference.md](references/project-reference.md). Report material row/schema/null/cardinality evidence and stop on profile errors — never guess a schema. `--include-values` requires explicit permission and stays bounded. Details: [references/failures.md](references/failures.md).
 
 3. **Interview progressively.** Show the evidence, then ask only material questions in order: audience/decisions; metric meanings and grain; default population and filters; ambiguous relationships (joins need explicit confirmation with keys and expected cardinality); then appearance (preset, theme, or a style described in words and authored as `theme.tokens.yaml`, layout). Recommend defaults from evidence; never invent business definitions. Decision tree: [references/interview.md](references/interview.md).
 

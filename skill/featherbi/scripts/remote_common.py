@@ -61,14 +61,14 @@ def sql_literal(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def s3_credentials(source_id, values, region=None, endpoint=None):
-    """Build config-provider options; raise with the required secret named."""
+def s3_credentials(source_id, values, auth="s3", region=None, endpoint=None):
+    """Resolve S3 credentials for one source; raise with the required secret named."""
     def get(name):
         return values.get(f"{ENV_PREFIX}{name}", "")
 
     key_id = get("KEY_ID")
     secret = get("SECRET")
-    if not key_id or not secret:
+    if auth == "s3" and (not key_id or not secret):
         raise ValueError(
             f"source {source_id!r} requires S3 credentials; set {ENV_PREFIX}KEY_ID "
             f"and {ENV_PREFIX}SECRET in the process environment or in a gitignored "
@@ -76,9 +76,16 @@ def s3_credentials(source_id, values, region=None, endpoint=None):
         )
     region = region or get("REGION")
     endpoint = endpoint or get("ENDPOINT")
-    options = [f"KEY_ID {sql_literal(key_id)}", f"SECRET {sql_literal(secret)}"]
+    options = []
+    # Anonymous sets (auth none) on an S3-compatible endpoint still need the
+    # endpoint secret; they simply carry no key material.
+    if auth == "s3" and key_id and secret:
+        options.append(f"KEY_ID {sql_literal(key_id)}")
+        options.append(f"SECRET {sql_literal(secret)}")
+        session_token = get("SESSION_TOKEN")
+        if session_token:
+            options.append(f"SESSION_TOKEN {sql_literal(session_token)}")
     for value, sql_name in (
-        (get("SESSION_TOKEN"), "SESSION_TOKEN"),
         (region, "REGION"),
         (endpoint, "ENDPOINT"),
     ):
@@ -90,8 +97,7 @@ def s3_credentials(source_id, values, region=None, endpoint=None):
     if endpoint:
         # ponytail: path-style for explicit endpoints; add a URL_STYLE override if a virtual-hosted S3-compatible endpoint appears.
         options.append("URL_STYLE 'path'")
-    # DuckDB secret options are comma-separated; a space join is a parse error
-    # (profile.py's copy of this plumbing documents the same rule).
+    # DuckDB secret options are comma-separated; a space join is a parse error.
     return ", ".join(options)
 
 
@@ -118,5 +124,5 @@ def configure_remote(con, source_id, auth, secret_values, region=None, endpoint=
         return
     con.execute(
         "CREATE OR REPLACE TEMPORARY SECRET fthr_s3 "
-        f"(TYPE s3, PROVIDER config, {s3_credentials(source_id, secret_values, region, endpoint)})"
+        f"(TYPE s3, PROVIDER config, {s3_credentials(source_id, secret_values, 's3', region, endpoint)})"
     )

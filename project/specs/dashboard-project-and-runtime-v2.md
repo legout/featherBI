@@ -71,7 +71,6 @@ Generated local state is ignored:
 ```text
 <dashboard>/.featherbi/
 ├── profile.json
-├── local-sources.yaml
 ├── dashboard.config.json
 ├── preview/
 └── screenshots/
@@ -83,7 +82,7 @@ The final ZIP is also generated and excluded from source control by default. Dat
 
 ### 3.1 Local source mapping
 
-Portable source declarations contain IDs, formats, safe suggested basenames, and schemas. Absolute author-machine paths live only in `.featherbi/local-sources.yaml`, which is ignored and passed explicitly to profiling/build commands. Portable YAML, generated runtime config, HTML, reports, and logs must not reveal those paths.
+Portable source declarations contain IDs, formats, safe suggested basenames, and schemas. Portable YAML, generated runtime config, HTML, reports, and logs must not reveal absolute author-machine paths.
 
 ### 3.2 Models and queries
 

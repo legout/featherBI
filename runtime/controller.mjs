@@ -148,6 +148,11 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
     try {
      const started = performance.now();
      let batch;
+     // Applied filters recompute every visible result, but a table's active
+     // sort keeps shaping its pages across the new revision.
+     const tableSorts = Object.fromEntries(
+      Object.entries(state.tablePages).map(([id, page]) => [id, page.sort ?? []]),
+     );
      try {
       batch = await executeVisibleQueries(
        engine.connection,
@@ -155,6 +160,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
        active,
        requested,
        sourceIds,
+       tableSorts,
       );
      } catch (error) {
       if (!isCredentialFailure(error)) throw error;
@@ -165,6 +171,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
        active,
        requested,
        sourceIds,
+       tableSorts,
       );
      }
      if (revision !== latestRevision) return state;
@@ -205,6 +212,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
     try {
      const started = performance.now();
      let rows;
+     const querySort = state.tablePages[component.id]?.sort ?? [];
      const readPage = async () => {
       await useGeneration(engine.connection, active.schema);
       return runQuery(
@@ -216,6 +224,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
         limit: TABLE_PAGE_SIZE + 1,
         offset: page * TABLE_PAGE_SIZE,
         requireOrder: true,
+        orderBy: querySort,
        },
       );
      };
@@ -232,6 +241,8 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
       }
      }
      validateRows(rows, [component]);
+     // Publish the sort current when the page lands; a sort stored while the
+     // query was in flight must never be resurrected by a stale completion.
      state = {
       ...state,
       status: "ready",
@@ -240,7 +251,7 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
       results: { ...state.results, [component.query]: rows.slice(0, TABLE_PAGE_SIZE) },
       tablePages: {
        ...state.tablePages,
-       [component.id]: { page, hasNext: rows.length > TABLE_PAGE_SIZE },
+       [component.id]: { page, hasNext: rows.length > TABLE_PAGE_SIZE, sort: state.tablePages[component.id]?.sort ?? [] },
       },
       timings: { ...state.timings, queryMs: performance.now() - started },
      };
@@ -252,6 +263,34 @@ export async function createDashboard({ config, inputs, onState = () => {}, live
      return state;
     }
    });
+  },
+
+  setTableSort(componentId, sort) {
+   requireLive(disposed);
+   const component = config.layout.find(
+    ({ id, type }) => id === componentId && type === "table",
+   );
+   if (!component) throw new Error(`unknown table component ${JSON.stringify(componentId)}`);
+   // Sort fields are drawn from the typed table columns; a field outside them
+   // never reaches the SQL wrapper, whatever the grid event carried.
+   const fields = new Set(component.columns.map(({ field }) => field));
+   if (
+    !Array.isArray(sort) ||
+    sort.some(
+     ({ field, direction }) =>
+      !fields.has(field) || (direction !== "asc" && direction !== "desc"),
+    )
+   ) {
+    throw new Error("table sort must list typed table columns with direction 'asc' or 'desc'");
+   }
+   state = {
+    ...state,
+    tablePages: {
+     ...state.tablePages,
+     [component.id]: { ...(state.tablePages[component.id] ?? { page: 0, hasNext: false }), sort },
+    },
+   };
+   return this.setTablePage(componentId, 0);
   },
 
   searchFilterOptions(filterId, search = "", page = 0) {
@@ -599,7 +638,14 @@ async function dateDefault(connection, filter, generation) {
  return { from: addDays(day, -(filter.default.days - 1)), to: addDays(day, 1) };
 }
 
-async function executeVisibleQueries(connection, config, generation, filterValues, sourceIds) {
+async function executeVisibleQueries(
+ connection,
+ config,
+ generation,
+ filterValues,
+ sourceIds,
+ tableSorts = {},
+) {
  await useGeneration(connection, generation.schema);
  const results = {};
  const perspectiveResults = {};
@@ -634,7 +680,12 @@ async function executeVisibleQueries(connection, config, generation, filterValue
      filterValues,
      sourceIds,
      table
-      ? { limit: TABLE_PAGE_SIZE + 1, offset: 0, requireOrder: true }
+      ? {
+         limit: TABLE_PAGE_SIZE + 1,
+         offset: 0,
+         requireOrder: true,
+         orderBy: tableSorts[table.id] ?? [],
+        }
       : { limit: chart ? CHART_LIMIT + 1 : 2 },
     );
    }
@@ -647,7 +698,11 @@ async function executeVisibleQueries(connection, config, generation, filterValue
   }
   if (table) {
    results[queryId] = rows.slice(0, TABLE_PAGE_SIZE);
-   tablePages[table.id] = { page: 0, hasNext: rows.length > TABLE_PAGE_SIZE };
+   tablePages[table.id] = {
+    page: 0,
+    hasNext: rows.length > TABLE_PAGE_SIZE,
+    sort: tableSorts[table.id] ?? [],
+   };
   } else {
    results[queryId] = rows;
   }

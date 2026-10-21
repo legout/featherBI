@@ -58,7 +58,13 @@ const rows = [
  { station: "NY", product: "P1", inspected_on: "2026-09-06", amount: 60, successful: true },
 ];
 
-async function buildDerived({ outPath, tokens = TOKENS, authorCss, theme }) {
+async function buildDerived({
+ outPath,
+ tokens = TOKENS,
+ authorCss,
+ theme,
+ latestDaysFilter = false,
+}) {
  const exampleDir = path.join(rootDir, "examples/standard-dashboard");
  // Preset projects get their own directory so they never fight the shared
  // custom-token project the TT-02/TT-04 mutation tests rewrite.
@@ -67,6 +73,11 @@ async function buildDerived({ outPath, tokens = TOKENS, authorCss, theme }) {
  source = source
   .replace("theme: daisyui\n", theme ? `theme: ${theme}\n` : "themeTokens: theme.tokens.yaml\n")
   .replace("themeCss: theme.css\n", authorCss ? "themeCss: theme.css\n" : "");
+ if (latestDaysFilter)
+  source = source.replace(
+   "default: {kind: fixed, from: 2026-09-01, through: 2026-09-06}",
+   "default: {kind: latest-days, days: 30}",
+  );
  // Table queries are exclusive; give the table its own copy of the station rollup.
  source = source.replace(
   "layout:",
@@ -244,7 +255,11 @@ const PRESETS = [
 
 test("siemens-ix and siemens-ix-light presets bake and render under their explicit selection (TT-05, TT-09)", async ({ browser }) => {
  for (const preset of PRESETS) {
-  const dashboardPath = await buildDerived({ outPath: preset.outPath, theme: preset.theme });
+  const dashboardPath = await buildDerived({
+   outPath: preset.outPath,
+   theme: preset.theme,
+   latestDaysFilter: true,
+  });
   // No preset-only theming code: the legacy iX shell adapter must not leak
   // into a baked preset build.
   const html = await readFile(dashboardPath, "utf8");

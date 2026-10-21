@@ -78,7 +78,7 @@ export async function admitQuery(connection, query, declaredSources) {
  * @param {{sql: string, params: string[]}} query
  * @param {Record<string, unknown>} values
  * @param {string[] | Set<string>} declaredSources
- * @param {{limit?: number, offset?: number, requireOrder?: boolean}} [options]
+ * @param {{limit?: number, offset?: number, requireOrder?: boolean, orderBy?: {field: string, direction: string}[]}} [options]
  */
 export async function runQuery(
  connection,
@@ -104,10 +104,13 @@ export async function runQuery(
  });
  const limit = boundedInteger(options.limit, "limit", 1);
  const offset = boundedInteger(options.offset, "offset", 0) ?? 0;
+ const orderBy = orderBySql(options.orderBy);
  // pi-lens-ignore: ast-grep:no-sql-in-code-js
  const executable = limit
-  ? `SELECT * FROM (${sql}) AS __featherbi_result LIMIT ${limit} OFFSET ${offset}`
-  : sql;
+  ? `SELECT * FROM (${sql}) AS __featherbi_result ${orderBy}LIMIT ${limit} OFFSET ${offset}`
+  : orderBy
+   ? `SELECT * FROM (${sql}) AS __featherbi_result ${orderBy.trim()}`
+   : sql;
  const statement = await connection.prepare(executable);
  try {
   const table = await statement.query(...bound);
@@ -364,6 +367,19 @@ function boundedInteger(value, name, minimum) {
 
 function identifier(value) {
  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+/** Query-level sort for paged tables: fields arrive validated against typed table columns, directions are whitelisted, and every field is quoted. */
+function orderBySql(orderBy) {
+ if (orderBy === undefined || !orderBy.length) return "";
+ if (!Array.isArray(orderBy)) throw new TypeError("orderBy must be an array of {field, direction}");
+ return `ORDER BY ${orderBy
+  .map(({ field, direction }) => {
+   if (typeof field !== "string" || !field) throw new TypeError("sort field must be a non-empty string");
+   if (direction !== "asc" && direction !== "desc") throw new TypeError("sort direction must be 'asc' or 'desc'");
+   return `${identifier(field)} ${direction.toUpperCase()}`;
+  })
+  .join(", ")} `;
 }
 
 function limitError(message, code) {

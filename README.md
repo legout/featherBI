@@ -1,6 +1,6 @@
 # featherBI
 
-featherBI turns a declarative dashboard project (YAML, SQL, and optional CSS) and local CSV, Parquet, or JSON files into a portable dashboard. Authors build artifacts; recipients open and filter them in desktop Google Chrome without a local server.
+featherBI turns a declarative dashboard project (YAML, SQL, and optional CSS) and local CSV, Parquet, or JSON files into a portable dashboard. Authors build artifacts — a static `dashboard.html` whose live sources are read at open time (primary) or an external-data ZIP bundle (fallback) — and recipients open and filter them in desktop Google Chrome without a local server.
 
 ## Install
 
@@ -8,12 +8,12 @@ Install globally and set up once:
 
 ```sh
 npm i -g featherbi
-featherbi setup                  # project setup: checks prerequisites, copies the featherbi skill into the project's shared .agents/skills dir, offers the DuckDB skills
-featherbi setup --global         # global setup: links the skill into ~/.agents/skills, installs the DuckDB skills globally
+featherbi setup                  # project setup: checks prerequisites, copies the featherbi skill into the project's .agents/skills dir
+featherbi setup --global         # global setup: copies the skill into ~/.agents/skills, checks the featherbi CLI on PATH
 featherbi setup --global --design   # also installs the optional design skill (opt-in, never default)
 ```
 
-Without `--agent`, setup targets the shared `universal` agent directories: it copies the bundled skill to `.agents/skills` in the project (`~/.agents/skills` with `--global`) and offers the DuckDB skills for the same target, independent of the DuckDB prompt. Pass `--agent pi` (`.pi/skills` project, `~/.pi/agent/skills` global), `--agent claude`, `--agent cursor`, or `--agent gemini` to install into that agent's own directories instead. An existing real directory at the destination is never overwritten.
+Setup has one path: it copies the bundled skill to `.agents/skills` in the project (`~/.agents/skills` with `--global`); there are no `--agent` variants. An existing real directory at the destination is never overwritten.
 
 Prerequisites: Node.js 24 or newer, [uv](https://docs.astral.sh/uv/getting-started/installation/), and desktop Google Chrome — `featherbi setup` reports exactly what is missing and how to install it. Working from a repository checkout with `npm ci` remains the developer path (see below).
 
@@ -47,6 +47,17 @@ node bin/featherbi.mjs build \
 
 The result is one ZIP bundle containing `dashboard.html` plus each data file; dataset bytes never become part of the HTML.
 
+When every source is live instead, build the static artifact — exactly one self-contained `dashboard.html` with no dataset bytes, credentials, or absolute paths:
+
+```sh
+node bin/featherbi.mjs build \
+  --target static \
+  --config examples/basic-dashboard/.featherbi/dashboard.config.json \
+  --output examples/basic-dashboard/.featherbi/dashboard.html
+```
+
+`--target` is required. The static target accepts only live sources (`delivery: live`): a local file or packaged source fails the build naming the source and the remedy — declare `delivery: live` with a public `https://` URI, or use the zip target. Neither target uploads or publishes anything; hosting the artifact and any published data are author decisions.
+
 ## Remote sources (read-only)
 
 Projects may declare read-only remote sources next to local ones. A remote declaration carries a read-only `s3://` or `https://` URI, an explicit `format`, `auth: none` (public read) or `auth: s3`, and optional non-secret `region`, `endpoint`, and `filename` (the ZIP member name, derived from the URI basename when omitted).
@@ -55,7 +66,7 @@ Projects may declare read-only remote sources next to local ones. A remote decla
 
 Live table sources extend remote declarations and are always `delivery: live` — no source data, file inventory, table metadata, or credentials are bundled. A Parquet file set (`kind: parquet-set`) selects many S3 Parquet objects under one prefix as one logical source with exactly one selector: `selector: {glob: "year=*/part-*.parquet"}` or a manifest, a fetched JSON document `{"files": [relative .parquet keys]}` of at most 2 MiB and 10,000 files with keys under the prefix. An Iceberg table (`kind: iceberg`) is read with true snapshot and delete semantics from exactly one identity: a fixed versioned `metadataUri` document (Refresh re-reads the same document; changing the authored URI selects another snapshot) or a REST `catalog: {endpoint, warehouse, namespace, table}` with `catalogAuth: none|bearer` (HTTPS only; no OAuth, catalog-vended credentials, or custom headers). Storage `auth: none|s3` stays independent of catalog authentication. Membership and snapshots are pinned per generation: filter interactions never re-select files or snapshots, and only the dashboard's explicit Refresh control or a reopen resolves anew; a failed refresh keeps the previous results usable with a visible source-specific error.
 
-Recipients of these live kinds need browser-reachable endpoints: catalog, metadata, manifest, and object storage must answer CORS requests from the `file://` viewer, and S3 keys need list and read permission. Private sources prompt once per session on first need — again after reload — with separate memory-only prompts naming the catalog endpoint and the object storage; failures point at endpoint or CORS access rather than packaged delivery. Publish immutable object keys: changing an object's bytes in place can defeat per-load pinning even when membership was pinned. Delta Lake tables are not supported in this revision, and their Parquet files must not be relabeled as Delta or table reads.
+Recipients of these live kinds need browser-reachable endpoints: catalog, metadata, manifest, and object storage must answer CORS requests from the `file://` viewer, and S3 keys need list and read permission. Private sources prompt once per session on first need — again after reload — with separate memory-only prompts naming the catalog endpoint and the object storage; failures point at endpoint or CORS access rather than packaged delivery. Publish immutable object keys: changing an object's bytes in place can defeat per-load pinning even when membership was pinned. A DuckLake table (`kind: ducklake`) is one explicitly named table of a public `https://` catalog: `uri` plus `table`, `auth: none` (the only allowed value), `delivery: live` — no private credentials, `s3://` catalogs, or REST-catalog APIs. The trusted runtime constructs the `ducklake:<uri>` attach through the pinned, owner-approved extension capability and exposes only the named table; Refresh re-attaches and re-reads the catalog. Delta Lake tables are not read in the browser: the author exports the current snapshot (below) and declares the result as a live Parquet set; their Parquet files must not be relabeled as Delta or table reads.
 
 For `auth: s3`, featherBI resolves credentials through the AWS credential chain first (environment, profiles, SSO), then a gitignored `.env` created from [`.env.example`](.env.example) naming `FTHR_S3_KEY_ID`, `FTHR_S3_SECRET`, and optional `FTHR_S3_SESSION_TOKEN`, `FTHR_S3_REGION`, `FTHR_S3_ENDPOINT`, `FTHR_S3_USE_SSL`. Missing credentials fail with an error naming the source and the required secret. The first remote read installs DuckDB's `httpfs` extension into the local DuckDB cache. Profile output keeps its bounded shape with no URIs, credentials, or raw values. Live table sources profile with `--glob`, `--manifest`, `--iceberg-metadata`, or `--iceberg-catalog` selector flags; a bearer-authenticated catalog reads its token from `FTHR_ICEBERG_TOKEN` in the same `.env`, and live-kind profiles stay bounded to counts and schema with no enumerated object paths or tokens.
 
@@ -66,9 +77,19 @@ node bin/featherbi.mjs profile --input s3://example-bucket/inspections.parquet \
 
 An existing output is preserved unless `--overwrite` is supplied. Packaging writes local artifacts only; it does not publish, deploy, or upload data. Agents should follow [`skill/featherbi/SKILL.md`](skill/featherbi/SKILL.md): edit the project source, compile, and invoke the packager rather than generating HTML.
 
+## Delta export (author side)
+
+DuckDB-WASM cannot read Delta, so the author exports the current snapshot on their own machine with native DuckDB and the Delta extension:
+
+```sh
+node bin/featherbi.mjs export delta --input <table location> --output <directory>
+```
+
+The input is a local directory or a remote location native DuckDB can read; S3 follows the author credential conventions above. The output directory holds immutable Parquet part files plus a root `manifest.json` and an `export.json` sidecar recording the exact Delta version; a re-export adds new part files and overwrites only those two root files. featherBI never uploads: the author publishes the output directory at a public `https://` location and declares it as a live Parquet set with `selector: {manifest: https://…/manifest.json}`; freshness equals the export cadence and Refresh re-fetches the manifest.
+
 ## Recipient use
 
-Extract the ZIP bundle, open `dashboard.html` through `file://` in desktop Chrome, then explicitly select each accompanying data file under **Data files**. DuckDB-WASM reads the selected local files directly. “Upload” in the UI means local browser selection; featherBI has no application data-upload or telemetry endpoint.
+Open the shared artifact in desktop Chrome. A static `dashboard.html` reads its live sources directly from their declared URIs at open time — no file selection — and every live source has an explicit **Refresh** control that re-reads or re-resolves it; there is no automatic polling, and a failed refresh keeps the previous results visible with a source-specific error. Cross-origin live reads need the data host to allow CORS for the page's origin (same-origin reads need none); a CORS failure shows the visible remedy. The ZIP fallback is extracted, its `dashboard.html` opened through `file://`, and each accompanying data file explicitly selected under **Data files**; DuckDB-WASM reads the selected local files directly. “Upload” in the UI means local browser selection; featherBI has no application data-upload or telemetry endpoint.
 
 Chrome is the supported browser for this release. Edge and offline operation are not claimed. If pinned online runtime assets cannot load, the dashboard reports a visible boot error rather than working offline.
 

@@ -1,19 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
- DUCKDB_SKILLS,
- acceptsAnswer,
  designSkillsCommand,
  globalSkillsDir,
  parseSetupArgs,
  projectSkillsDir,
  runSetup,
- skillsCommand,
- verifySkillsLock,
 } from "../../scripts/setup.mjs";
 
 const rootDir = path.resolve(
@@ -46,13 +41,9 @@ function deps(overrides = {}) {
   lines,
   deps: {
    run: runner.run,
-   exists: async (p) => {
-    if (String(p).endsWith(".pi")) return;
+   exists: async () => {
     throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
    },
-   readText: overrides.readText ?? (async () => {
-    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
-   }),
    cwd: "/tmp/project",
    platform: "linux",
    out: (line) => lines.push(line),
@@ -91,123 +82,52 @@ function fakeFs(existing = null) {
  };
 }
 
-test("setup parses --yes/--no/--agent and rejects unknown or conflicting input", () => {
+test("setup parses only --global/--design; removed switches are rejected", () => {
  assert.deepEqual(parseSetupArgs([]), {
-  yes: false,
-  no: false,
-  agent: null,
   global: false,
   design: false,
  });
- assert.deepEqual(parseSetupArgs(["--yes"]), {
-  yes: true,
-  no: false,
-  agent: null,
-  global: false,
-  design: false,
- });
- assert.deepEqual(parseSetupArgs(["--agent", "claude"]), {
-  yes: false,
-  no: false,
-  agent: "claude",
-  global: false,
-  design: false,
- });
- assert.throws(() => parseSetupArgs(["--silent"]), /unknown setup option/);
- assert.throws(() => parseSetupArgs(["--agent"]), /--agent requires a value/);
- assert.throws(
-  () => parseSetupArgs(["--yes", "--no"]),
-  /mutually exclusive/,
- );
-});
-
-test("setup parses --global/--design; --design requires --global", () => {
  assert.deepEqual(parseSetupArgs(["--global"]), {
-  yes: false,
-  no: false,
-  agent: null,
   global: true,
   design: false,
  });
- assert.deepEqual(parseSetupArgs(["--global", "--design", "--agent", "pi"]), {
-  yes: false,
-  no: false,
-  agent: "pi",
+ assert.deepEqual(parseSetupArgs(["--global", "--design"]), {
   global: true,
   design: true,
  });
+ assert.throws(() => parseSetupArgs(["--design"]), /--design requires --global/);
+ assert.throws(() => parseSetupArgs(["--wat"]), /unknown setup option/);
  assert.throws(
-  () => parseSetupArgs(["--design"]),
-  /--design requires --global/,
- );
- assert.throws(
-  () => parseSetupArgs(["--global", "--wat"]),
+  () => parseSetupArgs(["--agent", "claude"]),
   /unknown setup option/,
  );
- assert.throws(
-  () => parseSetupArgs(["--global", "--yes", "--no"]),
-  /mutually exclusive/,
- );
+ assert.throws(() => parseSetupArgs(["--yes"]), /unknown setup option/);
+ assert.throws(() => parseSetupArgs(["--no"]), /unknown setup option/);
 });
 
-test("the skills command matches the official invocation; global adds -g only there", () => {
- assert.deepEqual(skillsCommand("pi"), [
-  "npx",
-  "skills",
-  "add",
-  "duckdb/duckdb-skills",
-  "--skill",
-  ...DUCKDB_SKILLS,
-  "--agent",
-  "pi",
-  "--yes",
-  "--copy",
- ]);
- assert.equal(skillsCommand("pi").includes("-g"), false);
- assert.deepEqual(skillsCommand("claude", { global: true }), [
-  "npx",
-  "skills",
-  "add",
-  "duckdb/duckdb-skills",
-  "-g",
-  "--skill",
-  ...DUCKDB_SKILLS,
-  "--agent",
-  "claude",
-  "--yes",
-  "--copy",
- ]);
- assert.deepEqual(designSkillsCommand("claude"), [
+test("the design skills command targets the shared universal skills dir", () => {
+ assert.deepEqual(designSkillsCommand(), [
   "npx",
   "skills",
   "add",
   "VoltAgent/awesome-claude-design",
   "-g",
   "--agent",
-  "claude",
+  "universal",
   "--yes",
  ]);
 });
 
-test("global and project skills dir resolution maps supported agents", () => {
- assert.equal(globalSkillsDir("universal", "/home/u"), "/home/u/.agents/skills/featherbi");
- assert.equal(projectSkillsDir("universal", "/tmp/project"), "/tmp/project/.agents/skills/featherbi");
- assert.equal(globalSkillsDir("pi", "/home/u"), "/home/u/.pi/agent/skills/featherbi");
- assert.equal(globalSkillsDir("claude", "/home/u"), "/home/u/.claude/skills/featherbi");
- assert.equal(globalSkillsDir("cursor", "/home/u"), "/home/u/.cursor/skills/featherbi");
- assert.equal(globalSkillsDir("gemini", "/home/u"), "/home/u/.gemini/skills/featherbi");
- assert.equal(projectSkillsDir("pi", "/tmp/project"), "/tmp/project/.pi/skills/featherbi");
- assert.equal(projectSkillsDir("claude", "/tmp/project"), "/tmp/project/.claude/skills/featherbi");
- assert.throws(() => globalSkillsDir("codex", "/home/u"), /supported agents/);
- assert.throws(() => projectSkillsDir("codex", "/tmp/project"), /supported agents/);
+test("the single path resolves the shared .agents/skills destinations", () => {
+ assert.equal(projectSkillsDir("/tmp/project"), "/tmp/project/.agents/skills/featherbi");
+ assert.equal(globalSkillsDir("/home/u"), "/home/u/.agents/skills/featherbi");
 });
 
 test("setup reports every check without aborting when tools are missing", async () => {
  const { deps: injected, lines, runner } = deps({
   fail: ["uv", "/usr/bin/google-chrome"],
  });
- const { accepted, checks, exitCode } = await runSetup(["--no"], injected);
- assert.equal(accepted, false);
+ const { checks, exitCode } = await runSetup([], injected);
  assert.equal(exitCode, 0, "missing tools must not fail setup");
  assert.equal(checks.every((check) => "ok" in check), true);
  const uvCheck = checks.find(({ name }) => name === "uv");
@@ -219,37 +139,20 @@ test("setup reports every check without aborting when tools are missing", async 
  assert.equal(
   runner.calls.filter(([command]) => command === "npx").length,
   0,
-  "declining must not run the install",
+  "setup without --design must not run any install command",
  );
- assert.ok(lines.some((line) => line.includes("Skipped the DuckDB skills install")));
-});
-
-test("declining prints the manual command; --yes runs it for the default agent", async () => {
- const { deps: declined, lines: declinedLines } = deps();
- await runSetup(["--no"], declined);
- assert.ok(
-  declinedLines.some((line) => line.includes("npx skills add duckdb/duckdb-skills")),
- );
-
- const { deps: accepted, runner } = deps();
- const { accepted: ran } = await runSetup(["--yes"], accepted);
- assert.equal(ran, true);
- const install = runner.calls.find(([command]) => command === "npx");
- assert.ok(install, "npx skills add must run on acceptance");
- assert.equal(install.includes("--agent"), true);
- assert.equal(install[install.indexOf("--agent") + 1], "universal");
 });
 
 test("global setup checks featherbi on PATH with an install remedy; local does not", async () => {
  const { deps: globalDeps } = deps({ fail: ["featherbi"] });
- const { checks } = await runSetup(["--global", "--no"], globalDeps);
+ const { checks } = await runSetup(["--global"], globalDeps);
  const check = checks.find(({ name }) => name === "featherbi");
  assert.ok(check, "global mode must check featherbi on PATH");
  assert.equal(check.ok, false);
  assert.match(check.remedy, /npm i -g featherbi|npm link/);
 
  const { deps: localDeps } = deps({ fail: ["featherbi"] });
- const local = await runSetup(["--no"], localDeps);
+ const local = await runSetup([], localDeps);
  assert.equal(
   local.checks.some(({ name }) => name === "featherbi"),
   false,
@@ -257,117 +160,10 @@ test("global setup checks featherbi on PATH with an install remedy; local does n
  );
 });
 
-test("global --yes links the package skill, runs the -g install, and --design is explicit", async () => {
- const fs = fakeFs();
- const { deps: injected, runner } = deps({
-  deps: { home: "/home/u", ...fs },
- });
- const { accepted, skill, design } = await runSetup(
-  ["--global", "--yes", "--design", "--agent", "claude"],
-  injected,
- );
- assert.equal(accepted, true);
- assert.equal(skill.installed, true);
- assert.equal(skill.installPath, "/home/u/.claude/skills/featherbi");
- assert.match(skill.target, /skill[/\\]featherbi$/);
- assert.deepEqual(fs.ops.symlink, [[skill.target, skill.installPath]]);
- assert.deepEqual(fs.ops.cp, [], "global mode links; it must not copy");
-
- const npxCalls = runner.calls.filter(([command]) => command === "npx");
- const duckdb = npxCalls.find(([, , , repo]) => repo === "duckdb/duckdb-skills");
- assert.ok(duckdb, "global mode must install the DuckDB skills");
- assert.ok(duckdb.includes("-g"), "global DuckDB install must pass -g");
- const designCall = npxCalls.find(
-  ([, , , repo]) => repo === "VoltAgent/awesome-claude-design",
- );
- assert.ok(designCall, "--design must add the design skill");
- assert.ok(designCall.includes("-g"));
- assert.equal(design.failed, false);
-});
-
-test("global --design --no installs design but never the DuckDB skills", async () => {
- const fs = fakeFs();
- const { deps: injected, lines, runner } = deps({
-  deps: { home: "/home/u", ...fs },
- });
- const { accepted, design } = await runSetup(
-  ["--global", "--design", "--no", "--agent", "gemini"],
-  injected,
- );
- assert.equal(accepted, false);
- assert.equal(design.failed, false);
- const npxCalls = runner.calls.filter(([command]) => command === "npx");
- assert.equal(
-  npxCalls.some(([, , , repo]) => repo === "duckdb/duckdb-skills"),
-  false,
-  "--no must decline the DuckDB install even in global mode",
- );
- assert.equal(
-  npxCalls.some(([, , , repo]) => repo === "VoltAgent/awesome-claude-design"),
-  true,
-  "--design is explicit consent independent of the DuckDB prompt",
- );
- assert.ok(
-  lines.some((line) => line.includes("-g") && line.includes("duckdb-skills")),
-  "the decline hint must show the global command",
- );
-});
-
-test("a real directory at the destination is never clobbered; a symlink is replaced", async () => {
- const refused = fakeFs("dir");
- const { deps: refusedDeps, lines: refusedLines } = deps({
-  deps: { home: "/home/u", ...refused },
- });
- const refusedResult = await runSetup(
-  ["--global", "--yes", "--agent", "pi"],
-  refusedDeps,
- );
- assert.equal(refusedResult.skill.installed, false);
- assert.equal(refusedResult.exitCode, 1);
- assert.match(refusedResult.skill.error, /not a featherbi symlink/);
- assert.deepEqual(refused.ops.symlink, []);
- assert.ok(
-  refusedLines.some((line) => line.includes("not a featherbi symlink")),
- );
-
- const projectRefused = fakeFs("dir");
- const { deps: projectRefusedDeps } = deps({
-  deps: { ...projectRefused },
- });
- const projectResult = await runSetup(
-  ["--no", "--agent", "claude"],
-  projectRefusedDeps,
- );
- assert.equal(projectResult.skill.installed, false);
- assert.equal(projectResult.exitCode, 1);
- assert.match(projectResult.skill.error, /not a featherbi skill copy/);
- assert.deepEqual(projectRefused.ops.cp, [], "a project-owned skill dir must never be overwritten");
-
- const replaced = fakeFs("symlink");
- const { deps: replacedDeps } = deps({
-  deps: { home: "/home/u", ...replaced },
- });
- const replacedResult = await runSetup(
-  ["--global", "--yes", "--agent", "pi"],
-  replacedDeps,
- );
- assert.equal(replacedResult.skill.installed, true);
- assert.deepEqual(replaced.ops.rm, ["/home/u/.pi/agent/skills/featherbi"]);
-
- const projectReplaced = fakeFs("symlink");
- const { deps: projectReplacedDeps } = deps({
-  deps: { ...projectReplaced },
- });
- await runSetup(["--no", "--agent", "gemini"], projectReplacedDeps);
- assert.deepEqual(projectReplaced.ops.rm, ["/tmp/project/.gemini/skills/featherbi"], "an existing project symlink is replaced, analogous to global mode");
- assert.ok(projectReplaced.ops.cp.length === 1);
-});
-
-test("plain setup --no still installs the project-local featherbi skill copy", async () => {
+test("plain setup copies the featherbi skill into the project's .agents/skills", async () => {
  const fs = fakeFs();
  const { deps: injected, lines } = deps({ deps: { ...fs } });
- const { accepted, skill, exitCode } = await runSetup(["--no"], injected);
- assert.equal(accepted, false, "--no declines only the DuckDB skills");
+ const { skill, exitCode } = await runSetup([], injected);
  assert.equal(exitCode, 0, "the skill install must not fail setup");
  assert.equal(skill.installed, true);
  assert.equal(skill.installPath, "/tmp/project/.agents/skills/featherbi");
@@ -377,116 +173,103 @@ test("plain setup --no still installs the project-local featherbi skill copy", a
  assert.deepEqual(
   fs.ops.symlink,
   [],
-  "project-local install must copy; never symlink the installed package",
+  "the project-local install must copy; never symlink the installed package",
  );
  assert.ok(lines.some((line) => line.includes("copied the featherbi skill")));
 });
 
-test("no-agent --global writes into ~/.agents/skills and DuckDB --agent universal, never pi", async () => {
+test("--global copies the skill into ~/.agents/skills; no scope symlinks", async () => {
+ const fs = fakeFs();
+ const { deps: injected } = deps({ deps: { home: "/home/u", ...fs } });
+ const { skill } = await runSetup(["--global"], injected);
+ assert.equal(skill.installed, true);
+ assert.equal(
+  skill.installPath,
+  "/home/u/.agents/skills/featherbi",
+  "global mode must copy into the shared ~/.agents/skills",
+ );
+ assert.deepEqual(fs.ops.cp, [
+  [skill.source, "/home/u/.agents/skills/featherbi"],
+ ]);
+ assert.deepEqual(
+  fs.ops.symlink,
+  [],
+  "global mode must copy, never create a symlink",
+ );
+});
+
+test("--global --design runs the design install; a failure fails setup with the manual command", async () => {
  const fs = fakeFs();
  const { deps: injected, runner } = deps({
   deps: { home: "/home/u", ...fs },
  });
- const { agent, skill } = await runSetup(["--global", "--yes"], injected);
- assert.equal(agent, "universal", "no --agent must default to universal even when .pi exists");
- assert.equal(
-  skill.installPath,
-  "/home/u/.agents/skills/featherbi",
-  "the bundled skill must link into the shared ~/.agents/skills, not ~/.pi/agent/skills",
- );
- assert.deepEqual(fs.ops.symlink, [
-  [skill.target, "/home/u/.agents/skills/featherbi"],
- ]);
- const install = runner.calls.find(([command]) => command === "npx");
- assert.ok(install, "npx skills add must run on acceptance");
- assert.equal(
-  install[install.indexOf("--agent") + 1],
-  "universal",
-  "the DuckDB install must pass --agent universal, not pi",
- );
- assert.ok(install.includes("-g"), "global DuckDB install must pass -g");
-});
+ const { design, exitCode } = await runSetup(["--global", "--design"], injected);
+ assert.equal(design.failed, false);
+ assert.equal(exitCode, 0);
+ const npxCalls = runner.calls.filter(([command]) => command === "npx");
+ assert.deepEqual(npxCalls, [designSkillsCommand()]);
 
-test("a default-Yes prompt accepts an empty answer and EOF declines", async () => {
- const { deps: emptyDeps, runner: emptyRunner } = deps({
-  deps: { prompt: async () => "" },
+ const failedFs = fakeFs();
+ const { deps: failingDeps, lines } = deps({
+  fail: ["npx"],
+  deps: { home: "/home/u", ...failedFs },
  });
- const { accepted } = await runSetup([], emptyDeps);
- assert.equal(accepted, true);
- assert.ok(emptyRunner.calls.some(([command]) => command === "npx"));
-
- const { deps: eofDeps, runner: eofRunner } = deps({
-  deps: { prompt: async () => null },
- });
- const { accepted: eofAccepted } = await runSetup([], eofDeps);
- assert.equal(eofAccepted, false);
- assert.equal(
-  eofRunner.calls.filter(([command]) => command === "npx").length,
-  0,
-  "EOF must decline without running the install",
- );
-});
-
-test("after install, setup verifies the skills-lock.json records", async () => {
- const lock = {
-  version: 1,
-  skills: Object.fromEntries(
-   DUCKDB_SKILLS.map((skill) => [skill, { source: "duckdb/duckdb-skills" }]),
-  ),
- };
- const { deps: withLock, lines } = deps({
-  deps: {
-   lockPath: "/tmp/project/skills-lock.json",
-   readText: async () => JSON.stringify(lock),
-  },
- });
- await runSetup(["--yes"], withLock);
+ const failed = await runSetup(["--global", "--design"], failingDeps);
+ assert.equal(failed.design.failed, true);
+ assert.equal(failed.exitCode, 1);
  assert.ok(
-  lines.some((line) => line.includes("skills-lock.json records all DuckDB skills")),
+  lines.some((line) => line.includes("Run it manually with")),
+  "the failure must print the manual command",
  );
+ assert.equal(failed.skill.installed, true, "the skill copy still succeeds");
+});
 
- const { deps: partialLock, lines: partialLines } = deps({
-  deps: {
-   lockPath: "/tmp/project/skills-lock.json",
-   readText: async () => JSON.stringify({ version: 1, skills: {} }),
-  },
+test("a real directory at the destination is never clobbered; a symlink is replaced by the copy", async () => {
+ const projectRefused = fakeFs("dir");
+ const { deps: projectDeps, lines: projectLines } = deps({
+  deps: { ...projectRefused },
  });
- await runSetup(["--yes"], partialLock);
+ const projectResult = await runSetup([], projectDeps);
+ assert.equal(projectResult.skill.installed, false);
+ assert.equal(projectResult.exitCode, 1);
+ assert.match(projectResult.skill.error, /not a featherbi skill copy/);
+ assert.deepEqual(projectRefused.ops.cp, [], "a project-owned skill dir must never be overwritten");
  assert.ok(
-  partialLines.some((line) => line.includes("does not record: duckdb-docs")),
+  projectLines.some((line) => line.includes("not a featherbi skill copy")),
  );
+
+ const globalRefused = fakeFs("dir");
+ const { deps: globalDeps } = deps({
+  deps: { home: "/home/u", ...globalRefused },
+ });
+ const globalResult = await runSetup(["--global"], globalDeps);
+ assert.equal(globalResult.skill.installed, false);
+ assert.equal(globalResult.exitCode, 1);
+ assert.deepEqual(globalRefused.ops.cp, []);
+
+ const replaced = fakeFs("symlink");
+ const { deps: replacedDeps } = deps({
+  deps: { home: "/home/u", ...replaced },
+ });
+ const replacedResult = await runSetup(["--global"], replacedDeps);
+ assert.equal(replacedResult.skill.installed, true);
+ assert.deepEqual(
+  replaced.ops.rm,
+  ["/home/u/.agents/skills/featherbi"],
+  "an existing symlink destination is replaced",
+ );
+ assert.ok(replaced.ops.cp.length === 1);
 });
 
-test("verifySkillsLock classifies recorded and missing skills against the file", async () => {
- const scratch = await mkdtemp(path.join(os.tmpdir(), "featherbi-setup-"));
- const lockPath = path.join(scratch, "skills-lock.json");
- await writeFile(
-  lockPath,
-  JSON.stringify({
-   version: 1,
-   skills: { query: { source: "duckdb/duckdb-skills" } },
-  }),
- );
- const result = await verifySkillsLock(lockPath, (p) => readFile(p, "utf8"));
- assert.deepEqual(result.recorded, ["query"]);
- assert.deepEqual(result.missing, DUCKDB_SKILLS.filter((s) => s !== "query"));
- const unreadable = await verifySkillsLock(
-  path.join(scratch, "absent.json"),
-  (p) => readFile(p, "utf8"),
- );
- assert.deepEqual(unreadable.recorded, []);
- assert.deepEqual(unreadable.missing, [...DUCKDB_SKILLS]);
- assert.match(unreadable.detail, /not readable/);
-});
-
-test("the bundled CLI documents and exposes the setup command", async () => {
+test("the bundled CLI documents the single setup path and setup stays explicit", async () => {
  const { execFile } = await import("node:child_process");
  const { promisify } = await import("node:util");
  const help = await promisify(execFile)(process.execPath, [
   path.join(rootDir, "bin", "featherbi.mjs"),
   "--help",
  ]);
- assert.match(help.stdout, /featherbi setup/);
+ assert.match(help.stdout, /featherbi setup \[--global\] \[--design\]/);
+ assert.doesNotMatch(help.stdout, /--agent|--yes|--no/);
  const packageJson = JSON.parse(
   await readFile(path.join(rootDir, "package.json"), "utf8"),
  );

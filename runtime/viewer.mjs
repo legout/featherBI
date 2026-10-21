@@ -206,6 +206,19 @@ export async function mountDashboard({
   }
  });
 
+ layout.addEventListener("featherbi-grid-sort", async (event) => {
+  if (!controller) return;
+  const id = event.target.dataset.componentId;
+  // Programmatic column updates re-fire sortChanged with the model the grid
+  // already published; only a genuinely changed sort re-runs the query.
+  if (JSON.stringify(controller.state.tablePages[id]?.sort ?? []) === JSON.stringify(event.detail.sort)) return;
+  try {
+   await controller.setTableSort(id, event.detail.sort);
+  } catch {
+   // The controller has already emitted the retained visible error state.
+  }
+ });
+
  layout.addEventListener("featherbi-grid-select", async (event) => {
   if (!controller) return;
   const section = event.target.closest("section");
@@ -823,6 +836,7 @@ function buildLayout(container, config) {
    const grid = document.createElement("div");
    grid.className = "data-grid";
    grid.dataset.grid = "";
+   grid.dataset.componentId = component.id;
    const empty = document.createElement("p");
    empty.dataset.empty = "";
    const navigation = document.createElement("nav");
@@ -971,10 +985,15 @@ function renderState(root, config, state, capabilities, ui = {}) {
   ({ kind, default: value }) =>
    kind === "date-range" && value.kind === "latest-days",
  );
- root.querySelector("#snapshot-note").textContent =
-  latest && state.filterValues[`${latest.id}_to`]
-   ? `Snapshot end ${addDays(state.filterValues[`${latest.id}_to`], -1)} may be incomplete.`
-   : "Snapshot end unavailable.";
+ const note = root.querySelector("#snapshot-note");
+ // The shell always carries this paragraph; without a latest-days filter
+ // there is no snapshot end to explain, and CSS styles an empty one.
+ note.hidden = !latest;
+ note.textContent = latest
+  ? state.filterValues[`${latest.id}_to`]
+    ? `Snapshot end ${addDays(state.filterValues[`${latest.id}_to`], -1)} may be incomplete.`
+    : "Snapshot end unavailable."
+  : "";
 
  for (const component of config.layout) {
   const rows = state.results[component.query] ?? [];
@@ -1112,6 +1131,7 @@ function renderTable(
   section.querySelector("[data-grid]"),
   rows,
   component.columns,
+  { paged: true, sort: page.sort ?? [] },
  );
  section.querySelector("[data-empty]").textContent = rows.length
   ? ""

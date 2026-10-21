@@ -76,7 +76,7 @@ Conflict notes: #41 and #42/#43 both touch `bin/featherbi.mjs` — they sit in d
 
 ## Validation per wave
 
-Per ticket, run only its assigned focused validation obligation; runtime/browser tickets use their focused required browser scenario. Per owner direction (2026-10-19), defer aggregate `npm run check`, the full `npm run test:browser` suite, and assembled-wave validation until all #37–#54 tickets are implemented. Then run both suites on the assembled candidate. Spikes: evidence-note review only.
+Per ticket, run only its assigned focused validation obligation; runtime/browser tickets use their focused required browser scenario. Per owner direction (2026-10-19), defer aggregate `npm run check`, the full `npm run test:browser` suite, and assembled-wave validation until all #37–#54 tickets are implemented. Then run both suites on the assembled candidate. Spikes: evidence-note review only. Owner exception (2026-10-20, #45): the issue-required `npm run check` runs now with ticket #45; the full browser suite and the remaining assembled-candidate validation still wait until all planned tickets are implemented.
 
 ## Not decided here
 

@@ -52,8 +52,8 @@ test("manual YAML and external SQL compile deterministically to strict contract 
  await mkdir(path.join(dir, ".featherbi"));
  const privatePath = "/private/author/data/inspections.json";
  await writeFile(
-  path.join(dir, ".featherbi", "local-sources.yaml"),
-  `inspections: ${privatePath}\n`,
+  path.join(dir, ".featherbi", "profile.json"),
+  `{"inspections": "${privatePath}"}\n`,
  );
 
  const first = await compileProject(dashboard);

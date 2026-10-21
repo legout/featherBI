@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added static sharing as the primary artifact: `featherbi build --target static` writes one self-contained `dashboard.html` that accepts only live sources and carries an exact-origin Content-Security-Policy; the external-data ZIP stays the fallback for local and packaged sources.  #42, #43
+- Added an explicit Refresh control for every live source kind; refreshes stage a new generation and keep previous results visible with a source-specific error on failure.  #40
+- Added `featherbi export delta`: an author-side native-DuckDB export of a Delta snapshot into immutable Parquet part files plus root `manifest.json` and an `export.json` sidecar, published by the author and declared as a live Parquet set.  #41
+- Added the live DuckLake table source — a public `https://` catalog URI plus one explicitly named table with `auth: none` — read in the browser through the pinned trusted extension capability.  #44
 - Added the theme-token system: a validated `theme.tokens.yaml` compiles into a baked theme (scoped CSS variables including AG Grid `--ag-*` overrides, plus a registered ECharts theme) with advisory contrast warnings that never fail the build; `siemens-ix` is now the dark Siemens Industrial Experience preset and `siemens-ix-light` the light one (both still explicit-only selections), and the authoring skill turns style prompts into token files instead of free-form chart CSS.  #29
 - **Breaking:** metric-group markup changed: each metric now renders as one label-over-value row (wrapper `[data-metric-row]`, label `[data-metric-label]`; values keep `[data-metric]`), replacing bare concatenated `<output>` elements. Update scoped `theme.css` selectors targeting the old markup.  #27
 - **Breaking:** filter markup changed: filters render as one contained bar; each control is a `[data-filter]` column with a small `[data-filter-caption]` above a `[data-filter-controls]` row, replacing `fieldset`/`legend`. Boolean filters render as a `[data-segmented]` All/Yes/No radio group (IDs, names, and values unchanged). Update scoped `theme.css` selectors targeting the old markup.  #28

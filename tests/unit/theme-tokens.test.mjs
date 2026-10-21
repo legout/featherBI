@@ -265,13 +265,14 @@ test("no theme key bakes the vercel standard preset (#52)", async () => {
 	const dashboard = await themeProject({ yaml: "", tokens: null });
 	const { config } = await compileProject(dashboard);
 	// Expected colors come from the approved mockup sources: white surface,
-	// near-black/gray text, blue accent, red negative indicator.
+	// near-black/gray text, black accent, blue success, red negative indicator.
 	assert.equal(typeof config.theme, "object");
 	assert.equal(config.theme.name, "vercel");
 	assert.match(config.theme.css, /--fb-surface: #ffffff;/);
 	assert.match(config.theme.css, /--fb-text: #0a0a0a;/);
 	assert.match(config.theme.css, /--fb-text-dim: #666666;/);
-	assert.match(config.theme.css, /--fb-accent: #0070f3;/);
+	assert.match(config.theme.css, /--fb-accent: #0a0a0a;/);
+	assert.match(config.theme.css, /--fb-success: #0070f3;/);
 	assert.match(config.theme.css, /--fb-danger: #ee0000;/);
 	assert.deepEqual(config.theme.echarts.color, [
 		"#0a0a0a",

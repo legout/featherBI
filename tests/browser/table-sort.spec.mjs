@@ -119,6 +119,7 @@ test("paged table sorts the full result by query and offers no page-local filter
   // the first row (not the status attribute) keeps the second click off the
   // mid-transition header state.
   const amountHeader = page.locator("#component-rows .ag-header-cell", { hasText: "Amount" });
+  const stationHeader = page.locator("#component-rows .ag-header-cell", { hasText: "Station" });
   const firstAmount = page.locator(
    '#component-rows .ag-row[row-index="0"] .ag-cell[col-id="amount"]',
   );
@@ -134,6 +135,12 @@ test("paged table sorts the full result by query and offers no page-local filter
   await expect(
    page.locator('#component-rows .ag-row[row-index="0"] .ag-cell[col-id="amount"]'),
   ).toHaveText(String(ROWS - 100));
+
+  // Adding Station as a secondary key must not replace Amount's primary
+  // descending order or move the global maximum off page 1.
+  await stationHeader.click({ modifiers: ["Shift"] });
+  await expect(page.locator('#component-rows [data-page-label]')).toHaveText("Page 1");
+  await expect(firstAmount).toHaveText(String(ROWS));
 
   // A page-local column filter could only hide rows of the current page
   // while implying it filters the full result, so paged tables never offer

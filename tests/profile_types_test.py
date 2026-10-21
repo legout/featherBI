@@ -9,6 +9,7 @@ Run: python3 -m pytest tests/profile_types_test.py -q
 """
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ _SCRIPT = (
 )
 _spec = importlib.util.spec_from_file_location("profile", _SCRIPT)
 assert _spec is not None and _spec.loader is not None, f"cannot load {_SCRIPT}"
+sys.path.insert(0, str(_SCRIPT.parent))
 profile = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(profile)
 

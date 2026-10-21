@@ -4,11 +4,12 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 const grids = new WeakMap();
 const appliedSorts = new WeakMap();
 
-const columnSortState = ({ field, direction }) => ({ colId: field, sort: direction });
+const columnSortState = ({ field, direction }, sortIndex) => ({ colId: field, sort: direction, sortIndex });
 const sortModel = (api) =>
  api
   .getColumnState()
   .filter((column) => column.sort)
+  .sort((left, right) => (left.sortIndex ?? 0) - (right.sortIndex ?? 0))
   .map(({ colId, sort }) => ({ field: colId, direction: sort }));
 
 export const gridCapability = {

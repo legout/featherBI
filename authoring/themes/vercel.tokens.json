@@ -1,0 +1,20 @@
+{
+ "version": 1,
+ "font": "\"Geist\", Inter, ui-sans-serif, system-ui, sans-serif",
+ "fontMono": "\"Geist Mono\", \"JetBrains Mono\", ui-monospace, monospace",
+ "radius": 6,
+ "surface": "#ffffff",
+ "surface2": "#fafafa",
+ "text": "#0a0a0a",
+ "textDim": "#666666",
+ "border": "#eaeaea",
+ "accent": "#0070f3",
+ "accentContrast": "#ffffff",
+ "success": "#0070f3",
+ "warning": "#f5a623",
+ "danger": "#ee0000",
+ "chart": {
+  "palette": ["#0a0a0a", "#0070f3", "#666666", "#999999", "#3291ff", "#cccccc", "#444444"],
+  "heatMin": "#f5f5f5"
+ }
+}

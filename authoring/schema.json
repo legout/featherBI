@@ -119,12 +119,13 @@
     },
     "theme": {
       "enum": [
+        "vercel",
         "neutral",
         "daisyui",
         "siemens-ix",
         "siemens-ix-light"
       ],
-      "default": "neutral"
+      "default": "vercel"
     },
     "themeCss": {
       "type": "string",

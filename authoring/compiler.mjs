@@ -12,6 +12,7 @@ const validateProject = new Ajv({ allErrors: true }).compile(projectSchema);
 // Built-in presets (spec 2026-09-28-0003 §4): shipped token sets baked
 // through the identical themeTokens path; there is no preset-only code.
 const PRESET_TOKEN_FILES = {
+ "vercel": "vercel.tokens.json",
  "siemens-ix": "siemens-ix.tokens.json",
  "siemens-ix-light": "siemens-ix-light.tokens.json",
 };
@@ -114,15 +115,15 @@ export async function compileProject(projectPath) {
   }
  }
 
- let theme = project.theme ?? "neutral";
+ let theme = project.theme ?? "vercel";
  if (project.themeTokens) {
-  if (theme !== "neutral") {
+  if (theme !== "vercel" && theme !== "neutral") {
    throw yamlError(
     displayProject,
     document,
     lineCounter,
     ["themeTokens"],
-    `themeTokens cannot be combined with theme: ${theme}; "themeTokens" is valid only with the default neutral shell, so remove "theme" or "themeTokens"`,
+    `themeTokens cannot be combined with theme: ${theme}; "themeTokens" is valid only with the default vercel theme or the legacy neutral shell, so remove "theme" or "themeTokens"`,
    );
   }
   let tokenSource;

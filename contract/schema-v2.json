@@ -52,6 +52,7 @@
       "oneOf": [
         {
           "enum": [
+            "vercel",
             "neutral",
             "daisyui",
             "siemens-ix",

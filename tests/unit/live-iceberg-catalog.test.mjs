@@ -46,6 +46,7 @@ async function project(remote, querySql = "SELECT count(*) AS value FROM orders\
   path.join(dir, "dashboard.yaml"),
   `project: 1
 title: Catalog dashboard
+theme: neutral
 sources:
   - id: orders
     schema:

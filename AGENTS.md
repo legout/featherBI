@@ -1,52 +1,18 @@
 <!-- featherBI project contract -->
 
-## Project workflow
-
 Goal: a simple, fully functional featherBI MVP. Optimize for working user-visible features, not process ceremony or test volume.
 
-- The active execution map is `project/plans/mvp.md`. Behavior authority is `project/specs/dashboard-project-and-runtime-v2.md`; `project/specs/runtime-contract-v1.md` is superseded historical migration evidence; accepted architecture is `project/adr/`; vocabulary is `CONTEXT.md`; artifact routing is `project/agents/artifacts.md`.
-- Execute approved work through `orchestrate-implementation` in its default supervised mode: one writer per managed worktree, with candidate assembly, integration, and publication kept behind their explicit gates.
-- Plan and implement vertical slices. Give each validation unit exactly one obligation (`new-test`, `existing-check`, or `no-new-test`); do not test Ajv/DuckDB-WASM library behavior or build edge-case matrices without a named failure mode.
-- Code changes use the smallest relevant check; runtime/browser changes include the browser gate. Documentation-only changes need focused link/diff inspection, not the application test suite. Report skipped checks honestly.
-- `project/plans/archive/` is historical; do not execute its old decomposition. Deferred items live in `project/plans/deferred.md` and require an explicit owner pull-back.
+## Sources
+
+- Behavior: `project/specs/dashboard-project-and-runtime-v2.md`; `project/specs/runtime-contract-v1.md` is superseded historical migration evidence.
+- Accepted architecture: `project/adr/`; vocabulary: `CONTEXT.md`; artifact routing: `project/agents/artifacts.md`; tracker and context layout: `project/agents/issue-tracker.md` and `project/agents/domain.md`.
+- Scoped authority: glossaries own terminology; ADRs own accepted architectural constraints; specifications own behavior; plans and tickets own execution decomposition. No scope silently overrides another.
+
+## Workflow
+
+- One short plan or canonical task record (GitHub issue) per change. Issues own task bodies; plans own scope and order. `project/plans/2026-10-19-0007-ticket-execution-order.md` is the current order reference for issues #37–#54, not approved behavior.
+- One writer per change; keep one writer per worktree.
+- Name one validation obligation per validation unit (`new-test`, `existing-check`, or `no-new-test`) and use the smallest relevant check. Runtime/browser changes include the browser gate; documentation-only changes need focused link and diff inspection. Report skipped checks honestly.
+- Integration, push, and release are separate gates; implementing or locally integrating a change authorizes none of the later ones.
+- `project/plans/archive/` is historical; deferred items live in `project/plans/deferred.md` and require an explicit owner pull-back.
 - Stop and ask the owner when authoritative sources conflict, a required gate fails, or required tooling is missing.
-<!-- pi-implementation-orchestrator:start -->
-## Agent workflow
-
-- Every validation unit receives one test obligation: `new-test`, `existing-check`, or `no-new-test`; related tasks may share a validation unit, and focused TDD is required only for `new-test` work.
-- Review is adaptive and orchestrator-owned: low-risk work uses parent diff inspection; normal-risk work gets one candidate review; high-risk or dependency-defining work gets immediate plus candidate review.
-- Plans and tickets reference exact feature sources; this file defines stable repository-wide scope.
-- Scoped authority: glossaries own terminology; ADRs own accepted architectural constraints; specifications own behavior; plans/tickets own execution decomposition. No scope silently overrides another; reconcile owner decisions into the affected artifacts before dependent work proceeds.
-- Stop before implementation when authoritative sources conflict.
-
-### Review ground rules
-
-- Priority: agreed feature, then correctness, then proven risk. Written conventions are binding; taste never blocks. Name the applicable instruction, style, lint, or contract source; if none exists, say so rather than inventing conventions.
-- Findings need a named requirement or written rule, a problem this change caused or worsened, reachability through real callers/inputs/environment, material impact, and a proportionate response.
-- Security requires a touched boundary (untrusted/external input, credentials, auth, dependency changes), named asset, realistic attacker, and actual attack path. Stories needing stolen secrets, broken TLS, malicious admins, or generic hardening are not findings. No boundary touched: `security: n/a`; missing security facts: `unverified`, never invent a threat model. Trusted internal callers and the user's own local files are not hostile by default.
-- Test requests are findings: name a real scenario or drop them. Coverage percentage is not a reason.
-- Disposition before repair: parent rejects failed gates in one line, authorizes small in-scope fixes, or hands large/out-of-scope fixes to the human. Reviewers never start fixes or re-reviews.
-- Reviews end when criteria, real risks, and written rules are covered: `pass or fix-first`, then stop. One fix pass, one delta recheck; unresolved findings go to the human, never round three. Candidate review checks integration effects, not settled findings again.
-- Owner-approved exception (2026-09-29): for #24 only, permit one additional parent fix and one fresh-context delta-only recheck of the surviving font-stack CSS-comment finding. No full re-review or further round; if it remains unresolved, hand back.
-- Paste the full reviewer contract from `orchestrate-implementation` into every fresh reviewer prompt, with criteria, conventions, and real-use context; file links alone do not deliver it.
-- After each task: restate it, compare the result, choose `accept / fix / hand back / ask`. Extra ideas get one line, not code. Smallest safe change; one behavior and, for `new-test`, one failing test first. Dependencies and abstractions need a job today. No extra ledgers or sign-off artifacts.
-
-### Routing and authority
-
-- Read `project/agents/artifacts.md` for the project artifact mapping and load the `planning-contract` skill for artifact classification and planning handoffs; read `project/agents/issue-tracker.md` and `project/agents/domain.md` when their scope applies. Preserve established project conventions.
-- Use `shape-design` for unresolved behavior/design choices, `write-implementation-plan` for approved multi-step work, and `orchestrate-implementation` to execute approved work. Do not turn a trivial edit into a planning exercise.
-- Default orchestrated execution to `supervised`: builtin `worker` may implement and validate, but candidate assembly, integration, and publication retain explicit approval gates.
-- Route implementation to builtin `worker` and, when required by the selected policy, independent review to a fresh read-only builtin `reviewer`; confirm both are executable before dispatch and record the resolved names in the run manifest.
-- Keep one writer per worktree. Use `pi-subagents` for spawned-child lifecycle; named persistent `pi-intercom` peers are read-only advisors, not implementation or review agents.
-- Use `systematic-debugging` for unexpected failures and `verification-before-completion` before success claims; match evidence to the exact change and report skipped checks.
-- Use `merge-worktree` for target integration and `make-release` for releases. Local integration does not authorize pushing; opening a PR does not authorize merging; release or publication requires its own approved plan.
-- Stop on conflicting authoritative sources, unclear ownership, failed required gates, or missing required tooling. Never silently switch execution modes to bypass a blocker.
-
-### Documentation map
-
-- `CONTEXT.md`: canonical domain vocabulary for the whole repository.
-- `project/adr/`: accepted architecture decisions.
-- `project/agents/`: workflow, tracker, and artifact-map configuration.
-- `project/specs/` or the configured tracker: feature behavior and acceptance.
-- implementation plans/tickets: execution entry points and explicit source references.
-<!-- pi-implementation-orchestrator:end -->

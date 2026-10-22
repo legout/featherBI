@@ -56,4 +56,4 @@ Candidate assembly, local integration, push, issue closure, publication, and rel
 
 ## Non-goals
 
-This plan does not include remote S3/R2/GitHub data, Hyparquet cubes, hosted embedding, offline delivery, AG Grid Enterprise, custom plugins, arbitrary JavaScript/raw chart options, unrestricted CSS, recipient-persisted edits, automatic publication, or exhaustive component/theme combinations.
+This plan does not include Hyparquet cubes, hosted embedding, offline delivery, AG Grid Enterprise, custom plugins, arbitrary JavaScript/raw chart options, unrestricted CSS, recipient-persisted edits, automatic publication, or exhaustive component/theme combinations.

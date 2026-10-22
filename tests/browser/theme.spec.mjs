@@ -9,6 +9,7 @@ import { buildDashboard } from "../../scripts/build.mjs";
 const derivedDir = path.join(rootDir, ".artifacts/browser/derived-theme");
 const themeDashboardPath = path.join(derivedDir, "theme-runtime.html");
 const overrideDashboardPath = path.join(derivedDir, "theme-override.html");
+const defaultDashboardPath = path.join(derivedDir, "theme-default.html");
 
 // Distinctive custom tokens: every asserted value differs from every neutral
 // fallback in runtime/viewer.css, so a missing bake cannot pass by accident.
@@ -63,15 +64,17 @@ async function buildDerived({
  tokens = TOKENS,
  authorCss,
  theme,
+ omitTheme,
  latestDaysFilter = false,
 }) {
  const exampleDir = path.join(rootDir, "examples/standard-dashboard");
  // Preset projects get their own directory so they never fight the shared
  // custom-token project the TT-02/TT-04 mutation tests rewrite.
- const dir = path.join(derivedDir, theme ?? "custom");
+ const dir = path.join(derivedDir, omitTheme ? "omitted" : (theme ?? "custom"));
+ const themeLine = omitTheme ? "" : theme ? `theme: ${theme}\n` : "themeTokens: theme.tokens.yaml\n";
  let source = await readFile(path.join(exampleDir, "dashboard.yaml"), "utf8");
  source = source
-  .replace("theme: daisyui\n", theme ? `theme: ${theme}\n` : "themeTokens: theme.tokens.yaml\n")
+  .replace("theme: daisyui\n", themeLine)
   .replace("themeCss: theme.css\n", authorCss ? "themeCss: theme.css\n" : "");
  if (latestDaysFilter)
   source = source.replace(
@@ -97,7 +100,7 @@ layout:`,
   await readFile(path.join(exampleDir, "models", "inspection_model.sql"), "utf8"),
   "utf8",
  );
- if (!theme) await writeFile(path.join(dir, "theme.tokens.yaml"), tokens, "utf8");
+ if (!theme && !omitTheme) await writeFile(path.join(dir, "theme.tokens.yaml"), tokens, "utf8");
  if (authorCss) await writeFile(path.join(dir, "theme.css"), authorCss, "utf8");
  const project = await compileProject(path.join(dir, "dashboard.yaml"));
  await buildDashboard({
@@ -225,6 +228,38 @@ test("author theme.css applies after the baked theme and wins conflicts (TT-08)"
   expect(
    await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor),
   ).toBe("rgb(0, 0, 40)");
+ } finally {
+  await context.close();
+ }
+});
+
+// An authoring project with no theme and no themeTokens bakes the standard
+// preset (spec 2026-09-28-0003 §2 as amended by ADR 0010 E4, issues #52/#53).
+test("omitted theme renders the vercel standard preset (#53)", async ({ browser }) => {
+ const dashboardPath = await buildDerived({ outPath: defaultDashboardPath, omitTheme: true });
+ const { page, context } = await openDashboard(browser, dashboardPath);
+ try {
+  await expect(page.locator("#dashboard")).toHaveAttribute("data-theme", "vercel");
+  const build = await page.evaluate(() => window.__featherbiBuild);
+  expect(build.theme).toBe("vercel");
+  expect(build.themeVersion).toBe("tokens-v1");
+  // The approved mockup values reach the page shell and cards.
+  expect(
+   await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor),
+  ).toBe("rgb(255, 255, 255)");
+  const section = page.locator("#component-by_station");
+  await expect(section).toHaveCSS("background-color", "rgb(250, 250, 250)");
+  await expect(section).toHaveCSS("border-color", "rgb(234, 234, 234)");
+  const status = page.locator("#dashboard-status");
+  await expect(status).toBeVisible();
+  await expect(status).toHaveCSS("color", "rgb(10, 10, 10)");
+  // Real pixels: bars use the near-black palette head from the token file.
+  const [palettePixels] = await colorCounts(
+   page,
+   "#component-by_station .chart canvas",
+   ["#0a0a0a"],
+  );
+  expect(palettePixels).toBeGreaterThan(200);
  } finally {
   await context.close();
  }

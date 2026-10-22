@@ -4,7 +4,8 @@
 
 ## Themes
 
-- `neutral` (default): lightweight built-in styles.
+- `vercel` (default): white-surface token preset derived from the owner-approved mockup.
+- `neutral` (legacy): lightweight built-in styles.
 - `daisyui`: daisyUI shell classes on buttons, cards, tables, inputs.
 - `siemens-ix`: dark Siemens Industrial Experience theme.
 - `siemens-ix-light`: light Siemens Industrial Experience theme.
@@ -12,7 +13,7 @@
 
 `siemens-ix` and `siemens-ix-light` are selected only when the user explicitly asks, never inferred from organization or data names. Both presets ship as built-in token sets baked through the same code path as custom token files; there is no preset-only theming. The compiler bakes one theme bundle: scoped CSS variables (including the supported AG Grid `--ag-*` overrides) plus a complete ECharts theme (series palette, text and axis styling, heatmap range). Only the selected theme ships in the artifact.
 
-`themeTokens` is valid only with the default `neutral` shell; combining it with `theme: daisyui`, `theme: siemens-ix`, or `theme: siemens-ix-light` fails compilation with an error naming both fields.
+`themeTokens` is valid with the default `vercel` shell and the legacy `neutral` shell; combining it with `theme: daisyui`, `theme: siemens-ix`, or `theme: siemens-ix-light` fails compilation with an error naming both fields.
 
 ## Theme tokens (`theme.tokens.yaml`)
 

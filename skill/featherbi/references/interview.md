@@ -9,7 +9,7 @@ Ask questions in frontier order and only when the answer changes the dashboard. 
 3. **Population and cadence** — default time window (e.g. last 30 days ending at the newest record), update expectations.
 4. **Filters and lookups** — which dimensions need single/multi-select, search, ranges, or exact text.
 5. **Renderer preset** — `standard` is the default. Offer `perspective-first` only when the user explicitly asks for Perspective exploration; keep the shell featherBI-owned either way.
-6. **Theme** — `neutral` (default), `daisyui`, `siemens-ix` (dark), or `siemens-ix-light` (light); see [themes-and-css.md](themes-and-css.md) for Siemens selection.
+6. **Theme** — `vercel` (default), `neutral` (legacy), `daisyui`, `siemens-ix` (dark), or `siemens-ix-light` (light); see [themes-and-css.md](themes-and-css.md) for Siemens selection.
 7. **Views and interactions** — which charts, tables, cross-filtering, or brushes. The recipient SQL playground is opt-in: mention it only when the user explicitly asks for it.
 8. **Appearance** — layout density, labels, ordering, only after the analytical content is agreed. A style described in natural language ("minimal like Vercel", "premium dark") is authored as `theme.tokens.yaml` — never free-form chart CSS: write the token file, compile, fix every error, present the preview, and iterate on the token file alone ([themes-and-css.md](themes-and-css.md)).
 

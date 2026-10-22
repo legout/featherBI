@@ -70,7 +70,7 @@ queries:
   total: {sql: queries/total.sql, params: []}
 layout:                        # integer x/y/width/height on a 12-column grid
   - {id: total, type: kpi, query: total, label: Total, field: value, x: 1, y: 1, width: 12, height: 1}
-theme: neutral                 # neutral | daisyui | siemens-ix | siemens-ix-light
+theme: vercel                  # vercel (default) | neutral (legacy) | daisyui | siemens-ix | siemens-ix-light
 themeTokens: theme.tokens.yaml # optional custom theme (see themes-and-css.md)
 rendererPreset: standard       # standard (default) | perspective-first (opt-in: explicit user request only)
 ```

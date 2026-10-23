@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-10-23
+
+> **Release exception:** the owner approved publication before the SL-08 hosted real-data acceptance. That acceptance remains pending in #45; passing automated checks does not replace it.
+>
+> **Known dependency findings:** `npm audit` reports six high-severity findings in the release lockfile (`@parcel/watcher`, `@tailwindcss/cli`, `braces`, `micromatch`, `follow-redirects`, and `source-map-js`). They remain unresolved; no dependency updates are included in this release.
+
+- Added live Parquet file sets selected by glob or manifest and live Iceberg tables selected by metadata URI or REST catalog identity; generations remain pinned until explicit Refresh, and recipient credentials stay in memory.  #31–#35
+- Improved paged tables with query-level sorting over the full result and disabled misleading page-local column filters; the snapshot note now appears only with a latest-days date-range filter.  #47, #48
+- The profiler now emits featherBI column types directly and fails actionably on unsupported DuckDB types; shared remote profiling helpers and authoring rules are consolidated.  #46, #49
+- Perspective, the SQL playground, and the `perspective-first` preset are explicitly opt-in in the authoring guidance.  #51
+- **Breaking:** setup now uses one shared agent-skill path: `.agents/skills` in the project, or `~/.agents/skills` with `--global`. Removed the `--agent` variants and DuckDB-skills prompt; `--design` remains opt-in, and existing real destination directories are never overwritten.  #50
 - Added static sharing as the primary artifact: `featherbi build --target static` writes one self-contained `dashboard.html` that accepts only live sources and carries an exact-origin Content-Security-Policy; the external-data ZIP stays the fallback for local and packaged sources.  #42, #43
 - Added an explicit Refresh control for every live source kind; refreshes stage a new generation and keep previous results visible with a source-specific error on failure.  #40
 - Added `featherbi export delta`: an author-side native-DuckDB export of a Delta snapshot into immutable Parquet part files plus root `manifest.json` and an `export.json` sidecar, published by the author and declared as a live Parquet set.  #41

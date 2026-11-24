@@ -30,6 +30,13 @@
       "wasm": {
         "url": "https://cdn.jsdelivr.net/npm/@haybarn/haybarn-wasm@2.0.1-rc3/dist/duckdb-base.wasm",
         "integrity": "sha384-Gef4RBP5AMajsFulzK2tM4VWmtGKXVUMuxbfGcdnW/+Ppqvtp3FywK8ncbn8PSnu"
+      },
+      "extensions": {
+        "parquet": {
+          "url": "https://haybarn-extensions.query.farm/core/v2.0.1/wasm_eh/parquet.duckdb_extension.wasm",
+          "integrity": "sha384-ZTl7Jhng5Mz9kh81v0Uas98Bpb0QFtGfQPxQnQge1ykwxgyScbwIZeKvUmXUI+xa",
+          "note": "The engine reads Parquet through this extension, which its worker would otherwise download at the first query. The page supplies the pinned copy (assets/renderer.js); an offline build inlines it. It must stay the URL the engine's own getExtensionUrl reports."
+        }
       }
     },
     "duckdb-wasm": {

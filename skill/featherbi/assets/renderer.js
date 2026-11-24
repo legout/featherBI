@@ -11,10 +11,22 @@ const el = (tag, className, text) => {
 // Engine adapter: the only code that knows which browser DuckDB build runs.
 // Haybarn-Wasm and upstream duckdb-wasm share one API; the bundle (module, worker, wasm)
 // is assembled by hand from vendor.lock.json because Haybarn has no bundle selector.
-async function startEngine({ module, worker, wasm }) {
+async function startEngine({ module, worker, wasm, extensions = {} }) {
   const duckdb = await import(module.url); // integrity: the page's import map
+  // Haybarn reads Parquet through its parquet extension, which its worker would otherwise download without a hash at the
+  // first query. The page supplies the pinned copy instead (default: fetched with its hash; offline: inlined): the worker's
+  // own prefetchExtensions() fetches it from this shim and the engine loads it from that store, whatever the network.
+  const base64 = async entry => {
+    const bytes = await (await fetch(entry.data ?? entry.url, { integrity: entry.integrity })).arrayBuffer();
+    const url = await new Promise(resolve => Object.assign(new FileReader(), { onload: e => resolve(e.target.result) }).readAsDataURL(new Blob([bytes])));
+    return url.slice(url.indexOf(",") + 1);
+  };
+  const [text, ...pinned] = await Promise.all([fetch(worker.url, { integrity: worker.integrity }).then(r => r.text()), ...Object.values(extensions).map(base64)]);
   // The worker fetches the wasm itself, so its hash rides on the Request the worker builds (a no-op if a bundle no longer has that line).
-  const source = (await (await fetch(worker.url, { integrity: worker.integrity })).text()).replaceAll("new Request(this.mainModuleURL)", `new Request(this.mainModuleURL,{integrity:${JSON.stringify(wasm.integrity)}})`);
+  const shim = `const __fbExt = ${JSON.stringify(Object.fromEntries(Object.values(extensions).map((entry, i) => [entry.url, pinned[i]])))}, __fbFetch = fetch;
+fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Array.from(atob(__fbExt[url]), c => c.charCodeAt(0)), { status: 200, headers: { "content-type": "application/wasm" } })) : __fbFetch(url, init);
+`;
+  const source = shim + text.replaceAll("new Request(this.mainModuleURL)", `new Request(this.mainModuleURL,{integrity:${JSON.stringify(wasm.integrity)}})`);
   const workerUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
   // The wasm by URL: the CDN in a default build, a data: URL in an offline one (the build verified those bytes, so no hash is left to check).
@@ -22,6 +34,8 @@ async function startEngine({ module, worker, wasm }) {
   URL.revokeObjectURL(workerUrl);
   // No db.open(): on Haybarn it mounts OPFS, which a file:// page is not allowed to use.
   const conn = await db.connect();
+  const names = Object.keys(extensions);
+  if (names.length && (await db.prefetchExtensions(names)).length !== names.length) throw new Error("the Parquet extension could not be loaded");
   // Without open()'s cast options BIGINT arrives as BigInt and DECIMAL as an unscaled integer.
   const plain = (value, type) => (typeof value === "bigint" ? Number(value) : value != null && type.scale != null ? value.valueOf(type.scale) : value);
   return {

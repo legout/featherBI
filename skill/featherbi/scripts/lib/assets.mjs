@@ -6,7 +6,7 @@ import path from "node:path";
 
 const CDN = "https://cdn.jsdelivr.net/npm";
 const cache = path.join(os.tmpdir(), "featherbi-vendor-cache");
-const dataUrl = (type, bytes) => `data:${type};base64,${bytes.toString("base64")}`;
+const dataUrl = (type, bytes) => `data:${type};base64,${Buffer.from(bytes).toString("base64")}`; // bytes: a Buffer or module text
 const sri = bytes => `sha384-${crypto.createHash("sha384").update(bytes).digest("base64")}`;
 
 async function get(url, integrity) {
@@ -53,7 +53,7 @@ function patch(name, source) {
 }
 
 // -> { imports: import-map entries (CDN URL -> data: URL) for every module the page imports;
-//      worker, wasm, grid, css: data: URLs; psp: { <Perspective wasm file>: data: URL } } for what this dashboard uses.
+//      worker, wasm, extensions: data: URLs of the engine files; grid, css: data: URLs; psp: { <Perspective wasm file>: data: URL } }.
 export async function offlineAssets(config, lock) {
   const imports = {};
   const pending = [];
@@ -79,7 +79,9 @@ export async function offlineAssets(config, lock) {
     await module(psp.datagrid.url, psp.datagrid.integrity);
   }
   while (pending.length) await module(pending.shift()); // the dependencies of the +esm bundles
-  const inline = (entry, type) => dataUrl(type, get(entry.url, entry.integrity));
+  const inline = async (entry, type) => dataUrl(type, await get(entry.url, entry.integrity));
+  const extensions = {};
+  for (const [name, entry] of Object.entries(engine.extensions ?? {})) extensions[name] = await inline(entry, "application/wasm");
   const pspWasm = {};
   for (const [pkg, file] of [["client", "perspective-js.wasm"], ["client", "perspective-migrate.wasm"], ["viewer", "perspective-viewer.wasm"], ["server", "perspective-server.wasm"], ["server", "perspective-server.memory64.wasm"]]) {
     pspWasm[file] = dataUrl("application/wasm", await get(`${CDN}/@perspective-dev/${pkg}@${psp.version}/dist/wasm/${file}`));
@@ -88,6 +90,7 @@ export async function offlineAssets(config, lock) {
     imports,
     worker: await inline(engine.worker, "text/javascript"),
     wasm: await inline(engine.wasm, "application/wasm"),
+    extensions,
     grid: types.includes("table") ? await inline(lock["ag-grid"], "text/javascript") : undefined,
     css: explore ? await inline(psp.css, "text/css") : undefined,
     psp: explore ? pspWasm : undefined,

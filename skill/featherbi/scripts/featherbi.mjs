@@ -20,17 +20,22 @@ try {
   }
   if (values.offline && values.split) throw new Error("--offline and --split cannot be combined");
   const config = loadConfig(file);
+  const mode = ["offline", "split"].find(flag => values[flag]) ?? "default";
+  // Upstream duckdb-wasm loads its Parquet extension over HTTP inside its worker, with no way to hand it over: an offline
+  // file of that engine could not read its own snapshot.
+  if (mode === "offline" && config.engine !== "haybarn") throw new Error(`--offline is not available for engine "${config.engine}": only Haybarn can load its Parquet extension from the page`);
   // Source paths and the default output are relative to the config file, not to the caller's cwd.
   const dir = path.dirname(path.resolve(file));
   // --split writes a folder (index.html plus one Parquet file per snapshot); the other modes write one file.
-  const out = values.out ? path.resolve(values.out) : path.join(dir, "dist", values.split ? config.name : `${config.name}.html`);
+  const target = mode === "split" ? config.name : `${config.name}.html`;
+  const out = values.out ? path.resolve(values.out) : path.join(dir, "dist", target);
   const snapshots = snapshot(config.sources, dir);
   const filters = validate(config, snapshots);
   if (!values.split) {
     const mb = Object.values(snapshots).reduce((sum, bytes) => sum + bytes.length, 0) / 2 ** 20;
     if (mb > 25) console.error(`featherbi: warning: the embedded Parquet is ${mb.toFixed(1)} MB, above 25 MB, which makes the page slow to open and share. Build with --split, or aggregate in the source SQL.`);
   }
-  const html = await render(config, snapshots, filters, values.offline ? "offline" : values.split ? "split" : "default");
+  const html = await render(config, snapshots, filters, mode);
   fs.mkdirSync(values.split ? out : path.dirname(out), { recursive: true });
   if (values.split) {
     fs.writeFileSync(path.join(out, "index.html"), html);

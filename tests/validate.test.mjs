@@ -43,6 +43,7 @@ const cases = [
   ["placeholder for an unknown table", tile({ type: "kpi", sql: "SELECT 1 AS value WHERE {{filters:ghost}}" }), [], /tile "?t1"?.*ghost/is],
   ["a dimension named date", c => (c.dims.date = { col: "order_date" }), [], /dims.*date|date.*dimension/is],
   ["--offline with --split", () => {}, ["--offline", "--split"], /--offline.*--split|--split.*--offline/is],
+  ["--offline with engine duckdb-wasm", c => (c.engine = "duckdb-wasm"), ["--offline"], /--offline.*duckdb-wasm/is],
   ...["data", "dataset", "datasetIndex", "encode", "links", "nodes", "source"].map(k => [
     `option key binds data: ${k}`,
     tile({ type: "echarts", preset: "bar", sql: "SELECT region AS x, 1 AS y FROM sales", option: { [k]: [] } }),

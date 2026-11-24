@@ -31,13 +31,13 @@ try {
   const out = values.out ? path.resolve(values.out) : path.join(dir, "dist", target);
   const snapshots = snapshot(config.sources, dir);
   const filters = validate(config, snapshots);
-  if (!values.split) {
+  if (mode !== "split") {
     const mb = Object.values(snapshots).reduce((sum, bytes) => sum + bytes.length, 0) / 2 ** 20;
     if (mb > 25) console.error(`featherbi: warning: the embedded Parquet is ${mb.toFixed(1)} MB, above 25 MB, which makes the page slow to open and share. Build with --split, or aggregate in the source SQL.`);
   }
   const html = await render(config, snapshots, filters, mode);
-  fs.mkdirSync(values.split ? out : path.dirname(out), { recursive: true });
-  if (values.split) {
+  fs.mkdirSync(mode === "split" ? out : path.dirname(out), { recursive: true });
+  if (mode === "split") {
     fs.writeFileSync(path.join(out, "index.html"), html);
     for (const [name, bytes] of Object.entries(snapshots)) fs.writeFileSync(path.join(out, `${name}.parquet`), bytes);
     console.log(`${path.join(out, "index.html")} (serve this folder, e.g. with python3 -m http.server; it does not open from file://)`);

@@ -13,4 +13,5 @@
 | **Dimension (dim)** | A column that filters can select or cross-filter on. Every filterable column must be declared. |
 | **Cross-filter** | A filter set by clicking an element of a tile. It applies to all tiles, except where a tile `exclude`s that dimension. |
 | **Engine adapter** | The small layer that hides which browser DuckDB build runs (Haybarn-Wasm by default, upstream duckdb-wasm as an alternative). |
+| **Remote snapshot** | Snapshot tables uploaded to an S3-compatible bucket by `build --remote` and reached from the HTML through presigned GET URLs that expire (spec 0002). |
 | **Explore** | The on-demand Perspective panel for free pivoting. It is not a tile and is not re-rendered by filters. |

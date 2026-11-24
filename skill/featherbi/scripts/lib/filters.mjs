@@ -2,6 +2,8 @@
 const ident = s => `"${String(s).replaceAll('"', '""')}"`;
 const PLACEHOLDER = /\{\{\s*filters:\s*([A-Za-z_]\w*)(?:\s+AS\s+([A-Za-z_]\w*))?\s*\}\}/gi;
 const colOf = (spec, table) => spec.cols?.[table] ?? spec.col;
+// Tile `option` keys that bind chart data; rejected at build time and ignored at render time. Single source for both renderer.js and validate.mjs.
+export const DATA_KEYS = ["data", "dataset", "datasetIndex", "encode", "links", "nodes", "source"];
 
 // Pure: (sql, state, dims, date, tableColumns, exclude) -> {sql, params}. state = {dims: {name: value}, from, to}.
 // Every value is a numbered parameter ($1, $2, ...) in text order.

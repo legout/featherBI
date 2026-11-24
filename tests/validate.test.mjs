@@ -42,6 +42,12 @@ const cases = [
   ],
   ["placeholder for an unknown table", tile({ type: "kpi", sql: "SELECT 1 AS value WHERE {{filters:ghost}}" }), [], /tile "?t1"?.*ghost/is],
   ["--offline with --split", () => {}, ["--offline", "--split"], /--offline.*--split|--split.*--offline/is],
+  ...["data", "dataset", "datasetIndex", "encode", "links", "nodes", "source"].map(k => [
+    `option key binds data: ${k}`,
+    tile({ type: "echarts", preset: "bar", sql: "SELECT region AS x, 1 AS y FROM sales", option: { [k]: [] } }),
+    [],
+    new RegExp(`tile "?t1"?.*option.*"${k}".*data`, "is"),
+  ]),
 ];
 
 for (const [name, change, args, expected] of cases) {
@@ -80,6 +86,22 @@ test("a valid config with filters, an alias and a join builds", () => {
       },
       { id: "tbl", type: "table", title: "Rows", source: "sales", columns: ["order_date", "region", "revenue"] },
     );
+    fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify(config));
+    const r = spawnSync("node", [cli, "build", "dashboard.yaml"], { cwd: tmp, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(fs.existsSync(path.join(tmp, "dist", "v.html")), true);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("a styling-only option still builds", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "validate-test-"));
+  try {
+    fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), path.join(tmp, "sales.parquet"));
+    execFileSync("duckdb", ["-no-agent", "-c", "COPY (SELECT 'EU' AS region, 'EU' AS region_code, 100 AS target) TO 'targets.parquet'"], { cwd: tmp });
+    const config = base();
+    config.tiles.push({ id: "styled", type: "echarts", preset: "bar", title: "Styled", sql: "SELECT region AS x, 1 AS y FROM sales", option: { series: [{ name: "Revenue", itemStyle: { color: "#c0392b" } }] } });
     fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify(config));
     const r = spawnSync("node", [cli, "build", "dashboard.yaml"], { cwd: tmp, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);

@@ -185,7 +185,7 @@ const bind = (node, rows) => {
   return node;
 };
 // A tile `option` restyles the preset: objects merge key by key, arrays item by item. Keys that bind data are ignored, so data comes from the preset only.
-const DATA_KEYS = ["data", "dataset", "datasetIndex", "encode", "links", "nodes", "source"];
+// DATA_KEYS comes from filters.mjs, inlined just above.
 const restyle = (base, over) => {
   if (!over || typeof over !== "object" || !base || typeof base !== "object") return over === undefined ? base : over;
   const out = Array.isArray(base) ? [...base] : { ...base };

@@ -48,5 +48,29 @@
         "integrity": "sha384-hx7/cUA4WjZ97FbdvatGLCDFALBPaJCD5SVBRElBsqfOQI+z/MtkWq69oZLd7C/M"
       }
     }
+  },
+  "perspective": {
+    "version": "5.10.0",
+    "note": "Explore only, loaded on first open. The client and viewer fetch their wasm from the CDN without SRI. `charts` is the bundle tools/patch-perspective.mjs patches into assets/perspective-charts.patched.js, which is inlined.",
+    "client": {
+      "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/client@5.10.0/dist/cdn/perspective.js",
+      "integrity": "sha384-30cqYZeEOV6oQnFHm0OVHeWmB/swQFx7J/Mye/K2AJZatr0rFKP+xvlCF3I9pkY3"
+    },
+    "viewer": {
+      "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/viewer@5.10.0/dist/cdn/perspective-viewer.js",
+      "integrity": "sha384-acV4aS+UUSXfWHmtOTjMlD7FzjzQlTf54U7QAVI2qYLKdFEKeE/jkOZrMhDbyhFT"
+    },
+    "datagrid": {
+      "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/viewer-datagrid@5.10.0/dist/cdn/perspective-viewer-datagrid.js",
+      "integrity": "sha384-Mvg0PygR87lQFjWPuvLnb0ggjNTkfy039owPvNsAFgStROrp+ySo5sXamGidWuKi"
+    },
+    "charts": {
+      "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/viewer-charts@5.10.0/dist/cdn/perspective-viewer-charts.js",
+      "integrity": "sha384-U1aVtPTBxErqxs533U+inCVp4e8084Lap2rsKaKPvT9r/ZNpuhhHZX/0Fhr6ppw9"
+    },
+    "css": {
+      "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/viewer@5.10.0/dist/css/themes.css",
+      "integrity": "sha384-ZbbGZlDtaHPHqLi+vyMcEUWQp0KXFXZNS6PrDHPKqwJFGnm5Mxz09Kh6SqenIOeN"
+    }
   }
 }

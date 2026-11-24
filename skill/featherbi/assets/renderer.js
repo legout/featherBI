@@ -257,6 +257,82 @@ function mountChart(tile, index) {
   };
 }
 
+// Pivot totals arrive from SQL as r_total/c_total markers; the renderer only lays them out.
+function mountPivot(tile, index) {
+  const { box, body } = mountCard(tile, index, "w-full text-sm");
+  body.style.overflowX = "auto";
+  box.setAttribute("aria-busy", "true");
+  return async (engine, current) => {
+    try {
+      if (!engine) return;
+      const rows = await run(engine, tile, tile.sql);
+      if (!current()) return;
+      body.replaceChildren();
+      if (!rows.length) {
+        body.append(el("p", "text-base-content/80", "No data for the current filters."));
+        return;
+      }
+      const format = FORMATS[tile.format] ?? FORMATS.number;
+      const columns = [];
+      const seenColumns = new Set();
+      const byRow = new Map();
+      for (const row of rows) {
+        if (!byRow.has(row.r)) byRow.set(row.r, { total: false, cells: new Map() });
+        const entry = byRow.get(row.r);
+        entry.total ||= Boolean(row.r_total);
+        entry.cells.set(row.c, row.v);
+        if (!seenColumns.has(row.c)) {
+          seenColumns.add(row.c);
+          columns.push({ value: row.c, total: Boolean(row.c_total) });
+        }
+      }
+      columns.sort((a, b) => Number(a.total) - Number(b.total));
+      const entries = [...byRow.entries()].sort((a, b) => Number(a[1].total) - Number(b[1].total));
+      const table = el("table", "table w-full");
+      const head = table.appendChild(el("thead", ""));
+      const header = head.appendChild(el("tr", ""));
+      header.append(el("th", "font-semibold", tile.click ?? ""));
+      for (const column of columns) {
+        const cell = el("th", column.total ? "font-semibold bg-base-200" : "font-semibold", column.value);
+        cell.scope = "col";
+        cell.style.textAlign = "right";
+        cell.style.whiteSpace = "nowrap";
+        header.append(cell);
+      }
+      const tbody = table.appendChild(el("tbody", ""));
+      for (const [label, entry] of entries) {
+        const tr = tbody.appendChild(el("tr", entry.total ? "font-semibold bg-base-200" : ""));
+        const th = el("th", entry.total ? "font-semibold" : "font-medium");
+        th.scope = "row";
+        if (tile.click && !entry.total) {
+          const button = el("button", "link cursor-pointer", label);
+          button.type = "button";
+          button.onclick = () => {
+            if (state.dims[tile.click] === label) delete state.dims[tile.click];
+            else state.dims[tile.click] = label;
+            drawFilters();
+            refresh();
+          };
+          th.append(button);
+        } else th.textContent = label;
+        tr.append(th);
+        for (const column of columns) {
+          const value = entry.cells.get(column.value);
+          const td = el("td", column.total ? "font-semibold bg-base-200" : "", value == null ? "–" : format.format(value));
+          td.style.textAlign = "right";
+          td.style.whiteSpace = "nowrap";
+          tr.append(td);
+        }
+      }
+      body.append(table);
+    } finally {
+      if (current()) {
+        box.removeAttribute("aria-busy");
+      }
+    }
+  };
+}
+
 // Text tiles take a small Markdown subset: #, ## and ### headings, paragraphs, "- " lists, **bold**, *italic* and [label](http(s) link).
 // Everything else stays literal text; every node is built from text, never from HTML.
 const INLINE = /\*\*(.+?)\*\*|\*(.+?)\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
@@ -350,8 +426,8 @@ function mountFilters(refresh) {
   return draw;
 }
 
-// Tiles first, so the layout stands while the engine loads. Pivot and table tiles are not rendered yet.
-const MOUNT = { kpi: mountKpi, echarts: mountChart, text: mountText };
+// Tiles first, so the layout stands while the engine loads. Table tiles are not rendered yet.
+const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, text: mountText };
 const paint = config.tiles.map((tile, i) => MOUNT[tile.type]?.(tile, i) ?? (async () => {}));
 const library = config.tiles.some(t => t.type === "echarts") ? import(config.charts.url) : null; // integrity: the page's import map
 library?.catch(() => {}); // reported below, once the engine has had its turn

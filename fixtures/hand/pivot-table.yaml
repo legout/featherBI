@@ -1,0 +1,32 @@
+title: Hand pivot and table
+name: hand-pivot-table
+sources:
+  sales:
+    read: "read_parquet('sales.parquet')"
+dims:
+  region: {col: region}
+  channel: {col: channel}
+date: {col: order_date, default: last_12_months}
+tiles:
+  - type: kpi
+    title: Revenue
+    format: currency
+    sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}"
+  - type: pivot
+    title: Region × month
+    format: currency
+    click: region
+    sql: >-
+      SELECT COALESCE(region, 'Total') AS r,
+      COALESCE(strftime(order_date, '%Y-%m'), 'Total') AS c,
+      SUM(revenue) AS v,
+      GROUPING(region) = 1 AS r_total,
+      GROUPING(strftime(order_date, '%Y-%m')) = 1 AS c_total
+      FROM sales WHERE {{filters:sales}}
+      GROUP BY GROUPING SETS (
+        (region, strftime(order_date, '%Y-%m')),
+        (region),
+        (strftime(order_date, '%Y-%m')),
+        ()
+      )
+      ORDER BY r_total, r, c_total, c

@@ -132,7 +132,7 @@ function chartTheme() {
   const token = name => css.getPropertyValue(`--color-${name}`);
   const blend = (a, percent, b) => resolve(`color-mix(in oklab, ${token(a)} ${percent}%, ${token(b)})`, token(a));
   // Series colours: the theme's hues at one lightness per scheme, so every series stands out from the surface (>= 4.5:1).
-  const tone = name => resolve(`oklch(from ${token(name)} ${css.colorScheme === "dark" ? 0.75 : 0.55} max(c, 0.13) h)`, token(name));
+  const tone = name => resolve(`oklch(from ${token(name)} ${css.colorScheme === "dark" ? 0.75 : 0.52} max(c, 0.13) h)`, token(name));
   const [surface, text, muted, line] = [resolve(token("base-100")), resolve(token("base-content")), blend("base-content", 75, "base-100"), blend("base-content", 18, "base-100")];
   const axis = { axisLine: { lineStyle: { color: line } }, axisTick: { lineStyle: { color: line } }, axisLabel: { color: muted }, splitLine: { lineStyle: { color: line } }, nameTextStyle: { color: muted } };
   const gap = { borderColor: surface, borderWidth: 2 };

@@ -1,35 +1,44 @@
 // Render phase: template + prebuilt CSS + renderer + config + snapshot -> one HTML string.
+// Modes (spec 0001 §Outputs): default embeds the snapshot and loads the libraries from the CDN with SRI;
+// --offline inlines every library too; --split ships the snapshot as Parquet files next to the page.
 import fs from "node:fs";
+import { offlineAssets } from "./assets.mjs";
 
 const read = file => fs.readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
 const escapeHtml = s => s.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
 // JSON inside <script>: no "<", so no value (tile SQL, titles) can close the element.
 const json = value => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-export function render(config, snapshots, filters) {
+export async function render(config, snapshots, filters, mode = "default") {
   const lock = JSON.parse(read("assets/vendor.lock.json"));
   const engine = lock.engines[config.engine];
   const psp = lock.perspective;
+  const off = mode === "offline" ? await offlineAssets(config, lock) : null;
   // Explore: on unless `explore: false`; the table defaults to the first source.
   const explore = config.explore === false ? null : { table: config.explore?.table ?? Object.keys(config.sources)[0], perspective: psp, charts: read("assets/perspective-charts.patched.js") };
   const parts = {
     title: escapeHtml(config.title),
     css: read("assets/app.css"),
+    // Offline: the page still names the CDN URLs and the import map points them at the inlined copies, which the build
+    // verified, so there is no integrity left to check.
     importmap: json({
-      imports: { "apache-arrow": lock["apache-arrow"].url },
-      integrity: { [engine.module.url]: engine.module.integrity, [lock.echarts.url]: lock.echarts.integrity, ...(explore && Object.fromEntries([psp.client, psp.viewer, psp.datagrid].map(m => [m.url, m.integrity]))) },
+      imports: { "apache-arrow": lock["apache-arrow"].url, ...off?.imports },
+      ...(off || {
+        integrity: { [engine.module.url]: engine.module.integrity, [lock.echarts.url]: lock.echarts.integrity, ...(explore && Object.fromEntries([psp.client, psp.viewer, psp.datagrid].map(m => [m.url, m.integrity]))) },
+      }),
     }),
     // Only tile SQL and snapshot data reach the page; source SQL stays on the author's machine.
     data: json({
-      engine,
+      engine: off ? { ...engine, worker: { url: off.worker }, wasm: { url: off.wasm } } : engine,
       charts: lock.echarts,
-      grid: lock["ag-grid"],
+      grid: off?.grid ? { url: off.grid } : lock["ag-grid"],
       // Only the presets this dashboard uses.
       presets: Object.fromEntries(config.tiles.filter(t => t.type === "echarts").map(t => [t.preset, JSON.parse(read(`assets/presets/${t.preset}.json`))])),
       tiles: config.tiles,
       filters,
-      explore,
-      snapshots: Object.fromEntries(Object.entries(snapshots).map(([name, bytes]) => [name, bytes.toString("base64")])),
+      explore: explore && { ...explore, perspective: off?.css ? { ...psp, css: { url: off.css } } : psp, assets: off?.psp },
+      // A split page fetches its Parquet files next to it; the other modes embed them as data: URLs.
+      snapshots: Object.fromEntries(Object.entries(snapshots).map(([name, bytes]) => [name, mode === "split" ? `${name}.parquet` : `data:application/octet-stream;base64,${bytes.toString("base64")}`])),
     }),
     // The renderer shares filters.mjs with the build: the same file, inlined with its exports dropped.
     renderer: read("scripts/lib/filters.mjs").replace(/^export /gm, "") + read("assets/renderer.js"),

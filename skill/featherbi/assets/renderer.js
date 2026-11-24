@@ -13,10 +13,11 @@ const el = (tag, className, text) => {
 // is assembled by hand from vendor.lock.json because Haybarn has no bundle selector.
 async function startEngine({ module, worker, wasm }) {
   const duckdb = await import(module.url); // integrity: the page's import map
-  const source = await (await fetch(worker.url, { integrity: worker.integrity })).text();
+  // The worker fetches the wasm itself, so its hash rides on the Request the worker builds (a no-op if a bundle no longer has that line).
+  const source = (await (await fetch(worker.url, { integrity: worker.integrity })).text()).replaceAll("new Request(this.mainModuleURL)", `new Request(this.mainModuleURL,{integrity:${JSON.stringify(wasm.integrity)}})`);
   const workerUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
-  // shortcut: the wasm is fetched by the worker without SRI, add it with the output modes (T9).
+  // The wasm by URL: the CDN in a default build, a data: URL in an offline one (the build verified those bytes, so no hash is left to check).
   await db.instantiate(wasm.url);
   URL.revokeObjectURL(workerUrl);
   // No db.open(): on Haybarn it mounts OPFS, which a file:// page is not allowed to use.
@@ -527,10 +528,16 @@ gridLibrary?.catch(() => {});
 let engine;
 try {
   engine = await startEngine(config.engine);
-  const bytes = base64 => Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-  await engine.open(Object.fromEntries(Object.entries(config.snapshots).map(([table, b64]) => [table, bytes(b64)])));
 } catch (error) {
   fail("The query engine could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
+}
+// Each snapshot is a data: URL (embedded) or a Parquet file next to the page (--split).
+const tables = {};
+try {
+  for (const [table, url] of Object.entries(config.snapshots)) tables[table] = new Uint8Array(await (await fetch(url)).arrayBuffer());
+  await engine?.open(tables);
+} catch (error) {
+  fail("The snapshot could not be loaded. Check your network connection, then reload this page. (A --split dashboard is served by a web server such as python3 -m http.server; it does not open from file://.)", error);
 }
 try {
   echarts = await library;
@@ -565,7 +572,7 @@ await refresh();
 // Explore (spec 0001 §Explore): a navbar button opens Perspective on one table. Perspective loads on the first open only;
 // each open loads the table with the filters active at that moment, and the filter path never touches it.
 if (config.explore) {
-  const { table: name, perspective: psp, charts } = config.explore;
+  const { table: name, perspective: psp, charts, assets } = config.explore;
   const button = el("button", "btn btn-sm btn-ghost", "Explore");
   const dialog = el("dialog", "rounded-box bg-base-100 shadow-sm");
   dialog.setAttribute("aria-label", `Explore ${name}`);
@@ -579,6 +586,8 @@ if (config.explore) {
   document.querySelector("header h1").after(button);
   let ready; // the loaded viewer and its Perspective table, created on the first open
   const load = async () => {
+    // shortcut: a default build leaves the Perspective client and viewer fetching their wasm from the CDN without SRI (tools/patch-perspective.mjs patches the charts plugin only); --offline inlines it and patches those fetches to a name.
+    if (assets) window.__fbAsset = name => fetch(assets[name]);
     const css = Object.assign(document.createElement("link"), { rel: "stylesheet", href: psp.css.url, integrity: psp.css.integrity, crossOrigin: "anonymous" });
     document.head.append(css);
     // integrity: the page's import map. The charts plugin is the patched bundle inlined by the build (tools/patch-perspective.mjs).

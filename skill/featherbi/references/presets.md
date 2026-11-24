@@ -46,8 +46,8 @@ Rows are drawn in the order the SQL returns them, so add an `ORDER BY`.
 
 | Preset | Required columns | Optional | Click key columns | Notes |
 |---|---|---|---|---|
-| `line` | `x, y` | `series` | `x` | One line per `series` value. |
-| `area` | `x, y` | `series` | `x` | A line with a filled area. |
+| `line` | `x, y` | `series` | `x` | One line per `series` value. A click must hit a point, not the line. |
+| `area` | `x, y` | `series` | `x` | A line with a filled area. A click must hit a point. |
 | `bar` | `x, y` | `series` | `x` | Bars side by side per `series` value. |
 | `stacked-bar` | `x, y, series` | | `x` | Bars stacked per `series` value. |
 | `hbar` | `x, y` | `series` | `x` | Horizontal bars; `x` is the category, `y` the length. First row on top. |

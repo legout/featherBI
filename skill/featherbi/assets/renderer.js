@@ -333,6 +333,88 @@ function mountPivot(tile, index) {
   };
 }
 
+let agGrid;
+const gridBodies = [];
+
+function gridTheme(body) {
+  const dark = document.getElementById("theme").checked;
+  body.classList.toggle("ag-theme-quartz", !dark);
+  body.classList.toggle("ag-theme-quartz-dark", dark);
+}
+
+function loadGrid({ url, integrity }) {
+  return new Promise((resolve, reject) => {
+    const script = el("script", "");
+    script.src = url;
+    script.integrity = integrity;
+    script.crossOrigin = "anonymous";
+    script.onload = () => resolve(window.agGrid);
+    script.onerror = () => reject(new Error("AG Grid failed to load"));
+    document.head.append(script);
+  });
+}
+
+// AG Grid owns scrolling and sorting; every block is a filtered SQL page with __row as its stable tie-breaker.
+function mountTable(tile, index) {
+  const { box, body } = mountCard(tile, index, "h-80 w-full");
+  gridBodies.push(body);
+  gridTheme(body);
+  box.setAttribute("aria-busy", "true");
+  let api;
+  const source = (engine, current, count) => ({
+    async getRows(params) {
+      try {
+        const selected = ["__row", ...tile.columns].map(ident).join(", ");
+        const sql = `SELECT ${selected} FROM ${ident(tile.source)} WHERE {{filters:${tile.source}}}`;
+        const x = expand(sql, state, filters.dims, filters.date, filters.tableColumns, tile.exclude);
+        const sort = params.sortModel.map(({ colId, sort }) => `${ident(colId)} ${sort.toUpperCase()}`);
+        sort.push(ident("__row"));
+        // pi-lens-ignore: no-sql-in-code-js
+        const rows = await engine.query(`${x.sql} ORDER BY ${sort.join(", ")} LIMIT ? OFFSET ?`, [
+          ...x.params,
+          params.endRow - params.startRow,
+          params.startRow,
+        ]);
+        if (!current()) return params.failCallback();
+        params.successCallback(rows, count);
+      } catch (error) {
+        params.failCallback();
+        if (current()) fail(`Tile “${tile.title}” could not be computed: ${error.message}`, error);
+      }
+    },
+  });
+  return async (engine, current) => {
+    try {
+      if (!engine || !agGrid) return;
+      const countSql = `SELECT COUNT(*) AS n FROM ${ident(tile.source)} WHERE {{filters:${tile.source}}}`;
+      const [row] = await run(engine, tile, countSql);
+      if (!current()) return;
+      const count = Number(row.n);
+      box.querySelector("h2").textContent = `${tile.title} · ${count} rows (filtered)`;
+      const dateColumn = filters.date && (filters.date.cols?.[tile.source] ?? filters.date.col);
+      const options = {
+        theme: "legacy",
+        columnDefs: tile.columns.map(field => ({
+          field,
+          headerName: field,
+          valueFormatter: field === dateColumn ? params => params.value == null ? "" : new Date(params.value).toISOString().slice(0, 10) : undefined,
+        })),
+        defaultColDef: { sortable: true, resizable: true, flex: 1, minWidth: 100 },
+        rowModelType: "infinite",
+        cacheBlockSize: 5,
+        maxBlocksInCache: 3,
+        datasource: source(engine, current, count),
+        getRowId: params => String(params.data.__row),
+        animateRows: false,
+      };
+      if (api) api.setGridOption("datasource", options.datasource);
+      else api = agGrid.createGrid(body, options);
+    } finally {
+      if (current()) box.removeAttribute("aria-busy");
+    }
+  };
+}
+
 // Text tiles take a small Markdown subset: #, ## and ### headings, paragraphs, "- " lists, **bold**, *italic* and [label](http(s) link).
 // Everything else stays literal text; every node is built from text, never from HTML.
 const INLINE = /\*\*(.+?)\*\*|\*(.+?)\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
@@ -426,11 +508,13 @@ function mountFilters(refresh) {
   return draw;
 }
 
-// Tiles first, so the layout stands while the engine loads. Table tiles are not rendered yet.
-const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, text: mountText };
+// Tiles first, so the layout stands while the engine loads.
+const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, table: mountTable, text: mountText };
 const paint = config.tiles.map((tile, i) => MOUNT[tile.type]?.(tile, i) ?? (async () => {}));
 const library = config.tiles.some(t => t.type === "echarts") ? import(config.charts.url) : null; // integrity: the page's import map
+const gridLibrary = config.tiles.some(t => t.type === "table") ? loadGrid(config.grid) : null;
 library?.catch(() => {}); // reported below, once the engine has had its turn
+gridLibrary?.catch(() => {});
 let engine;
 try {
   engine = await startEngine(config.engine);
@@ -444,9 +528,15 @@ try {
 } catch (error) {
   fail("The chart library could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
 }
+try {
+  agGrid = await gridLibrary;
+} catch (error) {
+  fail("The table library could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
+}
 document.getElementById("theme").addEventListener("change", () => {
   const theme = chartTheme();
   for (const chart of charts) chart.setTheme(theme);
+  for (const body of gridBodies) gridTheme(body);
 });
 // Latest state wins: every change is a new pass; passes paint only while they are the newest, and changes during a pass coalesce.
 const pass = latestWins(current => Promise.all(paint.map((fill, i) => fill(engine, current).catch(error => fail(`Tile “${config.tiles[i].title}” could not be computed: ${error.message}`, error)))));

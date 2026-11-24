@@ -5,6 +5,11 @@
     "integrity": null,
     "note": "jsDelivr generates +esm bundles on request, so they cannot carry SRI."
   },
+  "ag-grid": {
+    "version": "34.3.1",
+    "url": "https://cdn.jsdelivr.net/npm/ag-grid-community@34.3.1/dist/ag-grid-community.min.js",
+    "integrity": "sha384-1m5FM32cqWvkVPC2kdiP5dLsQUO3OCeEAGgZ4RqzCWlsWcCVIM9HXAjD1A99GPs3"
+  },
   "echarts": {
     "version": "6.1.0",
     "url": "https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.esm.min.mjs",

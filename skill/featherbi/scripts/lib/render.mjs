@@ -20,6 +20,7 @@ export function render(config, snapshots, filters) {
     data: json({
       engine,
       charts: lock.echarts,
+      grid: lock["ag-grid"],
       // Only the presets this dashboard uses.
       presets: Object.fromEntries(config.tiles.filter(t => t.type === "echarts").map(t => [t.preset, JSON.parse(read(`assets/presets/${t.preset}.json`))])),
       tiles: config.tiles,

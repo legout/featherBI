@@ -30,3 +30,7 @@ tiles:
         ()
       )
       ORDER BY r_total, r, c_total, c
+  - type: table
+    title: Sales rows
+    source: sales
+    columns: [order_date, region, channel, revenue]

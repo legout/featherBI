@@ -95,6 +95,11 @@ tiles:
     preset: pie
     title: Revenue share by region
     click: region
+    # `option` restyles the preset; the `data` key is dropped, not applied.
+    option:
+      series:
+        - name: Share
+          data: [{name: Injected, value: 1}]
     sql: >
       SELECT region AS name, SUM(revenue) AS value
       FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1

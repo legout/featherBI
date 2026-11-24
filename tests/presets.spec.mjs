@@ -30,11 +30,20 @@ const painted = chart =>
       return false;
     }),
   );
-// Clicks at a fraction of the chart's canvas, once the tile has finished drawing.
-async function clickChart(page, title, fx, fy) {
-  await expect(tile(page, title)).not.toHaveAttribute("aria-busy", "true");
-  const box = await tile(page, title).locator("canvas").first().boundingBox();
-  await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+// A real mouse click on a chart, at the pixel the chart library reports for a data point (or at the middle of the donut ring).
+async function clickChart(page, title, point, dx = 0) {
+  const chart = tile(page, title);
+  await expect(chart).not.toHaveAttribute("aria-busy", "true");
+  await expect.poll(() => painted(chart)).toBe(true);
+  await chart.scrollIntoViewIfNeeded(); // the mouse clicks at viewport coordinates
+  const at = await chart.getByRole("img").evaluate(async (node, point) => {
+    const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
+    const echarts = await import(charts.url); // the page's own, already loaded copy
+    const box = node.getBoundingClientRect();
+    const [x, y] = point ? echarts.getInstanceByDom(node).convertToPixel({ seriesIndex: 0 }, point) : [box.width / 2 + 0.27 * Math.min(box.width, box.height), box.height / 2];
+    return { x: box.x + x, y: box.y + y };
+  }, point);
+  await page.mouse.click(at.x + dx, at.y);
 }
 
 test("all 17 presets render, the bar tile shows revenue and target per region, KPI and text tiles are filled", async ({ page }) => {
@@ -45,7 +54,12 @@ test("all 17 presets render, the bar tile shows revenue and target per region, K
 
   // README: EU 850.00 and US 1,410.50 revenue; targets EU 800 and US 1500. The chart describes its data for screen readers.
   const bars = tile(page, "Revenue vs target by region").getByRole("img");
-  await expect(bars).toHaveAttribute("aria-label", /revenue.*EU is 850\b.*US is 1410\.5\b.*target.*EU is 800\b.*US is 1500\b/s);
+  await expect(bars).toHaveAttribute("aria-label", /representing revenue\..*for EU is 0, 850,.*for US is 1, 1410\.5\..*representing target\..*for EU is 0, 800,.*for US is 1, 1500\./s);
+
+  // A tile `option` restyles (here: names the series) and cannot replace the data: EU 850.00, US 1,410.50.
+  const share = tile(page, "Revenue share by region").getByRole("img");
+  await expect(share).toHaveAttribute("aria-label", /named Share\b.*for EU is 850,.*for US is 1410\.5\./s);
+  await expect(share).not.toHaveAttribute("aria-label", /Injected/);
 
   // KPI: total 2,260.50 against targets 800 + 1500 = 2300, so (2260.5 - 2300) / 2300 = -1.7 %; three months of spark.
   await revenue(page, "$2,260.50");
@@ -57,7 +71,7 @@ test("all 17 presets render, the bar tile shows revenue and target per region, K
   await expect(about.getByRole("heading", { name: "Notes" })).toBeVisible();
   await expect(about).toContainText("Revenue is net of returns, in US dollars.");
   await expect(about.getByRole("listitem")).toHaveCount(2);
-  await expect(about.getByRole("link", { name: "the fixture README" })).toHaveAttribute("href", /^https:\/\/github\.com\/legout\/featherBI\//);
+  await expect(about.getByRole("link", { name: "the fixture README" })).toHaveAttribute("href", "https://github.com/legout/featherBI");
   expect(errors).toEqual([]);
 });
 
@@ -66,28 +80,28 @@ test("a click on a bar, a donut slice or a heatmap cell sets the filter, and the
   const chips = page.getByLabel("Active filters");
   await revenue(page, "$2,260.50");
 
-  // Bar: the EU revenue bar is the leftmost one.
-  await clickChart(page, "Revenue vs target by region", 0.2, 0.75);
+  // Bar: EU has a revenue bar (850) and a target bar (800) side by side; 20 px left of the pair's middle, at 400, is the revenue bar.
+  await clickChart(page, "Revenue vs target by region", ["EU", 400], -20);
   await revenue(page, "$850.00");
   await expect(chips).toContainText("region: EU");
-  await clickChart(page, "Revenue vs target by region", 0.2, 0.75);
+  await clickChart(page, "Revenue vs target by region", ["EU", 400], -20);
   await revenue(page, "$2,260.50");
   await expect(chips).toBeEmpty();
 
-  // Donut: slices start at 12 o'clock and run clockwise, so Online (the first, 45 %) is at 3 o'clock.
-  await clickChart(page, "Revenue by channel", 0.62, 0.5);
+  // Donut: slices start at 12 o'clock and run clockwise, so Online (the first, 45 %) covers 3 o'clock.
+  await clickChart(page, "Revenue by channel");
   await revenue(page, "$1,020.00");
   await expect(chips).toContainText("channel: Online");
-  await clickChart(page, "Revenue by channel", 0.62, 0.5);
+  await clickChart(page, "Revenue by channel");
   await revenue(page, "$2,260.50");
   await expect(chips).toBeEmpty();
 
-  // Heatmap: the lower-left cell is EU (first x) × Online (first y); EU + Online = 100 + 120 + 140.
-  await clickChart(page, "Region × channel", 0.3, 0.6);
+  // Heatmap: the EU × Online cell; EU + Online = 100 + 120 + 140.
+  await clickChart(page, "Region × channel", ["EU", "Online"]);
   await revenue(page, "$360.00");
   await expect(chips).toContainText("region: EU");
   await expect(chips).toContainText("channel: Online");
-  await clickChart(page, "Region × channel", 0.3, 0.6);
+  await clickChart(page, "Region × channel", ["EU", "Online"]);
   await revenue(page, "$2,260.50");
   await expect(chips).toBeEmpty();
   expect(errors).toEqual([]);

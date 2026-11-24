@@ -1,1 +1,53 @@
-{"columns":["x","y"],"optional":[]}
+{
+  "columns": [
+    "x",
+    "y"
+  ],
+  "optional": [],
+  "click": [],
+  "option": {
+    "useUTC": true,
+    "tooltip": {
+      "trigger": "item"
+    },
+    "visualMap": {
+      "min": "@min:y",
+      "max": "@max:y",
+      "dimension": 1,
+      "orient": "horizontal",
+      "left": "center",
+      "bottom": 0
+    },
+    "calendar": {
+      "range": [
+        "@min:x",
+        "@max:x"
+      ],
+      "cellSize": [
+        "auto",
+        "auto"
+      ],
+      "left": 64,
+      "right": 16,
+      "top": 32,
+      "bottom": 56
+    },
+    "dataset": {
+      "dimensions": [
+        "x",
+        "y"
+      ],
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "type": "heatmap",
+        "coordinateSystem": "calendar",
+        "encode": {
+          "time": "x",
+          "value": "y"
+        }
+      }
+    ]
+  }
+}

@@ -1,1 +1,45 @@
-{"columns":["x","y"],"optional":[]}
+{
+  "columns": [
+    "x",
+    "y"
+  ],
+  "optional": [],
+  "click": [
+    "x"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "item"
+    },
+    "grid": {},
+    "xAxis": {
+      "type": "category",
+      "data": "@uniq:x"
+    },
+    "yAxis": {
+      "type": "value"
+    },
+    "dataset": {
+      "source": "@steps"
+    },
+    "series": [
+      {
+        "type": "candlestick",
+        "barMaxWidth": 48,
+        "encode": {
+          "x": "x",
+          "y": [
+            "start",
+            "end",
+            "low",
+            "high"
+          ],
+          "tooltip": [
+            "y",
+            "end"
+          ]
+        }
+      }
+    ]
+  }
+}

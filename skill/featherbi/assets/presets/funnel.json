@@ -1,1 +1,23 @@
-{"columns":["name","value"],"optional":[]}
+{
+  "columns": [
+    "name",
+    "value"
+  ],
+  "optional": [],
+  "click": [
+    "name"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "item"
+    },
+    "series": [
+      {
+        "type": "funnel",
+        "data": "@rows",
+        "sort": "descending",
+        "minSize": "20%"
+      }
+    ]
+  }
+}

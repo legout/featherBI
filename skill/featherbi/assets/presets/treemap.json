@@ -1,1 +1,30 @@
-{"columns":["name","value"],"optional":[]}
+{
+  "columns": [
+    "name",
+    "value"
+  ],
+  "optional": [],
+  "click": [
+    "name"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "item"
+    },
+    "series": [
+      {
+        "type": "treemap",
+        "data": "@rows",
+        "roam": false,
+        "nodeClick": false,
+        "breadcrumb": {
+          "show": false
+        },
+        "left": 0,
+        "right": 0,
+        "top": 0,
+        "bottom": 0
+      }
+    ]
+  }
+}

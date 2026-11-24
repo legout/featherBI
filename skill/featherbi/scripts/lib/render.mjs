@@ -14,11 +14,14 @@ export function render(config, snapshots, filters) {
     css: read("assets/app.css"),
     importmap: json({
       imports: { "apache-arrow": lock["apache-arrow"].url },
-      integrity: { [engine.module.url]: engine.module.integrity },
+      integrity: { [engine.module.url]: engine.module.integrity, [lock.echarts.url]: lock.echarts.integrity },
     }),
     // Only tile SQL and snapshot data reach the page; source SQL stays on the author's machine.
     data: json({
       engine,
+      charts: lock.echarts,
+      // Only the presets this dashboard uses.
+      presets: Object.fromEntries(config.tiles.filter(t => t.type === "echarts").map(t => [t.preset, JSON.parse(read(`assets/presets/${t.preset}.json`))])),
       tiles: config.tiles,
       filters,
       snapshots: Object.fromEntries(Object.entries(snapshots).map(([name, bytes]) => [name, bytes.toString("base64")])),

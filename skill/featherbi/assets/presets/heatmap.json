@@ -1,1 +1,58 @@
-{"columns":["x","y","value"],"optional":[]}
+{
+  "columns": [
+    "x",
+    "y",
+    "value"
+  ],
+  "optional": [],
+  "click": [
+    "x",
+    "y"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "item"
+    },
+    "grid": {
+      "bottom": 48
+    },
+    "xAxis": {
+      "type": "category",
+      "data": "@uniq:x"
+    },
+    "yAxis": {
+      "type": "category",
+      "data": "@uniq:y"
+    },
+    "visualMap": {
+      "min": "@min:value",
+      "max": "@max:value",
+      "dimension": 2,
+      "orient": "horizontal",
+      "left": "center",
+      "bottom": 0
+    },
+    "dataset": {
+      "dimensions": [
+        "x",
+        "y",
+        "value"
+      ],
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "type": "heatmap",
+        "encode": {
+          "x": "x",
+          "y": "y",
+          "value": "value"
+        },
+        "label": {
+          "show": true,
+          "formatter": "{@value}"
+        }
+      }
+    ]
+  }
+}

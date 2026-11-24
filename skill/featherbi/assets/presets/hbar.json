@@ -1,1 +1,47 @@
-{"columns":["x","y"],"optional":["series"]}
+{
+  "columns": [
+    "x",
+    "y"
+  ],
+  "optional": [
+    "series"
+  ],
+  "click": [
+    "x"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "axis",
+      "axisPointer": {
+        "type": "shadow"
+      }
+    },
+    "legend": {},
+    "grid": {},
+    "xAxis": {
+      "type": "value"
+    },
+    "yAxis": {
+      "type": "category",
+      "data": "@uniq:x",
+      "inverse": true
+    },
+    "dataset": {
+      "dimensions": [
+        "x",
+        "y"
+      ],
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "encode": {
+          "x": "y",
+          "y": "x"
+        },
+        "type": "bar",
+        "barMaxWidth": 32
+      }
+    ]
+  }
+}

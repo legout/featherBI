@@ -9,12 +9,15 @@ const json = value => JSON.stringify(value).replaceAll("<", "\\u003c");
 export function render(config, snapshots, filters) {
   const lock = JSON.parse(read("assets/vendor.lock.json"));
   const engine = lock.engines[config.engine];
+  const psp = lock.perspective;
+  // Explore: on unless `explore: false`; the table defaults to the first source.
+  const explore = config.explore === false ? null : { table: config.explore?.table ?? Object.keys(config.sources)[0], perspective: psp, charts: read("assets/perspective-charts.patched.js") };
   const parts = {
     title: escapeHtml(config.title),
     css: read("assets/app.css"),
     importmap: json({
       imports: { "apache-arrow": lock["apache-arrow"].url },
-      integrity: { [engine.module.url]: engine.module.integrity, [lock.echarts.url]: lock.echarts.integrity },
+      integrity: { [engine.module.url]: engine.module.integrity, [lock.echarts.url]: lock.echarts.integrity, ...(explore && Object.fromEntries([psp.client, psp.viewer, psp.datagrid].map(m => [m.url, m.integrity]))) },
     }),
     // Only tile SQL and snapshot data reach the page; source SQL stays on the author's machine.
     data: json({
@@ -25,6 +28,7 @@ export function render(config, snapshots, filters) {
       presets: Object.fromEntries(config.tiles.filter(t => t.type === "echarts").map(t => [t.preset, JSON.parse(read(`assets/presets/${t.preset}.json`))])),
       tiles: config.tiles,
       filters,
+      explore,
       snapshots: Object.fromEntries(Object.entries(snapshots).map(([name, bytes]) => [name, bytes.toString("base64")])),
     }),
     // The renderer shares filters.mjs with the build: the same file, inlined with its exports dropped.

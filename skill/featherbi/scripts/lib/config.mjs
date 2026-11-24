@@ -32,9 +32,5 @@ export function loadConfig(file) {
   }
 
   need(Array.isArray(c.tiles) && c.tiles.length, "`tiles` needs at least one tile");
-  c.tiles.forEach((tile, i) => {
-    need(tile?.type === "kpi", `tile ${i + 1}: only \`type: kpi\` is supported so far`);
-    need(typeof tile.title === "string" && typeof tile.sql === "string", `tile ${i + 1}: a kpi needs \`title\` and \`sql\``);
-  });
-  return { title: c.title, name, engine, sources: c.sources, tiles: c.tiles };
+  return { title: c.title, name, engine, sources: c.sources, dims: c.dims, date: c.date, explore: c.explore, tiles: c.tiles };
 }

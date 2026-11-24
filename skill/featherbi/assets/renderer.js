@@ -257,6 +257,164 @@ function mountChart(tile, index) {
   };
 }
 
+// Pivot totals arrive from SQL as r_total/c_total markers; the renderer only lays them out.
+function mountPivot(tile, index) {
+  const { box, body } = mountCard(tile, index, "w-full text-sm");
+  body.style.overflowX = "auto";
+  box.setAttribute("aria-busy", "true");
+  return async (engine, current) => {
+    try {
+      if (!engine) return;
+      const rows = await run(engine, tile, tile.sql);
+      if (!current()) return;
+      body.replaceChildren();
+      if (!rows.length) {
+        body.append(el("p", "text-base-content/80", "No data for the current filters."));
+        return;
+      }
+      const format = FORMATS[tile.format] ?? FORMATS.number;
+      const columns = [];
+      const seenColumns = new Set();
+      const byRow = new Map();
+      for (const row of rows) {
+        if (!byRow.has(row.r)) byRow.set(row.r, { total: false, cells: new Map() });
+        const entry = byRow.get(row.r);
+        entry.total ||= Boolean(row.r_total);
+        entry.cells.set(row.c, row.v);
+        if (!seenColumns.has(row.c)) {
+          seenColumns.add(row.c);
+          columns.push({ value: row.c, total: Boolean(row.c_total) });
+        }
+      }
+      columns.sort((a, b) => Number(a.total) - Number(b.total));
+      const entries = [...byRow.entries()].sort((a, b) => Number(a[1].total) - Number(b[1].total));
+      const table = el("table", "table w-full");
+      const head = table.appendChild(el("thead", ""));
+      const header = head.appendChild(el("tr", ""));
+      header.append(el("th", "font-semibold", tile.click ?? ""));
+      for (const column of columns) {
+        const cell = el("th", column.total ? "font-semibold bg-base-200" : "font-semibold", column.value);
+        cell.scope = "col";
+        cell.style.textAlign = "right";
+        cell.style.whiteSpace = "nowrap";
+        header.append(cell);
+      }
+      const tbody = table.appendChild(el("tbody", ""));
+      for (const [label, entry] of entries) {
+        const tr = tbody.appendChild(el("tr", entry.total ? "font-semibold bg-base-200" : ""));
+        const th = el("th", entry.total ? "font-semibold" : "font-medium");
+        th.scope = "row";
+        if (tile.click && !entry.total) {
+          const button = el("button", "link cursor-pointer", label);
+          button.type = "button";
+          button.onclick = () => {
+            if (state.dims[tile.click] === label) delete state.dims[tile.click];
+            else state.dims[tile.click] = label;
+            drawFilters();
+            refresh();
+          };
+          th.append(button);
+        } else th.textContent = label;
+        tr.append(th);
+        for (const column of columns) {
+          const value = entry.cells.get(column.value);
+          const td = el("td", column.total ? "font-semibold bg-base-200" : "", value == null ? "–" : format.format(value));
+          td.style.textAlign = "right";
+          td.style.whiteSpace = "nowrap";
+          tr.append(td);
+        }
+      }
+      body.append(table);
+    } finally {
+      if (current()) {
+        box.removeAttribute("aria-busy");
+      }
+    }
+  };
+}
+
+let agGrid;
+const gridBodies = [];
+
+function gridTheme(body) {
+  const dark = document.getElementById("theme").checked;
+  body.classList.toggle("ag-theme-quartz", !dark);
+  body.classList.toggle("ag-theme-quartz-dark", dark);
+}
+
+function loadGrid({ url, integrity }) {
+  return new Promise((resolve, reject) => {
+    const script = el("script", "");
+    script.src = url;
+    script.integrity = integrity;
+    script.crossOrigin = "anonymous";
+    script.onload = () => resolve(window.agGrid);
+    script.onerror = () => reject(new Error("AG Grid failed to load"));
+    document.head.append(script);
+  });
+}
+
+// AG Grid owns scrolling and sorting; every block is a filtered SQL page with __row as its stable tie-breaker.
+function mountTable(tile, index) {
+  const { box, body } = mountCard(tile, index, "h-80 w-full");
+  gridBodies.push(body);
+  gridTheme(body);
+  box.setAttribute("aria-busy", "true");
+  let api;
+  const source = (engine, current, count) => ({
+    async getRows(params) {
+      try {
+        const selected = ["__row", ...tile.columns].map(ident).join(", ");
+        const sql = `SELECT ${selected} FROM ${ident(tile.source)} WHERE {{filters:${tile.source}}}`;
+        const x = expand(sql, state, filters.dims, filters.date, filters.tableColumns, tile.exclude);
+        const sort = params.sortModel.map(({ colId, sort }) => `${ident(colId)} ${sort.toUpperCase()}`);
+        sort.push(ident("__row"));
+        // pi-lens-ignore: no-sql-in-code-js
+        const rows = await engine.query(`${x.sql} ORDER BY ${sort.join(", ")} LIMIT ? OFFSET ?`, [
+          ...x.params,
+          params.endRow - params.startRow,
+          params.startRow,
+        ]);
+        if (!current()) return params.failCallback();
+        params.successCallback(rows, count);
+      } catch (error) {
+        params.failCallback();
+        if (current()) fail(`Tile “${tile.title}” could not be computed: ${error.message}`, error);
+      }
+    },
+  });
+  return async (engine, current) => {
+    try {
+      if (!engine || !agGrid) return;
+      const countSql = `SELECT COUNT(*) AS n FROM ${ident(tile.source)} WHERE {{filters:${tile.source}}}`;
+      const [row] = await run(engine, tile, countSql);
+      if (!current()) return;
+      const count = Number(row.n);
+      box.querySelector("h2").textContent = `${tile.title} · ${count} rows (filtered)`;
+      const dateColumn = filters.date && (filters.date.cols?.[tile.source] ?? filters.date.col);
+      const options = {
+        theme: "legacy",
+        columnDefs: tile.columns.map(field => ({
+          field,
+          headerName: field,
+          valueFormatter: field === dateColumn ? params => params.value == null ? "" : new Date(params.value).toISOString().slice(0, 10) : undefined,
+        })),
+        defaultColDef: { sortable: true, resizable: true, flex: 1, minWidth: 100 },
+        rowModelType: "infinite",
+        cacheBlockSize: 5,
+        maxBlocksInCache: 3,
+        datasource: source(engine, current, count),
+        getRowId: params => String(params.data.__row),
+        animateRows: false,
+      };
+      if (api) api.setGridOption("datasource", options.datasource);
+      else api = agGrid.createGrid(body, options);
+    } finally {
+      if (current()) box.removeAttribute("aria-busy");
+    }
+  };
+}
+
 // Text tiles take a small Markdown subset: #, ## and ### headings, paragraphs, "- " lists, **bold**, *italic* and [label](http(s) link).
 // Everything else stays literal text; every node is built from text, never from HTML.
 const INLINE = /\*\*(.+?)\*\*|\*(.+?)\*|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
@@ -350,11 +508,13 @@ function mountFilters(refresh) {
   return draw;
 }
 
-// Tiles first, so the layout stands while the engine loads. Pivot and table tiles are not rendered yet.
-const MOUNT = { kpi: mountKpi, echarts: mountChart, text: mountText };
+// Tiles first, so the layout stands while the engine loads.
+const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, table: mountTable, text: mountText };
 const paint = config.tiles.map((tile, i) => MOUNT[tile.type]?.(tile, i) ?? (async () => {}));
 const library = config.tiles.some(t => t.type === "echarts") ? import(config.charts.url) : null; // integrity: the page's import map
+const gridLibrary = config.tiles.some(t => t.type === "table") ? loadGrid(config.grid) : null;
 library?.catch(() => {}); // reported below, once the engine has had its turn
+gridLibrary?.catch(() => {});
 let engine;
 try {
   engine = await startEngine(config.engine);
@@ -368,9 +528,15 @@ try {
 } catch (error) {
   fail("The chart library could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
 }
+try {
+  agGrid = await gridLibrary;
+} catch (error) {
+  fail("The table library could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
+}
 document.getElementById("theme").addEventListener("change", () => {
   const theme = chartTheme();
   for (const chart of charts) chart.setTheme(theme);
+  for (const body of gridBodies) gridTheme(body);
 });
 // Latest state wins: every change is a new pass; passes paint only while they are the newest, and changes during a pass coalesce.
 const pass = latestWins(current => Promise.all(paint.map((fill, i) => fill(engine, current).catch(error => fail(`Tile “${config.tiles[i].title}” could not be computed: ${error.message}`, error)))));

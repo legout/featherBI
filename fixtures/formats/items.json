@@ -1,0 +1,7 @@
+[
+	{"id":1,"name":"a","amount":10.5},
+	{"id":2,"name":"b","amount":20.0},
+	{"id":3,"name":"c","amount":30.25},
+	{"id":4,"name":"d","amount":40.0},
+	{"id":5,"name":"e","amount":50.0}
+]

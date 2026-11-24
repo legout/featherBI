@@ -601,7 +601,7 @@ if (config.explore) {
   let ready; // the loaded viewer and its Perspective table, created on the first open
   const load = async () => {
     // shortcut: a default build leaves the Perspective client and viewer fetching their wasm from the CDN without SRI (tools/patch-perspective.mjs patches the charts plugin only); --offline inlines it and patches those fetches to a name.
-    if (assets) window.__fbAsset = name => fetch(assets[name]);
+    if (assets) window.__fbAsset = name => assets[name]; // a data: URL; the patched bundle's own fetch() loads it
     const css = Object.assign(document.createElement("link"), { rel: "stylesheet", href: psp.css.url, integrity: psp.css.integrity, crossOrigin: "anonymous" });
     document.head.append(css);
     // integrity: the page's import map. The charts plugin is the patched bundle inlined by the build (tools/patch-perspective.mjs).

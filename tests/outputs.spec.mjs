@@ -100,12 +100,12 @@ test("--offline: every tile renders and Explore opens over file:// with every no
     fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), path.join(dir, "sales.parquet"));
     fs.writeFileSync(path.join(dir, "dashboard.yaml"), ALL_TILES);
     const html = path.join(dir, "offline.html");
-    expect(build(["dashboard.yaml", "--offline", "--out", html], dir).stdout).toMatch(/\(\d+(\.\d+)? MB\)/); // the size is reported
+    expect(build(["dashboard.yaml", "--offline", "--out", html], dir)).toMatch(/\(\d+(\.\d+)? MB\)/); // the size is reported
 
     const network = [];
     // Every request that leaves the file is blocked and recorded.
     await page.route(
-      request => !request.url().startsWith("file:"),
+      target => !target.href.startsWith("file:"),
       route => {
         network.push(route.request().url());
         return route.abort();

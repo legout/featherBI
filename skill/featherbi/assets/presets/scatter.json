@@ -1,1 +1,35 @@
-{"columns":["x","y"],"optional":[]}
+{
+  "columns": [
+    "x",
+    "y"
+  ],
+  "optional": [],
+  "click": [],
+  "option": {
+    "tooltip": {
+      "trigger": "item"
+    },
+    "grid": {},
+    "xAxis": {
+      "type": "value",
+      "scale": true
+    },
+    "yAxis": {
+      "type": "value",
+      "scale": true
+    },
+    "dataset": {
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "type": "scatter",
+        "symbolSize": 10,
+        "encode": {
+          "x": "x",
+          "y": "y"
+        }
+      }
+    ]
+  }
+}

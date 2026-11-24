@@ -1,0 +1,167 @@
+# Every preset once on the hand data, plus KPI (compare, spark) and text tiles.
+# Opened by tests/presets.spec.mjs; the expected values are in README.md.
+title: Hand presets
+name: hand-presets
+sources:
+  sales:
+    read: "read_parquet('sales.parquet')"
+  targets:
+    read: "read_xlsx('targets.xlsx')"
+dims:
+  region: {col: region}
+  channel: {col: channel}
+date: {col: order_date, default: all}
+tiles:
+  - type: kpi
+    title: Revenue
+    format: currency
+    sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}"
+    compare: >
+      SELECT SUM(target) AS value FROM targets WHERE {{filters:targets}}
+    spark: >
+      SELECT strftime(order_date, '%Y-%m') AS x, SUM(revenue) AS y
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: kpi
+    title: Orders
+    sql: "SELECT COUNT(*) AS value FROM sales WHERE {{filters:sales}}"
+  - type: text
+    title: About
+    markdown: |
+      ## Notes
+
+      Revenue is **net** of returns,
+      in *US dollars*.
+
+      - Click a bar, slice or cell to filter; click it again to clear.
+      - The values are worked out by hand in
+        [the fixture README](https://github.com/legout/featherBI).
+  # The clicked tiles exclude their own dimensions, so the clicked element
+  # stays in place for the second click.
+  - type: echarts
+    preset: bar
+    title: Revenue vs target by region
+    click: region
+    exclude: [region]
+    sql: >
+      SELECT s.region AS x, SUM(s.revenue) AS y, 'revenue' AS series
+      FROM sales s WHERE {{filters:sales AS s}} GROUP BY 1
+      UNION ALL
+      SELECT region, target, 'target' FROM targets WHERE {{filters:targets}}
+      ORDER BY 3, 1
+  - type: echarts
+    preset: donut
+    title: Revenue by channel
+    click: channel
+    exclude: [channel]
+    sql: >
+      SELECT channel AS name, SUM(revenue) AS value
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: heatmap
+    title: Region × channel
+    click: [region, channel]
+    exclude: [region, channel]
+    sql: >
+      SELECT region AS x, channel AS y, SUM(revenue) AS value
+      FROM sales WHERE {{filters:sales}} GROUP BY 1, 2 ORDER BY 1, 2
+  - type: echarts
+    preset: line
+    title: Revenue by month and region
+    sql: >
+      SELECT strftime(order_date, '%Y-%m') AS x, SUM(revenue) AS y,
+        region AS series
+      FROM sales WHERE {{filters:sales}} GROUP BY 1, 3 ORDER BY 1, 3
+  - type: echarts
+    preset: area
+    title: Revenue by month
+    sql: >
+      SELECT strftime(order_date, '%Y-%m') AS x, SUM(revenue) AS y
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: stacked-bar
+    title: Revenue by month and channel
+    sql: >
+      SELECT strftime(order_date, '%Y-%m') AS x, SUM(revenue) AS y,
+        channel AS series
+      FROM sales WHERE {{filters:sales}} GROUP BY 1, 3 ORDER BY 1, 3
+  - type: echarts
+    preset: hbar
+    title: Orders by channel
+    click: channel
+    sql: >
+      SELECT channel AS x, COUNT(*) AS y
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: pie
+    title: Revenue share by region
+    click: region
+    # `option` restyles the preset; the `data` key is dropped, not applied.
+    option:
+      series:
+        - name: Share
+          data: [{name: Injected, value: 1}]
+    sql: >
+      SELECT region AS name, SUM(revenue) AS value
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: scatter
+    title: Order value by day of month
+    sql: >
+      SELECT day(order_date) AS x, revenue AS y
+      FROM sales WHERE {{filters:sales}} ORDER BY 1, 2
+  - type: echarts
+    preset: treemap
+    title: Revenue by region and channel
+    sql: >
+      SELECT region || ' ' || channel AS name, SUM(revenue) AS value
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: sunburst
+    title: Channel mix
+    sql: >
+      SELECT channel AS name, SUM(revenue) AS value
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: funnel
+    title: Months ranked by revenue
+    sql: >
+      SELECT strftime(order_date, '%Y-%m') AS name, SUM(revenue) AS value
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 2 DESC
+  - type: echarts
+    preset: gauge
+    title: Target reached (%)
+    sql: >
+      SELECT ROUND(100 * SUM(revenue) / (
+        SELECT SUM(target) FROM targets WHERE {{filters:targets}}
+      ), 1) AS value
+      FROM sales WHERE {{filters:sales}}
+  - type: echarts
+    preset: sankey
+    title: Region to channel
+    sql: >
+      SELECT region AS source, channel AS target, SUM(revenue) AS value
+      FROM sales WHERE {{filters:sales}} GROUP BY 1, 2 ORDER BY 1, 2
+  - type: echarts
+    preset: waterfall
+    title: Month-over-month change
+    sql: >
+      SELECT x, y - COALESCE(LAG(y) OVER (ORDER BY x), 0) AS y
+      FROM (
+        SELECT strftime(order_date, '%Y-%m') AS x, SUM(revenue) AS y
+        FROM sales WHERE {{filters:sales}} GROUP BY 1
+      )
+      ORDER BY x
+  - type: echarts
+    preset: boxplot
+    title: Order value spread by region
+    sql: >
+      SELECT region AS name, MIN(revenue) AS min,
+        quantile_cont(revenue, 0.25) AS q1, median(revenue) AS median,
+        quantile_cont(revenue, 0.75) AS q3, MAX(revenue) AS max
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: calendar
+    title: Revenue by day
+    sql: >
+      SELECT order_date AS x, SUM(revenue) AS y
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1

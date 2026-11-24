@@ -1,1 +1,27 @@
-{"columns":["value"],"optional":[]}
+{
+  "columns": [
+    "value"
+  ],
+  "optional": [],
+  "click": [],
+  "option": {
+    "series": [
+      {
+        "type": "gauge",
+        "data": "@rows",
+        "progress": {
+          "show": true
+        },
+        "pointer": {
+          "show": false
+        },
+        "axisTick": {
+          "show": false
+        },
+        "splitLine": {
+          "show": false
+        }
+      }
+    ]
+  }
+}

@@ -5,6 +5,11 @@
     "integrity": null,
     "note": "jsDelivr generates +esm bundles on request, so they cannot carry SRI."
   },
+  "echarts": {
+    "version": "6.1.0",
+    "url": "https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.esm.min.mjs",
+    "integrity": "sha384-2svH5QplTeBKhRXWxXOJE2P6pRpgnqVq8l8U1dYXUBXvc2zJ/FMMardtnPnnCXnt"
+  },
   "engines": {
     "haybarn": {
       "package": "@haybarn/haybarn-wasm",

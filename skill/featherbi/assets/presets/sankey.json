@@ -1,1 +1,27 @@
-{"columns":["source","target","value"],"optional":[]}
+{
+  "columns": [
+    "source",
+    "target",
+    "value"
+  ],
+  "optional": [],
+  "click": [
+    "source",
+    "target"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "item"
+    },
+    "series": [
+      {
+        "type": "sankey",
+        "data": "@names:source,target",
+        "links": "@rows",
+        "emphasis": {
+          "focus": "adjacency"
+        }
+      }
+    ]
+  }
+}

@@ -1,1 +1,50 @@
-{"columns":["name","min","q1","median","q3","max"],"optional":[]}
+{
+  "columns": [
+    "name",
+    "min",
+    "q1",
+    "median",
+    "q3",
+    "max"
+  ],
+  "optional": [],
+  "click": [
+    "name"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "item"
+    },
+    "grid": {},
+    "xAxis": {
+      "type": "category",
+      "data": "@uniq:name"
+    },
+    "yAxis": {
+      "type": "value",
+      "scale": true
+    },
+    "dataset": {
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "type": "boxplot",
+        "boxWidth": [
+          16,
+          64
+        ],
+        "encode": {
+          "x": "name",
+          "y": [
+            "min",
+            "q1",
+            "median",
+            "q3",
+            "max"
+          ]
+        }
+      }
+    ]
+  }
+}

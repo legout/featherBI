@@ -1,0 +1,10 @@
+/* Input for assets/app.css. Rebuild with `npm run build:css` after changing the template or renderer. */
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: winter --default, night;
+}
+@source "../skill/featherbi/assets/renderer.js";
+
+::selection {
+  background-color: color-mix(in oklab, var(--color-primary) 30%, transparent);
+}

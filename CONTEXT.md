@@ -5,6 +5,9 @@
 | **Dashboard config** | The one file the agent writes (`dashboard.yaml`): sources, dimensions, date, tiles. Everything after it is deterministic. |
 | **Source** | A named DuckDB table expression that is read at build time (a file, table format, database or object store). |
 | **Snapshot** | The Parquet data `build` writes from the sources and embeds in or ships with the HTML. The browser only ever reads the snapshot. |
+| **Snapshot table** | One table of the snapshot, named after its source. Tile SQL may reference only snapshot tables. |
+| **Source SQL** | The DuckDB expression or query that reads a source. It runs only in the native CLI at build time and is never shipped. |
+| **Tile SQL** | The SQL of a tile. It runs in the browser over snapshot tables, with `{{filters:<table>}}` placeholders, and must meet its tile type's result contract. |
 | **Tile** | One element of the dashboard: `kpi`, `echarts`, `pivot`, `table`, `text`. It is configured, never coded. |
 | **Preset** | A reviewed ECharts option template from the skill (for example `donut`, `heatmap`), selected by name in a tile. |
 | **Dimension (dim)** | A column that filters can select or cross-filter on. Every filterable column must be declared. |

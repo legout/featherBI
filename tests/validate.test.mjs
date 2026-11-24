@@ -41,6 +41,7 @@ const cases = [
     /tile "?t1"?.*ambiguous/is,
   ],
   ["placeholder for an unknown table", tile({ type: "kpi", sql: "SELECT 1 AS value WHERE {{filters:ghost}}" }), [], /tile "?t1"?.*ghost/is],
+  ["a dimension named date", c => (c.dims.date = { col: "order_date" }), [], /dims.*date|date.*dimension/is],
   ["--offline with --split", () => {}, ["--offline", "--split"], /--offline.*--split|--split.*--offline/is],
 ];
 

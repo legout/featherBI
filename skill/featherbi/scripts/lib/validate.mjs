@@ -57,6 +57,7 @@ function columnsOf(q, sql, params) {
 export function validate(config, snapshots) {
   const errors = [];
   check(config, JSON.parse(fs.readFileSync(asset("schema/dashboard.schema.json"), "utf8")), "config", errors);
+  if (Object.hasOwn(config.dims ?? {}, "date")) errors.push("dims: `date` is reserved for the date range in the URL hash; name the dimension differently");
   if (errors.length) throw new Error(`invalid config: ${errors.join("; ")}`);
 
   const presets = Object.fromEntries(

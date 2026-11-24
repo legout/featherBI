@@ -1,6 +1,6 @@
 # Spec 0002: remote snapshot with presigned URLs
 
-Status: **approved**, revision 1 (owner, 2026-11-24, "approved"). The owner chose option 1 (whole file per table) after the range-read spike.
+Status: **approved**, revision 2 (owner, 2026-11-24, together with plan 0002). Revision 1 was approved by the owner on 2026-11-24 ("approved", `3c7c46f`); the owner chose option 1 (whole file per table) after the range-read spike. Revision 2 changes only step 3 (who uploads), found during planning: DuckDB `COPY` re-encodes the Parquet, so the object would not match the hash in its key.
 Builds on: [spec 0001](2026-11-24-0001-featherbi-v1.md) (revision 4). Evidence: [research/2026-11-24-presigned-range-reads-spike.md](../research/2026-11-24-presigned-range-reads-spike.md). SQLRooms does the same for URL sources: it downloads the file whole with progress, then loads it into a table (`@sqlrooms/room-shell` `downloadFile` → `loadFile`, main 1347dd2).
 
 ## Goal
@@ -11,7 +11,7 @@ A dashboard whose HTML stays small: the snapshot tables live in an S3-compatible
 
 1. The author runs `build --remote s3://<bucket>/<prefix> [--expires <duration>]`.
 2. **Source phase:** unchanged from spec 0001. It writes the Parquet snapshot tables locally, byte-identical to the embedded mode.
-3. **Upload:** the native DuckDB CLI uploads each table to `s3://<bucket>/<prefix>/<sha256>.parquet`, where `<sha256>` is the hash of the file's bytes.
+3. **Upload:** the build uploads each snapshot table's exact bytes to `s3://<bucket>/<prefix>/<sha256>.parquet`, where `<sha256>` is the hash of those bytes. It uses a signed HEAD, then a signed PUT only when the object is missing (`node:crypto` + `fetch`; DuckDB is not involved, so the stored object is byte-identical to the local snapshot table).
    - An object that already exists under that key is not uploaded again, so a re-run converges on the same state.
    - A rebuild never overwrites the data behind an older dashboard.
 4. **Sign:** the build presigns one GET URL per table (AWS SigV4 query signing in `node:crypto`; no SDK, no new dependency).

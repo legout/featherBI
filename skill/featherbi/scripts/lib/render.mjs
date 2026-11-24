@@ -6,7 +6,7 @@ const escapeHtml = s => s.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
 // JSON inside <script>: no "<", so no value (tile SQL, titles) can close the element.
 const json = value => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-export function render(config, snapshots) {
+export function render(config, snapshots, filters) {
   const lock = JSON.parse(read("assets/vendor.lock.json"));
   const engine = lock.engines[config.engine];
   const parts = {
@@ -20,9 +20,11 @@ export function render(config, snapshots) {
     data: json({
       engine,
       tiles: config.tiles,
+      filters,
       snapshots: Object.fromEntries(Object.entries(snapshots).map(([name, bytes]) => [name, bytes.toString("base64")])),
     }),
-    renderer: read("assets/renderer.js"),
+    // The renderer shares filters.mjs with the build: the same file, inlined with its exports dropped.
+    renderer: read("scripts/lib/filters.mjs").replace(/^export /gm, "") + read("assets/renderer.js"),
   };
   // One pass over the template, so "{{…}}" inside inserted content is never substituted.
   return read("templates/dashboard.html").replace(/\{\{(\w+)\}\}/g, (_, key) => parts[key]);

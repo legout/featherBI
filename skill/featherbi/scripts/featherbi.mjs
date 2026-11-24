@@ -25,8 +25,8 @@ try {
   const dir = path.dirname(path.resolve(file));
   const out = values.out ? path.resolve(values.out) : path.join(dir, "dist", `${config.name}.html`);
   const snapshots = snapshot(config.sources, dir);
-  validate(config, snapshots);
-  const html = render(config, snapshots);
+  const filters = validate(config, snapshots);
+  const html = render(config, snapshots, filters);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, html);
   console.log(out);

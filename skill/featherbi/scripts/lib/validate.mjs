@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { buildModel, expand } from "./filters.mjs";
 
 const asset = file => new URL(`../../${file}`, import.meta.url);
 const quote = s => `'${String(s).replaceAll("'", "''")}'`;
@@ -36,30 +37,21 @@ function check(value, schema, at, errors) {
 
 // Native DuckDB over one read-only database of the snapshot tables, with the sandbox settings locked.
 function session(db) {
-  return (sql, { sandbox = true } = {}) => {
+  return (sql, { sandbox = true, csv = false } = {}) => {
     const lock = "SET autoload_known_extensions=false; SET autoinstall_known_extensions=false; SET enable_external_access=false; SET lock_configuration=true;";
-    const r = spawnSync("duckdb", ["-no-agent", "-readonly", "-json", db, "-c", `${sandbox ? lock : ""} ${sql}`], { encoding: "utf8", maxBuffer: 1 << 28 });
+    const r = spawnSync("duckdb", ["-no-agent", "-readonly", csv ? "-csv" : "-json", db, "-c", `${sandbox ? lock : ""} ${sql}`], { encoding: "utf8", maxBuffer: 1 << 28 });
     if (r.error) throw new Error(r.error.code === "ENOENT" ? "the DuckDB CLI (>= 2.0) was not found on PATH" : r.error.message);
     if (r.status !== 0) return { error: (r.stderr.trim().split("\n")[0] || "DuckDB failed").replace(/^[A-Za-z ]*Error: /, "") };
-    return { rows: JSON.parse(r.stdout || "[]") };
+    return csv ? { header: r.stdout.split("\n")[0].split(",").map(c => c.replace(/^"|"$/g, "")) } : { rows: JSON.parse(r.stdout || "[]") };
   };
 }
 
-const PLACEHOLDER = /\{\{\s*filters:\s*([A-Za-z_]\w*)(?:\s+AS\s+([A-Za-z_]\w*))?\s*\}\}/gi;
 const lit = v => (typeof v === "number" ? String(v) : quote(v));
 
-// shortcut: values are inlined here; T4's shared filters.mjs binds parameters and replaces this.
-function expand(sql, mode, tables, sample) {
-  const out = sql.replace(PLACEHOLDER, (_, table, alias) => {
-    if (!(table in tables)) throw new Error(`\`{{filters:${table}}}\` names a table that is not a source`);
-    if (mode === "noop") return "TRUE";
-    const q = alias ? `${ident(alias)}.` : "";
-    const preds = sample.filter(s => s.table === table).map(s => `${q}${ident(s.col)} ${s.op}`);
-    return preds.length ? preds.join(" AND ") : "TRUE";
-  });
-  const left = out.match(/\{\{[^}]*\}\}/);
-  if (left) throw new Error(`unknown placeholder ${left[0]}`);
-  return out;
+// The shared expansion, then the query is prepared with the sample values bound; returns the result's column names.
+function columnsOf(q, sql, params) {
+  const r = q(`PREPARE r AS SELECT * FROM (${sql}); EXECUTE r(${params.map(lit).join(", ")});`, { csv: true });
+  return r.error ? r : { have: r.header };
 }
 
 export function validate(config, snapshots) {
@@ -87,26 +79,10 @@ export function validate(config, snapshots) {
     const columns = {};
     for (const { table_name: t, column_name: c } of must(q("SELECT table_name, column_name FROM information_schema.columns ORDER BY ordinal_position", { sandbox: false }))) (columns[t] ??= []).push(c);
 
-    // Sample filter predicates: the first value of each dimension in each table that has it, and the default date range.
-    const colOf = (spec, t) => (spec.cols?.[t] ?? spec.col);
-    const sample = [];
-    for (const spec of Object.values(config.dims ?? {})) {
-      for (const t of Object.keys(columns)) {
-        const col = colOf(spec, t);
-        if (!columns[t].includes(col)) continue;
-        const [row] = must(q(`SELECT ${ident(col)} AS v FROM ${ident(t)} WHERE ${ident(col)} IS NOT NULL ORDER BY 1 LIMIT 1`));
-        if (row) sample.push({ table: t, col, op: `= ${lit(row.v)}` });
-      }
-    }
-    if (config.date) {
-      const dated = Object.keys(columns).filter(t => columns[t].includes(colOf(config.date, t)));
-      if (dated.length) {
-        const ends = dated.map(t => `SELECT min(${ident(colOf(config.date, t))}) AS a, max(${ident(colOf(config.date, t))}) AS b FROM ${ident(t)}`);
-        const [{ a, b }] = must(q(`SELECT min(a)::VARCHAR AS a, max(b)::VARCHAR AS b FROM (${ends.join(" UNION ALL ")})`));
-        const lo = config.date.default === "last_12_months" ? `(DATE ${quote(b)} - INTERVAL 12 MONTH)` : `DATE ${quote(a)}`;
-        for (const t of dated) sample.push({ table: t, col: colOf(config.date, t), op: `BETWEEN ${lo} AND DATE ${quote(b)}` });
-      }
-    }
+    // Select options and the default date range, computed once; the first option of each dimension is the sample value.
+    const model = buildModel(config, columns, sql => must(q(sql)));
+    const noop = { dims: {}, from: null, to: null };
+    const sample = { dims: Object.fromEntries(Object.entries(model.options).filter(([, v]) => v.length).map(([k, v]) => [k, v[0]])), ...model.range };
 
     config.tiles.forEach((tile, i) => {
       const id = tile.id ?? `tile ${i + 1}`;
@@ -130,20 +106,21 @@ export function validate(config, snapshots) {
       if (tile.spark) queries.push([tile.spark, ["x", "y"]]);
       for (const [sql, required] of queries) {
         for (const mode of ["noop", "sample"]) {
-          let text;
+          let x;
           try {
-            text = expand(sql, mode, columns, sample);
+            x = expand(sql, mode === "noop" ? noop : sample, model.dims, model.date, columns, tile.exclude);
           } catch (e) {
             fail(e.message);
           }
-          const r = q(`CREATE TEMP TABLE r AS SELECT * FROM (${text}); DESCRIBE r;`);
+          const r = columnsOf(q, x.sql, x.params);
           if (r.error) fail(`SQL failed${mode === "sample" ? " with sample filter values" : ""}: ${r.error}`);
-          const have = r.rows.map(c => c.column_name);
+          const have = r.have;
           const missing = required.filter(c => !have.includes(c));
           if (missing.length) fail(`missing result column${missing.length > 1 ? "s" : ""} ${missing.map(c => `"${c}"`).join(", ")} (got ${have.join(", ") || "none"})`);
         }
       }
     });
+    return model;
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

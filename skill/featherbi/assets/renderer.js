@@ -1,4 +1,4 @@
-// featherBI renderer, inlined into every dashboard by `build`: engine adapter + KPI tiles.
+// featherBI renderer, inlined into every dashboard by `build` after scripts/lib/filters.mjs: engine adapter, filters, KPI tiles.
 const config = JSON.parse(document.getElementById("dashboard").textContent);
 
 const el = (tag, className, text) => {
@@ -64,7 +64,8 @@ function mountKpi(tile, index) {
   return async engine => {
     let text = "–";
     try {
-      const [row] = engine ? await engine.query(tile.sql) : []; // no engine: its own alert is already shown
+      const x = expand(tile.sql, state, filters.dims, filters.date, filters.tableColumns, tile.exclude);
+      const [row] = engine ? await engine.query(x.sql, x.params) : []; // no engine: its own alert is already shown
       if (row?.value != null) text = (FORMATS[tile.format] ?? FORMATS.number).format(row.value);
     } finally {
       value.className = "stat-value tabular-nums";
@@ -79,6 +80,66 @@ function fail(message, error) {
   document.querySelector("main").prepend(Object.assign(el("div", "alert alert-error", message), { role: "alert" }));
 }
 
+// Filter state: one value per dimension plus the date range; the default range is anchored on the snapshot.
+const filters = config.filters;
+const state = { dims: {}, ...filters.range };
+
+function mountFilters(refresh) {
+  const bar = document.getElementById("filters");
+  const draw = () => {
+    bar.replaceChildren();
+    const field = (label, control) => {
+      const wrap = el("label", "flex flex-col gap-1 text-xs");
+      wrap.append(el("span", "text-base-content/80", label), control);
+      bar.append(wrap);
+    };
+    for (const name of Object.keys(filters.dims)) {
+      const select = el("select", "select select-sm");
+      select.append(new Option("All", ""));
+      for (const v of filters.options[name]) select.append(new Option(v, v));
+      select.value = state.dims[name] ?? "";
+      select.onchange = () => set(name, select.value === "" ? undefined : filters.options[name].find(v => String(v) === select.value));
+      field(name, select);
+    }
+    if (filters.date) {
+      for (const key of ["from", "to"]) {
+        const input = el("input", "input input-sm");
+        input.type = "date";
+        input.value = state[key] ?? "";
+        input.onchange = () => set(null, input.value || null, key);
+        field(key === "from" ? "From" : "To", input);
+      }
+    }
+    const chips = el("div", "flex flex-wrap items-center gap-2");
+    chips.setAttribute("aria-label", "Active filters");
+    for (const [name, value] of Object.entries(state.dims)) {
+      const chip = el("span", "badge badge-neutral gap-1", `${name}: ${value}`);
+      const x = el("button", "cursor-pointer", "×");
+      x.setAttribute("aria-label", `Clear ${name}`);
+      x.onclick = () => set(name, undefined);
+      chip.append(x);
+      chips.append(chip);
+    }
+    const reset = el("button", "btn btn-sm btn-ghost", "Reset");
+    reset.onclick = () => {
+      state.dims = {};
+      Object.assign(state, filters.range);
+      draw();
+      refresh();
+    };
+    bar.append(chips, reset);
+  };
+  // A new value replaces the dimension's value; undefined clears it.
+  const set = (name, value, dateKey) => {
+    if (name === null) state[dateKey] = value;
+    else if (value === undefined) delete state.dims[name];
+    else state.dims[name] = value;
+    draw();
+    refresh();
+  };
+  draw();
+}
+
 const paint = config.tiles.map(mountKpi); // tiles first, so the layout stands while the engine loads
 let engine;
 try {
@@ -88,4 +149,6 @@ try {
 } catch (error) {
   fail("The query engine could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
 }
-await Promise.all(paint.map((fill, i) => fill(engine).catch(error => fail(`Tile “${config.tiles[i].title}” could not be computed: ${error.message}`, error))));
+const refresh = () => Promise.all(paint.map((fill, i) => fill(engine).catch(error => fail(`Tile “${config.tiles[i].title}” could not be computed: ${error.message}`, error))));
+mountFilters(refresh);
+await refresh();

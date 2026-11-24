@@ -40,3 +40,31 @@ test("the theme toggle switches between light and dark", async ({ page }) => {
   await page.getByRole("checkbox", { name: "Dark theme" }).uncheck();
   await expect.poll(background).toBe(light);
 });
+
+test("selects narrow the KPI, chips appear and clear, Reset restores totals and the default range", async ({ page }) => {
+  build("fixtures/hand/dashboard.yaml");
+  const errors = await open(page, "fixtures/hand/dist/hand.html");
+  const revenue = amount => expect(page.getByRole("group", { name: "Revenue" }).getByText(amount, { exact: true })).toBeVisible();
+  const chips = page.getByLabel("Active filters");
+  await revenue("$2,260.50");
+  // Default range: 12 months ending at the latest date (2025-03-25).
+  await expect(page.getByLabel("From")).toHaveValue("2024-04-01");
+  await expect(page.getByLabel("To")).toHaveValue("2025-03-25");
+
+  await page.getByLabel("region").selectOption("EU");
+  await revenue("$850.00");
+  await expect(chips).toContainText("region: EU");
+  await page.getByLabel("channel").selectOption("Online");
+  await revenue("$360.00"); // EU + Online: 100 + 120 + 140
+  await page.getByRole("button", { name: "Clear region" }).click();
+  await revenue("$1,020.00");
+  await expect(chips).not.toContainText("region: EU");
+
+  await page.getByLabel("From").fill("2025-03-01");
+  await revenue("$380.00"); // Online since March: 140 + 240
+  await page.getByRole("button", { name: "Reset" }).click();
+  await revenue("$2,260.50");
+  await expect(page.getByLabel("From")).toHaveValue("2024-04-01");
+  await expect(chips).toBeEmpty();
+  expect(errors).toEqual([]);
+});

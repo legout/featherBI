@@ -3,8 +3,12 @@ name: hand
 sources:
   sales:
     read: "read_parquet('sales.parquet')"
+dims:
+  region: {col: region}
+  channel: {col: channel}
+date: {col: order_date, default: last_12_months}
 tiles:
   - type: kpi
     title: Revenue
     format: currency
-    sql: "SELECT SUM(revenue) AS value FROM sales"
+    sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}"

@@ -1,0 +1,13 @@
+# featherBI vocabulary
+
+| Term | Meaning |
+|---|---|
+| **Dashboard config** | The one file the agent writes (`dashboard.yaml`): sources, dimensions, date, tiles. Everything after it is deterministic. |
+| **Source** | A named DuckDB table expression that is read at build time (a file, table format, database or object store). |
+| **Snapshot** | The Parquet data `build` writes from the sources and embeds in or ships with the HTML. The browser only ever reads the snapshot. |
+| **Tile** | One element of the dashboard: `kpi`, `echarts`, `pivot`, `table`, `text`. It is configured, never coded. |
+| **Preset** | A reviewed ECharts option template from the skill (for example `donut`, `heatmap`), selected by name in a tile. |
+| **Dimension (dim)** | A column that filters can select or cross-filter on. Every filterable column must be declared. |
+| **Cross-filter** | A filter set by clicking an element of a tile. It applies to all tiles, except where a tile `exclude`s that dimension. |
+| **Engine adapter** | The small layer that hides which browser DuckDB build runs (Haybarn-Wasm by default, upstream duckdb-wasm as an alternative). |
+| **Explore** | The on-demand Perspective panel for free pivoting. It is not a tile and is not re-rendered by filters. |

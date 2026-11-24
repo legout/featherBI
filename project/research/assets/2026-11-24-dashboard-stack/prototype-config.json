@@ -1,0 +1,372 @@
+{
+ "defaults": {
+  "from": "2025-01-01",
+  "to": "2025-12-31"
+ },
+ "palette": [
+  "#6366f1",
+  "#22d3ee",
+  "#f59e0b",
+  "#10b981",
+  "#f43f5e",
+  "#a78bfa",
+  "#fb923c"
+ ],
+ "dims": {
+  "region": {
+   "col": "region",
+   "label": "Region",
+   "select": "f-region"
+  },
+  "channel": {
+   "col": "channel",
+   "label": "Channel",
+   "select": "f-channel"
+  },
+  "product": {
+   "col": "product",
+   "label": "Product"
+  },
+  "category": {
+   "col": "product_category",
+   "label": "Category"
+  },
+  "country": {
+   "col": "country",
+   "label": "Country"
+  }
+ },
+ "tiles": [
+  {
+   "id": "k-rev",
+   "type": "kpi",
+   "title": "Revenue",
+   "fmt": "usd",
+   "color": "#6366f1",
+   "desc": "selected period",
+   "sql": "SELECT SUM(revenue) AS value FROM sales WHERE {{d}} AND {{f}}",
+   "spark": "SELECT order_month AS x, SUM(revenue) AS y FROM sales WHERE {{d}} AND {{f}} GROUP BY 1 ORDER BY 1"
+  },
+  {
+   "id": "k-ord",
+   "type": "kpi",
+   "title": "Orders",
+   "fmt": "int",
+   "color": "#22d3ee",
+   "desc": "line items",
+   "sql": "SELECT COUNT(*) AS value FROM sales WHERE {{d}} AND {{f}}",
+   "spark": "SELECT order_month AS x, COUNT(*) AS y FROM sales WHERE {{d}} AND {{f}} GROUP BY 1 ORDER BY 1"
+  },
+  {
+   "id": "k-aov",
+   "type": "kpi",
+   "title": "Avg order value",
+   "fmt": "usd2",
+   "color": "#f59e0b",
+   "desc": "revenue / orders",
+   "sql": "SELECT SUM(revenue) / NULLIF(COUNT(*), 0) AS value FROM sales WHERE {{d}} AND {{f}}",
+   "spark": "SELECT order_month AS x, AVG(revenue) AS y FROM sales WHERE {{d}} AND {{f}} GROUP BY 1 ORDER BY 1"
+  },
+  {
+   "id": "k-gr",
+   "type": "kpi",
+   "title": "Revenue vs previous period",
+   "fmt": "pct",
+   "signColor": true,
+   "color": "#10b981",
+   "desc": "same-length window before",
+   "sql": "SELECT SUM(CASE WHEN order_date BETWEEN :from AND :to THEN revenue END) / NULLIF(SUM(CASE WHEN order_date BETWEEN :pfrom AND :pto THEN revenue END), 0) - 1 AS value FROM sales WHERE order_date BETWEEN :pfrom AND :to AND {{f}}",
+   "spark": "SELECT order_month AS x, SUM(revenue) AS y FROM sales WHERE {{d}} AND {{f}} GROUP BY 1 ORDER BY 1"
+  },
+  {
+   "id": "c-channel",
+   "type": "echarts",
+   "title": "Revenue by channel (click to filter)",
+   "exclude": [
+    "channel"
+   ],
+   "sql": "SELECT channel AS name, SUM(revenue) AS value FROM sales WHERE {{d}} AND {{f}} GROUP BY 1 ORDER BY 1",
+   "click": {
+    "filter": "channel",
+    "field": "name"
+   },
+   "option": {
+    "tooltip": {
+     "trigger": "item"
+    },
+    "legend": {
+     "bottom": 0
+    },
+    "series": [
+     {
+      "type": "pie",
+      "radius": [
+       "45%",
+       "72%"
+      ],
+      "center": [
+       "50%",
+       "45%"
+      ],
+      "data": "@points:name:value",
+      "itemStyle": {
+       "borderRadius": 6,
+       "borderWidth": 2,
+       "borderColor": "transparent"
+      },
+      "label": {
+       "formatter": "{b}\n{d}%"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-products",
+   "type": "echarts",
+   "title": "Top 10 products (click to filter)",
+   "exclude": [
+    "product"
+   ],
+   "sql": "SELECT product AS name, SUM(revenue) AS value FROM sales WHERE {{d}} AND {{f}} GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+   "click": {
+    "filter": "product",
+    "field": "name"
+   },
+   "option": {
+    "tooltip": {
+     "trigger": "axis",
+     "axisPointer": {
+      "type": "shadow"
+     }
+    },
+    "grid": {
+     "left": 8,
+     "right": 24,
+     "top": 8,
+     "bottom": 8,
+     "containLabel": true
+    },
+    "xAxis": {
+     "type": "value",
+     "axisLabel": {
+      "formatter": "@fn:compact"
+     }
+    },
+    "yAxis": {
+     "type": "category",
+     "inverse": true,
+     "data": "@col:name"
+    },
+    "series": [
+     {
+      "type": "bar",
+      "data": "@points:name:value",
+      "itemStyle": {
+       "borderRadius": [
+        0,
+        4,
+        4,
+        0
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-month",
+   "type": "echarts",
+   "title": "Revenue by month: current vs previous year",
+   "wide": true,
+   "sql": "SELECT m, cur, prev FROM range(1, 13) t(m) LEFT JOIN (SELECT month(order_date) AS mm, SUM(CASE WHEN order_date BETWEEN :from AND :to THEN revenue END) AS cur, SUM(CASE WHEN order_date BETWEEN :pyfrom AND :pyto THEN revenue END) AS prev FROM sales WHERE order_date BETWEEN :pyfrom AND :to AND {{f}} GROUP BY 1) ON mm = m ORDER BY m",
+   "option": {
+    "tooltip": {
+     "trigger": "axis"
+    },
+    "legend": {
+     "top": 0
+    },
+    "grid": {
+     "left": 8,
+     "right": 16,
+     "top": 36,
+     "bottom": 8,
+     "containLabel": true
+    },
+    "xAxis": {
+     "type": "category",
+     "boundaryGap": false,
+     "data": [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ]
+    },
+    "yAxis": {
+     "type": "value",
+     "axisLabel": {
+      "formatter": "@fn:compact"
+     }
+    },
+    "series": [
+     {
+      "name": "Current",
+      "type": "line",
+      "smooth": true,
+      "symbolSize": 6,
+      "data": "@col:cur",
+      "areaStyle": {
+       "opacity": 0.25
+      }
+     },
+     {
+      "name": "Previous year",
+      "type": "line",
+      "smooth": true,
+      "showSymbol": false,
+      "data": "@col:prev",
+      "lineStyle": {
+       "type": "dashed"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "c-heat",
+   "type": "echarts",
+   "title": "Category x region heatmap (click a cell)",
+   "exclude": [
+    "category",
+    "region"
+   ],
+   "sql": "SELECT product_category AS cat, region AS reg, SUM(revenue) AS value FROM sales WHERE {{d}} AND {{f}} GROUP BY 1, 2",
+   "click": [
+    {
+     "filter": "category",
+     "field": "x"
+    },
+    {
+     "filter": "region",
+     "field": "y"
+    }
+   ],
+   "option": {
+    "tooltip": {
+     "formatter": "@fn:heatTip"
+    },
+    "grid": {
+     "left": 8,
+     "right": 16,
+     "top": 8,
+     "bottom": 56,
+     "containLabel": true
+    },
+    "xAxis": {
+     "type": "category",
+     "data": "@uniq:cat",
+     "splitArea": {
+      "show": true
+     }
+    },
+    "yAxis": {
+     "type": "category",
+     "data": "@uniq:reg"
+    },
+    "visualMap": {
+     "min": 0,
+     "max": "@max:value",
+     "calculable": true,
+     "orient": "horizontal",
+     "left": "center",
+     "bottom": 0,
+     "inRange": {
+      "color": [
+       "#e0e7ff",
+       "#6366f1",
+       "#312e81"
+      ]
+     },
+     "formatter": "@fn:compact"
+    },
+    "series": [
+     {
+      "type": "heatmap",
+      "data": "@heat:cat:reg:value",
+      "label": {
+       "show": true,
+       "formatter": "@fn:heatLabel"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "p-pivot",
+   "type": "pivot",
+   "title": "Country x category pivot (click a row)",
+   "exclude": [
+    "country"
+   ],
+   "fmt": "usd",
+   "click": {
+    "filter": "country"
+   },
+   "sql": "SELECT COALESCE(country, 'Total') AS r, COALESCE(product_category, 'Total') AS c, SUM(revenue) AS v FROM sales WHERE {{d}} AND {{f}} GROUP BY GROUPING SETS ((country, product_category), (country), (product_category), ())"
+  },
+  {
+   "id": "t-sales",
+   "type": "table",
+   "title": "Sales rows (AG Grid, infinite row model: sort/filter/scroll = SQL)",
+   "wide": true,
+   "block": 100,
+   "columns": [
+    {
+     "field": "order_date",
+     "headerName": "Date",
+     "type": "date"
+    },
+    {
+     "field": "region"
+    },
+    {
+     "field": "country"
+    },
+    {
+     "field": "product_category",
+     "headerName": "Category"
+    },
+    {
+     "field": "product"
+    },
+    {
+     "field": "channel"
+    },
+    {
+     "field": "quantity",
+     "type": "number"
+    },
+    {
+     "field": "unit_price",
+     "type": "number",
+     "fmt": "usd2"
+    },
+    {
+     "field": "revenue",
+     "type": "number",
+     "fmt": "usd2"
+    }
+   ]
+  }
+ ]
+}

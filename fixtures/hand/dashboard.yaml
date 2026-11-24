@@ -1,0 +1,10 @@
+title: Hand fixture
+name: hand
+sources:
+  sales:
+    read: "read_parquet('sales.parquet')"
+tiles:
+  - type: kpi
+    title: Revenue
+    format: currency
+    sql: "SELECT SUM(revenue) AS value FROM sales"

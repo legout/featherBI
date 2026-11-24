@@ -1,0 +1,16 @@
+{
+  "name": "featherbi-dev",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "playwright test",
+    "build:css": "node tools/build-css.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@tailwindcss/cli": "4.3.5",
+    "daisyui": "5.8.2",
+    "tailwindcss": "4.3.5"
+  }
+}

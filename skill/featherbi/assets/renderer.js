@@ -82,7 +82,7 @@ function mountKpi(tile, index) {
   const line = svg("polyline", { fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" });
   if (tile.spark) box.append(svg("svg", { class: "mt-1 h-8 w-full text-primary", viewBox: "0 0 100 24", preserveAspectRatio: "none", "aria-hidden": "true" }, line));
   document.getElementById("kpis").append(box);
-  return async engine => {
+  return async (engine, current) => {
     let text = "–";
     let change = "";
     let points = "";
@@ -92,16 +92,19 @@ function mountKpi(tile, index) {
       if (row?.value != null) text = (FORMATS[tile.format] ?? FORMATS.number).format(row.value);
       // Δ %: the change of `value` against `compare`; no figure when either is missing or the base is 0.
       if (row?.value != null && base?.value) change = FORMATS.change.format((row.value - base.value) / Math.abs(base.value));
+      if (!current()) return; // an older state's result is never painted
       const ys = spark.map(r => r.y ?? 0);
       const low = Math.min(...ys);
       const span = Math.max(...ys) - low || 1;
       points = ys.map((y, i) => `${ys.length > 1 ? (i / (ys.length - 1)) * 100 : 50},${22 - ((y - low) / span) * 20}`).join(" ");
     } finally {
-      value.className = "stat-value tabular-nums";
-      value.textContent = text;
-      delta.textContent = change;
-      line.setAttribute("points", points);
-      box.removeAttribute("aria-busy");
+      if (current()) {
+        value.className = "stat-value tabular-nums";
+        value.textContent = text;
+        delta.textContent = change;
+        line.setAttribute("points", points);
+        box.removeAttribute("aria-busy");
+      }
     }
   };
 }
@@ -236,17 +239,20 @@ function mountChart(tile, index) {
       refresh();
     });
   };
-  return async engine => {
+  return async (engine, current) => {
     try {
       if (!engine || !echarts) return; // their own alerts are already shown
       const rows = await run(engine, tile, tile.sql);
+      if (!current()) return; // an older state's result is never painted
       if (!chart) start();
       empty.hidden = rows.length > 0;
       if (rows.length) chart.setOption(chartOption(tile, preset, rows), true);
       else chart.clear();
     } finally {
-      body.classList.remove("skeleton");
-      box.removeAttribute("aria-busy");
+      if (current()) {
+        body.classList.remove("skeleton");
+        box.removeAttribute("aria-busy");
+      }
     }
   };
 }
@@ -285,6 +291,7 @@ function fail(message, error) {
 // Filter state: one value per dimension plus the date range; the default range is anchored on the snapshot.
 const filters = config.filters;
 const state = { dims: {}, ...filters.range };
+Object.assign(state, parseHash(location.hash, filters)); // untrusted: only the valid parts apply
 
 function mountFilters(refresh) {
   const bar = document.getElementById("filters");
@@ -365,6 +372,17 @@ document.getElementById("theme").addEventListener("change", () => {
   const theme = chartTheme();
   for (const chart of charts) chart.setTheme(theme);
 });
-const refresh = () => Promise.all(paint.map((fill, i) => fill(engine).catch(error => fail(`Tile “${config.tiles[i].title}” could not be computed: ${error.message}`, error))));
+// Latest state wins: every change is a new pass; passes paint only while they are the newest, and changes during a pass coalesce.
+const pass = latestWins(current => Promise.all(paint.map((fill, i) => fill(engine, current).catch(error => fail(`Tile “${config.tiles[i].title}” could not be computed: ${error.message}`, error)))));
+const refresh = () => {
+  history.replaceState(null, "", serializeHash(state, filters) || location.pathname + location.search); // no history entry per change
+  return pass.change();
+};
 const drawFilters = mountFilters(refresh);
+addEventListener("hashchange", () => {
+  state.dims = {};
+  Object.assign(state, filters.range, parseHash(location.hash, filters));
+  drawFilters();
+  refresh();
+});
 await refresh();

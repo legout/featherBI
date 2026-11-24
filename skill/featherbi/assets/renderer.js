@@ -567,12 +567,12 @@ await refresh();
 if (config.explore) {
   const { table: name, perspective: psp, charts } = config.explore;
   const button = el("button", "btn btn-sm btn-ghost", "Explore");
-  const dialog = el("dialog", "rounded-box bg-base-100 p-0 shadow-sm");
+  const dialog = el("dialog", "rounded-box bg-base-100 shadow-sm");
   dialog.setAttribute("aria-label", `Explore ${name}`);
-  dialog.style.cssText = "width:95vw;height:90vh;max-width:none;max-height:none;margin:auto"; // preflight drops the dialog's centring
+  dialog.style.cssText = "width:95vw;height:90vh;max-width:none;max-height:none;margin:auto;padding:0"; // preflight drops the dialog's centring
   const close = el("button", "btn btn-sm btn-ghost", "Close");
   close.onclick = () => dialog.close();
-  const head = el("div", "flex items-center gap-3 p-2");
+  const head = el("div", "flex items-center gap-3 px-4");
   head.append(el("h2", "flex-1 text-sm font-semibold", `Explore: ${name}`), close);
   dialog.append(head);
   document.body.append(dialog);
@@ -586,7 +586,7 @@ if (config.explore) {
     await Promise.all([import(psp.datagrid.url), import(`data:text/javascript;charset=utf-8,${encodeURIComponent(charts)}`)]);
     const client = await (await import(psp.client.url)).default.worker();
     const viewer = document.createElement("perspective-viewer");
-    viewer.style.cssText = "display:block;height:calc(100% - 3rem)";
+    viewer.style.cssText = "display:none;height:calc(100% - 3rem)"; // shown once it has a view
     dialog.append(viewer);
     return { client, viewer, table: null };
   };
@@ -605,6 +605,7 @@ if (config.explore) {
         p.table = await p.client.table(ipc, { name });
         await p.viewer.load(p.client);
         await p.viewer.restore({ table: name });
+        p.viewer.style.display = "block";
       }
     } catch (error) {
       ready = undefined;

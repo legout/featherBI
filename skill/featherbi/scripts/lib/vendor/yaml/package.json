@@ -1,0 +1,7 @@
+{
+  "name": "yaml",
+  "version": "2.9.1",
+  "description": "Vendored copy of the yaml package (browser ESM build), unmodified.",
+  "license": "ISC",
+  "type": "module"
+}

@@ -1,0 +1,42 @@
+{
+  "apache-arrow": {
+    "version": "17.0.0",
+    "url": "https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/+esm",
+    "integrity": null,
+    "note": "jsDelivr generates +esm bundles on request, so they cannot carry SRI."
+  },
+  "engines": {
+    "haybarn": {
+      "package": "@haybarn/haybarn-wasm",
+      "version": "2.0.1-rc3",
+      "module": {
+        "url": "https://cdn.jsdelivr.net/npm/@haybarn/haybarn-wasm@2.0.1-rc3/dist/duckdb-browser.mjs",
+        "integrity": "sha384-m0He3HsLc92eoPX3YWlX/Z9U1kDvacYy9uGfDBpYyIXV4BOrm/lyi7SFSzWsgO7e"
+      },
+      "worker": {
+        "url": "https://cdn.jsdelivr.net/npm/@haybarn/haybarn-wasm@2.0.1-rc3/dist/duckdb-browser-base.worker.js",
+        "integrity": "sha384-9VsIVFA1qLAyFhWACWFqF4tT8oTH/brUKaJr/L2C5YdmXLlPmYzRPNX8CxJcA1T/"
+      },
+      "wasm": {
+        "url": "https://cdn.jsdelivr.net/npm/@haybarn/haybarn-wasm@2.0.1-rc3/dist/duckdb-base.wasm",
+        "integrity": "sha384-Gef4RBP5AMajsFulzK2tM4VWmtGKXVUMuxbfGcdnW/+Ppqvtp3FywK8ncbn8PSnu"
+      }
+    },
+    "duckdb-wasm": {
+      "package": "@duckdb/duckdb-wasm",
+      "version": "1.33.1-dev57.0",
+      "module": {
+        "url": "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.1-dev57.0/dist/duckdb-browser.mjs",
+        "integrity": "sha384-RF03w8tOAjB/EQNjGGUEKpOIypX5Zxl4HqZZFRA1ji5N0Uf+HMhcy2iUF5a+c73k"
+      },
+      "worker": {
+        "url": "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.1-dev57.0/dist/duckdb-browser-eh.worker.js",
+        "integrity": "sha384-616ymE4xmFpn8c7NJx5YCDbQBvj6bc2GNXzyHXAzpLKY67eSN+ny6C7NpivVDaJN"
+      },
+      "wasm": {
+        "url": "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.1-dev57.0/dist/duckdb-eh.wasm",
+        "integrity": "sha384-hx7/cUA4WjZ97FbdvatGLCDFALBPaJCD5SVBRElBsqfOQI+z/MtkWq69oZLd7C/M"
+      }
+    }
+  }
+}

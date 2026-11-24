@@ -1,0 +1,12 @@
+# The hand dashboard on upstream duckdb-wasm instead of Haybarn-Wasm.
+title: Hand fixture
+name: hand-upstream
+engine: duckdb-wasm
+sources:
+  sales:
+    read: "read_parquet('sales.parquet')"
+tiles:
+  - type: kpi
+    title: Revenue
+    format: currency
+    sql: "SELECT SUM(revenue) AS value FROM sales"

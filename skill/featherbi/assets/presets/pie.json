@@ -11,10 +11,19 @@
     "tooltip": {
       "trigger": "item"
     },
+    "legend": {},
     "series": [
       {
         "type": "pie",
-        "radius": "62%",
+        "radius": "60%",
+        "center": [
+          "50%",
+          "56%"
+        ],
+        "labelLine": {
+          "length": 10,
+          "length2": 10
+        },
         "data": "@rows"
       }
     ]

@@ -154,7 +154,7 @@ function chartTheme() {
     heatmap: { itemStyle: gap },
     sankey: { label: { color: text }, lineStyle: { color: "gradient", opacity: 0.35 } },
     pie: { itemStyle: gap, label: { color: text } },
-    funnel: { itemStyle: gap, label: { color: text } },
+    funnel: { itemStyle: gap, label: onFill },
     treemap: { itemStyle: { borderColor: surface, gapWidth: 2 }, label: onFill },
     sunburst: { itemStyle: gap, label: onFill },
   };

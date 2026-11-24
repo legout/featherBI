@@ -11,12 +11,20 @@
     "tooltip": {
       "trigger": "item"
     },
+    "legend": {},
     "series": [
       {
         "type": "funnel",
         "data": "@rows",
         "sort": "descending",
-        "minSize": "20%"
+        "minSize": "20%",
+        "top": 40,
+        "bottom": 8,
+        "left": "8%",
+        "width": "84%",
+        "label": {
+          "position": "inside"
+        }
       }
     ]
   }

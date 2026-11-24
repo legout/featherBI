@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildModel, expand } from "./filters.mjs";
+import { buildModel, DATA_KEYS, expand } from "./filters.mjs";
 
 const asset = file => new URL(`../../${file}`, import.meta.url);
 const quote = s => `'${String(s).replaceAll("'", "''")}'`;
@@ -90,6 +90,7 @@ export function validate(config, snapshots) {
       const preset = tile.type === "echarts" ? presets[tile.preset] : null;
       if (!["kpi", "echarts", "pivot", "table", "text"].includes(tile.type)) fail(`unknown type "${tile.type}"`);
       if (tile.type === "echarts" && !preset) fail(`unknown preset "${tile.preset}"`);
+      for (const k of Object.keys(tile.option ?? {})) if (DATA_KEYS.includes(k)) fail(`option key "${k}" binds data; data comes from the preset`);
       for (const dim of [].concat(tile.click ?? [])) if (!(dim in (config.dims ?? {}))) fail(`click on "${dim}", which is not declared in \`dims\``);
 
       if (tile.type === "table") {

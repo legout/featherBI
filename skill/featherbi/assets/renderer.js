@@ -23,8 +23,10 @@ async function startEngine({ module, worker, wasm, extensions = {} }) {
   };
   const [text, ...pinned] = await Promise.all([fetch(worker.url, { integrity: worker.integrity }).then(r => r.text()), ...Object.values(extensions).map(base64)]);
   // The worker fetches the wasm itself, so its hash rides on the Request the worker builds (a no-op if a bundle no longer has that line).
-  const shim = `const __fbExt = ${JSON.stringify(Object.fromEntries(Object.values(extensions).map((entry, i) => [entry.url, pinned[i]])))}, __fbFetch = fetch;
-fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Array.from(atob(__fbExt[url]), c => c.charCodeAt(0)), { status: 200, headers: { "content-type": "application/wasm" } })) : __fbFetch(url, init);
+  // (The directive keeps the bundle strict: it must stay the first statement of the worker script.)
+  const shim = `"use strict";
+const __fbExt = ${JSON.stringify(Object.fromEntries(Object.values(extensions).map((entry, i) => [entry.url, pinned[i]])))}, __fbFetch = fetch;
+self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Array.from(atob(__fbExt[url]), c => c.charCodeAt(0)), { status: 200, headers: { "content-type": "application/wasm" } })) : __fbFetch(url, init);
 `;
   const source = shim + text.replaceAll("new Request(this.mainModuleURL)", `new Request(this.mainModuleURL,{integrity:${JSON.stringify(wasm.integrity)}})`);
   const workerUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));

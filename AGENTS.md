@@ -57,7 +57,7 @@ One issue produces one branch (`issue/<n>-<slug>`) and one PR, whose body says `
   - before you add a test, extend an existing one if it fits.
 - Run only the checks your brief assigns. Do not rerun a check that is already green unless something relevant changed.
 - Run slow commands (full suites, builds, `gh run watch`) in the background where your host allows it, and never sleep-poll.
-- **Talking to the foreman** happens on GitHub: post the comment your role asks for, then end your turn. The foreman is notified and answers with a follow-up message.
+- **Talking to the foreman** happens on GitHub: post the comment your role asks for, run the wake-up step if your brief specifies one, then end your turn.
 - Workers are child sessions. Do not run `memo` or write shared memory, wiki, or knowledge notes; global "parent session" rules do not apply to you.
 - Workers never start other factory workers, merge, push to `main`, edit labels, or close issues.
 

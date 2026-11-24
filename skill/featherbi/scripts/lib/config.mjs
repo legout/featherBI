@@ -1,5 +1,6 @@
 // Loads dashboard.yaml and checks the few things the build relies on.
 import fs from "node:fs";
+import { CREDENTIAL_KEY } from "./sources.mjs";
 import { parse } from "./vendor/yaml/index.js";
 
 const ENGINES = ["haybarn", "duckdb-wasm"];
@@ -22,7 +23,12 @@ export function loadConfig(file) {
   for (const [source, spec] of sources) {
     // Source names become table names in the browser, so they must be plain identifiers.
     need(/^[A-Za-z_][A-Za-z0-9_]*$/.test(source), `source "${source}": the name must be a plain identifier`);
-    need(typeof spec?.read === "string", `source "${source}": \`read\` (a DuckDB table expression) is required`);
+    for (const key of Object.keys(spec ?? {})) {
+      need(!CREDENTIAL_KEY.test(key), `source "${source}": \`${key}\` looks like a credential; use the environment or DuckDB secrets`);
+    }
+    const attach = typeof spec?.attach === "string";
+    need(typeof spec?.read === "string" !== attach, `source "${source}": give either \`read\` (a DuckDB table expression) or \`attach\``);
+    need(!attach || typeof spec.table === "string" !== (typeof spec.sql === "string"), `source "${source}": \`attach\` needs \`table\` or \`sql\``);
   }
 
   need(Array.isArray(c.tiles) && c.tiles.length, "`tiles` needs at least one tile");

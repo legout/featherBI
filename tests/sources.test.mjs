@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadConfig } from "../skill/featherbi/scripts/lib/config.mjs";
+import { snapshot } from "../skill/featherbi/scripts/lib/sources.mjs";
+
+const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "formats");
+const readme = fs.readFileSync(path.join(dir, "README.md"), "utf8");
+const rows = Number(readme.match(/- rows: (\d+)/)[1]);
+const sum = Number(readme.match(/- sum: ([\d.]+)/)[1]);
+
+const sources = {
+  csv: { read: "read_csv('items.csv')" },
+  json: { read: "read_json('items.json')" },
+  parquet: { read: "read_parquet('items.parquet')" },
+  xlsx: { read: "read_xlsx('items.xlsx')" },
+  sqlite: { attach: "sqlite:items.sqlite", table: "items" },
+  delta: { read: "delta_scan('delta')" },
+  iceberg: { read: "iceberg_scan('iceberg/ns/items', allow_moved_paths = true)" },
+  ducklake: { attach: "ducklake:items.ducklake", table: "items" },
+  sql: { attach: "sqlite:items.sqlite", sql: "SELECT * FROM items WHERE id > 0" },
+};
+
+test("every format fixture reaches its snapshot with the README count and sum", () => {
+  const tables = snapshot(sources, dir);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sources-test-"));
+  try {
+    for (const name of Object.keys(sources)) {
+      const file = path.join(tmp, `${name}.parquet`);
+      fs.writeFileSync(file, tables[name]);
+      const q = `SELECT count(*)::INT AS n, sum(amount::DOUBLE) AS s, list(__row ORDER BY id) AS r, list(id) = list(id ORDER BY id) AS sorted FROM '${file}'`;
+      const [got] = JSON.parse(execFileSync("duckdb", ["-json", "-c", q], { encoding: "utf8" }));
+      assert.deepEqual([got.n, got.s], [rows, sum], name);
+      assert.deepEqual(got.r, [1, 2, 3, 4, 5], `${name}: __row follows ORDER BY ALL`);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("a config key that looks like a credential is refused", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sources-test-"));
+  try {
+    for (const key of ["password", "secret", "key_id", "token", "S3_Secret_Key"]) {
+      const file = path.join(tmp, "d.yaml");
+      fs.writeFileSync(
+        file,
+        `title: T\nsources:\n  a:\n    read: "read_csv('x.csv')"\n    ${key}: hunter2\ntiles:\n  - {type: kpi, title: K, sql: "SELECT 1 AS value"}\n`,
+      );
+      assert.throws(() => loadConfig(file), new RegExp(`credential.*${key}|${key}.*credential`, "i"), key);
+    }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("profile prints schema, count and 5 samples per column as JSON", () => {
+  const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "skill", "featherbi", "scripts", "featherbi.mjs");
+  const out = execFileSync("node", [cli, "profile", "items.parquet", "read_csv('items.csv')"], { cwd: dir, encoding: "utf8" });
+  const [a, b] = JSON.parse(out);
+  assert.equal(a.source, "items.parquet");
+  assert.equal(b.count, rows);
+  assert.deepEqual(a.schema.map(c => c.name), ["id", "name", "amount"]);
+  assert.equal(a.samples.name.length, 5);
+  assert.deepEqual([...a.samples.id].sort(), [1, 2, 3, 4, 5]);
+});

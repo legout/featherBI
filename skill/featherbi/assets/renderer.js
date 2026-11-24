@@ -41,6 +41,15 @@ async function startEngine({ module, worker, wasm }) {
         await statement.close();
       }
     },
+    // The raw Arrow result, for Explore: Perspective keeps the column types (dates, decimals).
+    async arrow(sql, params = []) {
+      const statement = await conn.prepare(sql);
+      try {
+        return await statement.query(...params);
+      } finally {
+        await statement.close();
+      }
+    },
   };
 }
 
@@ -552,3 +561,61 @@ addEventListener("hashchange", () => {
   refresh();
 });
 await refresh();
+
+// Explore (spec 0001 §Explore): a navbar button opens Perspective on one table. Perspective loads on the first open only;
+// each open loads the table with the filters active at that moment, and the filter path never touches it.
+if (config.explore) {
+  const { table: name, perspective: psp, charts } = config.explore;
+  const button = el("button", "btn btn-sm btn-ghost", "Explore");
+  const dialog = el("dialog", "rounded-box bg-base-100 shadow-sm");
+  dialog.setAttribute("aria-label", `Explore ${name}`);
+  dialog.style.cssText = "width:95vw;height:90vh;max-width:none;max-height:none;margin:auto;padding:0"; // preflight drops the dialog's centring
+  const close = el("button", "btn btn-sm btn-ghost", "Close");
+  close.onclick = () => dialog.close();
+  const head = el("div", "flex items-center gap-3 px-4");
+  head.append(el("h2", "flex-1 text-sm font-semibold", `Explore: ${name}`), close);
+  dialog.append(head);
+  document.body.append(dialog);
+  document.querySelector("header h1").after(button);
+  let ready; // the loaded viewer and its Perspective table, created on the first open
+  const load = async () => {
+    const css = Object.assign(document.createElement("link"), { rel: "stylesheet", href: psp.css.url, integrity: psp.css.integrity, crossOrigin: "anonymous" });
+    document.head.append(css);
+    // integrity: the page's import map. The charts plugin is the patched bundle inlined by the build (tools/patch-perspective.mjs).
+    await import(psp.viewer.url);
+    await Promise.all([import(psp.datagrid.url), import(`data:text/javascript;charset=utf-8,${encodeURIComponent(charts)}`)]);
+    const client = await (await import(psp.client.url)).default.worker();
+    const viewer = document.createElement("perspective-viewer");
+    viewer.style.cssText = "height:calc(100% - 3rem)";
+    dialog.append(viewer);
+    return { client, viewer, table: null };
+  };
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      dialog.showModal();
+      ready ??= load();
+      const p = await ready;
+      p.viewer.style.visibility = "hidden"; // the previous open's rows stay hidden until this open's view is drawn; laid out, so the grid redraws
+      const x = expand(`SELECT * FROM ${ident(name)} WHERE {{filters:${name}}}`, state, filters.dims, filters.date, filters.tableColumns);
+      const { tableToIPC } = await import("apache-arrow");
+      const ipc = tableToIPC(await engine.arrow(x.sql, x.params), "stream");
+      p.viewer.setAttribute("theme", document.getElementById("theme").checked ? "Pro Dark" : "Pro");
+      if (p.table) await p.table.replace(ipc);
+      else {
+        p.table = await p.client.table(ipc, { name });
+        await p.viewer.load(p.client);
+        await p.viewer.restore({ table: name });
+      }
+      await p.viewer.flush();
+      await p.viewer.resize(); // flush() resolves before the grid repaints; an awaited redraw does not
+      p.viewer.style.visibility = "visible";
+    } catch (error) {
+      ready = undefined;
+      dialog.close();
+      fail("Explore could not be loaded from cdn.jsdelivr.net. Check your network connection, then try again.", error);
+    } finally {
+      button.disabled = false;
+    }
+  };
+}

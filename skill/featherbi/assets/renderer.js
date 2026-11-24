@@ -586,7 +586,7 @@ if (config.explore) {
     await Promise.all([import(psp.datagrid.url), import(`data:text/javascript;charset=utf-8,${encodeURIComponent(charts)}`)]);
     const client = await (await import(psp.client.url)).default.worker();
     const viewer = document.createElement("perspective-viewer");
-    viewer.style.cssText = "display:none;height:calc(100% - 3rem)"; // shown once it has a view
+    viewer.style.cssText = "height:calc(100% - 3rem)";
     dialog.append(viewer);
     return { client, viewer, table: null };
   };
@@ -596,6 +596,7 @@ if (config.explore) {
       dialog.showModal();
       ready ??= load();
       const p = await ready;
+      p.viewer.style.visibility = "hidden"; // the previous open's rows stay hidden until this open's view is drawn; laid out, so the grid redraws
       const x = expand(`SELECT * FROM ${ident(name)} WHERE {{filters:${name}}}`, state, filters.dims, filters.date, filters.tableColumns);
       const { tableToIPC } = await import("apache-arrow");
       const ipc = tableToIPC(await engine.arrow(x.sql, x.params), "stream");
@@ -605,8 +606,10 @@ if (config.explore) {
         p.table = await p.client.table(ipc, { name });
         await p.viewer.load(p.client);
         await p.viewer.restore({ table: name });
-        p.viewer.style.display = "block";
       }
+      await p.viewer.flush();
+      await p.viewer.resize(); // flush() resolves before the grid repaints; an awaited redraw does not
+      p.viewer.style.visibility = "visible";
     } catch (error) {
       ready = undefined;
       dialog.close();

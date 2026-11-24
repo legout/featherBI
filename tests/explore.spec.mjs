@@ -29,6 +29,24 @@ test("Explore loads on demand and opens with the EU rows on file://", async ({ p
     await expect(viewer).toBeVisible();
     // The fixture README independently records six EU sales rows.
     await expect.poll(() => viewer.evaluate(async el => (await el.getView()).num_rows())).toBe(6);
+    // Reopen after switching to US: every open shows the new filter's rows, never the previous EU ones.
+    await page.getByRole("button", { name: "Close" }).click();
+    await page.getByRole("combobox", { name: "region" }).selectOption("US");
+    await expect(page.getByRole("group", { name: "Revenue" }).getByText("$1,410.50", { exact: true })).toBeVisible();
+    // Samples every frame whether the visible viewer shows a region cell "EU" or "US" (its cells live in shadow roots).
+    await page.evaluate(() => {
+      const text = n => (n.shadowRoot ? text(n.shadowRoot) : "") + [...n.childNodes].map(c => (c.nodeType === 3 ? ` ${c.textContent} ` : c.nodeType === 1 ? text(c) : "")).join("");
+      window.seen = new Set();
+      const sample = () => {
+        const el = document.querySelector("perspective-viewer");
+        if (el?.checkVisibility({ visibilityProperty: true })) for (const region of ["EU", "US"]) if (new RegExp(`\\s${region}\\s`).test(text(el))) window.seen.add(region);
+        if (!window.seen.has("US")) requestAnimationFrame(sample);
+      };
+      sample();
+    });
+    await page.getByRole("button", { name: "Explore" }).click();
+    await expect.poll(() => page.evaluate(() => [...window.seen])).toContain("US");
+    expect(await page.evaluate(() => [...window.seen])).toEqual(["US"]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

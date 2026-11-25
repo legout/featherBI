@@ -6,6 +6,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { loadConfig } from "./lib/config.mjs";
 import { render } from "./lib/render.mjs";
+import { remote } from "./lib/s3.mjs";
 import { profile, snapshot } from "./lib/sources.mjs";
 import { validate } from "./lib/validate.mjs";
 
@@ -30,16 +31,23 @@ function earlierBuild(out) {
 }
 
 try {
-  const { positionals, values } = parseArgs({ allowPositionals: true, options: { out: { type: "string" }, offline: { type: "boolean" }, split: { type: "boolean" } } });
+  const { positionals, values } = parseArgs({ allowPositionals: true, options: { out: { type: "string" }, offline: { type: "boolean" }, split: { type: "boolean" }, remote: { type: "string" }, expires: { type: "string" } } });
   const [command, file] = positionals;
   if (command === "profile" && file) {
     console.log(JSON.stringify(profile(positionals.slice(1), process.cwd()), null, 2));
     process.exit(0);
   }
   if (command !== "build" || !file || positionals.length > 2) {
-    throw new Error("usage: featherbi.mjs build <dashboard.yaml> [--out <path>] [--offline | --split] | profile <table expression or file>…");
+    throw new Error("usage: featherbi.mjs build <dashboard.yaml> [--out <path>] [--offline | --split | --remote s3://<bucket>/<prefix> [--expires <n>h|<n>d]] | profile <table expression or file>…");
   }
   if (values.offline && values.split) throw new Error("--offline and --split cannot be combined");
+  if (values.remote !== undefined && (values.offline || values.split)) throw new Error("--remote cannot be combined with --offline or --split");
+  if (values.expires !== undefined && values.remote === undefined) throw new Error("--expires needs --remote");
+  if (values.remote !== undefined && !/^s3:\/\/[^/]+/.test(values.remote)) throw new Error("--remote must be an s3://<bucket>/<prefix> URL");
+  const duration = /^(\d+)([hd])$/.exec(values.expires ?? "7d");
+  const expiresSec = duration && duration[1] * (duration[2] === "h" ? 3600 : 86400);
+  // 7 days is the SigV4 maximum.
+  if (!expiresSec || expiresSec < 3600 || expiresSec > 7 * 86400) throw new Error(`--expires must be <n>h or <n>d, from 1h to 7d, not ${values.expires}`);
   const config = loadConfig(file);
   const mode = ["offline", "split"].find(flag => values[flag]) ?? "default";
   // Upstream duckdb-wasm loads its Parquet extension over HTTP inside its worker, with no way to hand it over: an offline
@@ -53,11 +61,19 @@ try {
   const replace = mode === "split" ? earlierBuild(out) : [];
   const snapshots = snapshot(config.sources, dir);
   const filters = validate(config, snapshots);
-  if (mode !== "split") {
+  let remoteData;
+  if (mode === "default" && values.remote !== undefined) {
+    // Nothing is written before every table is uploaded and its presigned URL passed the CORS preflight.
+    const mb = Object.values(snapshots).reduce((sum, bytes) => sum + bytes.length, 0) / 2 ** 20;
+    console.error(`featherbi: remote data: ${mb.toFixed(1)} MB, downloaded by every viewer on open`);
+    if (mb > 200) console.error("featherbi: warning: the remote data is above 200 MB; every viewer downloads this on open; aggregate in source SQL.");
+    if (process.env.AWS_SESSION_TOKEN) console.error("featherbi: warning: links stop working when the session token expires, possibly before --expires");
+    remoteData = await remote(snapshots, values.remote, { expiresSec, env: process.env });
+  } else if (mode !== "split") {
     const mb = Object.values(snapshots).reduce((sum, bytes) => sum + bytes.length, 0) / 2 ** 20;
     if (mb > 25) console.error(`featherbi: warning: the embedded Parquet is ${mb.toFixed(1)} MB, above 25 MB, which makes the page slow to open and share. Build with --split, or aggregate in the source SQL.`);
   }
-  const html = await render(config, snapshots, filters, mode);
+  const html = await render(config, snapshots, filters, mode, { remote: remoteData });
   for (const file of replace) fs.rmSync(file); // only now, after every step that can fail has passed
   fs.mkdirSync(mode === "split" ? out : path.dirname(out), { recursive: true });
   if (mode === "split") {

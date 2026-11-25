@@ -128,6 +128,24 @@ test("--split refuses a folder that holds files a featherBI build did not write,
     assert.equal(fs.readFileSync(note, "utf8"), "keep me");
     assert.equal(sha256(path.join(out, "index.html")), index);
 
+    // A generated file whose bytes were replaced afterwards is no longer ours either, even though its name still matches
+    // the marker: the digests recorded in index.html say so, whether or not the config still lists the source.
+    const dig = path.join(dir, "dig");
+    assert.equal(build(["dashboard.yaml", "--split", "--out", "dig"], dir).status, 0);
+    const digIndex = sha256(path.join(dig, "index.html"));
+    const digSales = path.join(dig, "sales.parquet");
+    fs.writeFileSync(digSales, "a fresh export, not written by featherBI");
+    const keep = build(["dashboard.yaml", "--split", "--out", "dig"], dir);
+    assert.notEqual(keep.status, 0);
+    assert.match(keep.stderr, /sales\.parquet/);
+    fs.writeFileSync(path.join(dir, "dropped.yaml"), 'title: Split\nname: split\nsources:\n  more:\n    read: "(SELECT 2 AS y)"\ntiles:\n  - { type: kpi, title: N, sql: "SELECT COUNT(*) AS value FROM more" }\n');
+    const dropped = build(["dropped.yaml", "--split", "--out", "dig"], dir);
+    assert.notEqual(dropped.status, 0);
+    assert.match(dropped.stderr, /sales\.parquet/);
+    assert.equal(fs.readFileSync(digSales, "utf8"), "a fresh export, not written by featherBI");
+    assert.equal(sha256(path.join(dig, "index.html")), digIndex);
+    assert.deepEqual(fs.readdirSync(dig).sort(), ["index.html", "more.parquet", "sales.parquet"]); // nothing was written or removed
+
     // An index.html featherBI did not write is not a reason to take over the folder either.
     const site = path.join(dir, "site");
     fs.mkdirSync(site);

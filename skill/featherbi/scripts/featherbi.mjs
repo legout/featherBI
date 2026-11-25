@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // featherBI: `build <dashboard.yaml>` turns a dashboard config into one HTML file (or a --split folder); `profile` describes sources.
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -15,9 +16,16 @@ function earlierBuild(out) {
   if (!fs.statSync(out).isDirectory()) throw new Error(`--split: ${out} is a file; --out must name the folder to write`);
   const present = fs.readdirSync(out);
   const list = present.includes("index.html") && fs.readFileSync(path.join(out, "index.html"), "utf8").match(/<meta name="featherbi-split" content='([^']*)'>/);
-  const ours = list ? ["index.html", ...JSON.parse(list[1])] : [];
+  const meta = list ? JSON.parse(list[1]) : null; // { "<file>": sha-256 } of what the earlier build wrote there
+  const ours = meta ? ["index.html", ...Object.keys(meta)] : [];
   const foreign = present.filter(file => !ours.includes(file));
   if (foreign.length) throw new Error(`--split: ${out} holds files a featherBI build did not write (${foreign.join(", ")}); nothing was written. Build into another folder, or remove them yourself`);
+  // A listed file is only ours if its bytes still match the digest the earlier build recorded: a replaced export of the
+  // same generated name is not.
+  for (const [file, hash] of Object.entries(meta ?? {})) {
+    const actual = crypto.createHash("sha256").update(fs.readFileSync(path.join(out, file))).digest("hex");
+    if (actual !== hash) throw new Error(`--split: ${out} holds ${file}, which a featherBI build did not write (its bytes do not match the digest in index.html); nothing was written. Build into another folder, or remove it yourself`);
+  }
   return present.map(file => path.join(out, file));
 }
 

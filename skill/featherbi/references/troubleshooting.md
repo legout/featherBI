@@ -22,12 +22,21 @@ Build errors start with `featherbi:` and exit 1; nothing is written (a `--split`
 | `\`{{filters:<t>}}\` names a table that is not a source` / `unknown placeholder` | Use a source name; syntax is `{{filters:<table>}}` or `{{filters:<table> AS <alias>}}`. |
 | `--offline and --split cannot be combined` | Pick one. |
 | `--offline is not available for engine "duckdb-wasm"` | Remove `--offline` or use `engine: haybarn`. |
+| `--remote cannot be combined with --offline or --split` / `--expires needs --remote` | Fix the flags (`remote.md`). |
+| `--expires must be <n>h or <n>d, from 1h to 7d` | Use e.g. `12h` or `7d`. |
+| `--remote needs AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the environment` | Export them; never put them in the config. |
+| `--remote: "<bucket>" is not a valid S3 bucket name` / `prefix "<p>" contains an empty segment` | Fix the bucket or remove the `//` in the prefix. |
+| `table "<t>": PUT/HEAD s3://… returned <status>` / `failed (<code>)` | The bucket refused or was unreachable: check credentials, endpoint (`AWS_ENDPOINT_URL`), bucket. |
+| `table "<t>": the preflight range GET to bucket <b> returned <n>, not 206` / `bucket <b> sends no CORS header for Origin: null` | Add the bucket CORS rule from `remote.md`. |
 | `--split: <dir> holds files a featherBI build did not write` | Build into another folder (`--out`) or clear it yourself. |
 | `--split: <path> is a file` | `--out` must name a folder with `--split`. |
 
 ## Warnings and runtime
 
 - **`the embedded Parquet is N MB, above 25 MB`**: the page is slow to open and share. Use `--split`, or aggregate in the source SQL.
+- **`remote data … above 200 MB`**: every viewer downloads it on open. Aggregate in the source SQL.
+- **`links stop working when the session token expires`**: the `AWS_SESSION_TOKEN` may end before `--expires`; rebuild with longer-lived credentials.
+- **A remote page says the data link has expired**: rebuild it. **`Table “<t>” could not be loaded`**: object deleted (404) or CORS/network problem.
 - **A `--split` page is blank from `file://`**: serve the folder (`python3 -m http.server`).
 - **The default page is blank offline**: it loads JS from a CDN. Build with `--offline` (Haybarn engine).
 - **A tile shows `–`**: its `sql` returned no row or NULL.

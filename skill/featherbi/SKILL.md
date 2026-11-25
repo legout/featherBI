@@ -18,7 +18,7 @@ Needs on the machine: Node >= 22 and the DuckDB CLI >= 2.0 on `PATH`. No npm ins
 3. **Write `dashboard.yaml`** following `references/config.md`. Source paths are relative to the config file.
 4. **Build**:
    `node scripts/featherbi.mjs build dashboard.yaml`
-   Add `--out <path>`, `--offline` (everything inlined, opens with no network) or `--split` (folder, needs a web server). Details in `references/config.md`.
+   Add `--out <path>`, `--offline` (everything inlined, opens with no network) or `--split` (folder, needs a web server). Details in `references/config.md`. `--remote s3://<bucket>/<prefix>` puts the data in a bucket behind expiring links; it is **unqualified**, read `references/remote.md` before using or recommending it.
 5. **On error**, the message names the tile (`tile "<id or number>": …`) or source. Fix that tile or source in the config and rebuild. See `references/troubleshooting.md`. Do not change scripts or assets.
 6. **Report** to the user the output path and its size, as the build prints them, plus any warning. Say how to open it (double-click; `--split` via `python3 -m http.server`).
 
@@ -29,5 +29,5 @@ Paths above are relative to the skill folder (`skill/featherbi/` in a checkout, 
 - Every tile SQL reads only snapshot tables (the source names) and core DuckDB functions, and puts `{{filters:<table>}}` in each `WHERE`.
 - Write repeatable source SQL: no clock functions, no `random()`. The same config, data and DuckDB give a byte-identical file.
 - Credentials never go in the config.
-- Do not claim a remote source works unless `references/sources.md` marks it verified.
+- Do not claim a remote source works unless `references/sources.md` marks it verified. `--remote` is unqualified until `references/remote.md` says otherwise.
 - `--offline` does not work with `engine: duckdb-wasm`, and cannot be combined with `--split`.

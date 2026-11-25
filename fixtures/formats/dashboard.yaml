@@ -1,0 +1,54 @@
+title: Format fixtures
+name: formats
+sources:
+  csv:
+    read: "read_csv('items.csv')"
+  json:
+    read: "read_json('items.json')"
+  parquet:
+    read: "read_parquet('items.parquet')"
+  excel:
+    read: "read_xlsx('items.xlsx')"
+  sqlite:
+    attach: "sqlite:items.sqlite"
+    table: items
+  delta:
+    read: "delta_scan('delta')"
+  iceberg:
+    read: "iceberg_scan('iceberg/ns/items', allow_moved_paths = true)"
+  ducklake:
+    attach: "ducklake:items.ducklake"
+    table: items
+tiles:
+  - {type: kpi, title: "CSV rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM csv"}
+  - {type: kpi, title: "CSV total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM csv"}
+  - {type: kpi, title: "JSON rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM json"}
+  - {type: kpi, title: "JSON total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM json"}
+  - {type: kpi, title: "Parquet rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM parquet"}
+  - {type: kpi, title: "Parquet total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM parquet"}
+  - {type: kpi, title: "Excel rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM excel"}
+  - {type: kpi, title: "Excel total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM excel"}
+  - {type: kpi, title: "SQLite rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM sqlite"}
+  - {type: kpi, title: "SQLite total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM sqlite"}
+  - {type: kpi, title: "Delta rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM delta"}
+  - {type: kpi, title: "Delta total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM delta"}
+  - {type: kpi, title: "Iceberg rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM iceberg"}
+  - {type: kpi, title: "Iceberg total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM iceberg"}
+  - {type: kpi, title: "DuckLake rows", format: number,
+     sql: "SELECT COUNT(*) AS value FROM ducklake"}
+  - {type: kpi, title: "DuckLake total", format: currency,
+     sql: "SELECT SUM(amount::DOUBLE) AS value FROM ducklake"}

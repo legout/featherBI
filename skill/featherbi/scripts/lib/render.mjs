@@ -1,6 +1,7 @@
 // Render phase: template + prebuilt CSS + renderer + config + snapshot -> one HTML string.
 // Modes (spec 0001 §Outputs): default embeds the snapshot and loads the libraries from the CDN with SRI;
 // --offline inlines every library too; --split ships the snapshot as Parquet files next to the page.
+import crypto from "node:crypto";
 import fs from "node:fs";
 import { offlineAssets } from "./assets.mjs";
 
@@ -47,6 +48,7 @@ export async function render(config, snapshots, filters, mode = "default") {
   };
   // One pass over the template, so "{{…}}" inside inserted content is never substituted.
   const html = read("templates/dashboard.html").replace(/\{\{(\w+)\}\}/g, (_, key) => parts[key]);
-  // A split page lists the files of its folder, so the next build into it can tell its own files from anyone else's (featherbi.mjs).
-  return mode === "split" ? html.replace("</head>", `<meta name="featherbi-split" content='${json(Object.keys(snapshots).map(name => `${name}.parquet`))}'>\n</head>`) : html;
+  // A split page lists the files of its folder with their digests, so the next build into it can tell its own files
+  // (still byte-identical) from anyone else's (featherbi.mjs).
+  return mode === "split" ? html.replace("</head>", `<meta name="featherbi-split" content='${json(Object.fromEntries(Object.entries(snapshots).map(([name, bytes]) => [`${name}.parquet`, crypto.createHash("sha256").update(bytes).digest("hex")])))}'>\n</head>`) : html;
 }

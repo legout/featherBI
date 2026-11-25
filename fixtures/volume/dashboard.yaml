@@ -1,0 +1,73 @@
+title: Volume
+name: volume
+sources:
+  sales:
+    read: "read_parquet('sales.parquet')"
+  targets:
+    read: "read_xlsx('../hand/targets.xlsx')"
+dims:
+  region: {col: region}
+  channel: {col: channel}
+date: {col: order_date, default: last_12_months}
+tiles:
+  - type: kpi
+    title: Revenue
+    format: currency
+    sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}"
+  - type: kpi
+    title: Orders
+    sql: "SELECT COUNT(*) AS value FROM sales WHERE {{filters:sales}}"
+  - type: kpi
+    title: Average
+    format: currency
+    sql: "SELECT AVG(revenue) AS value FROM sales WHERE {{filters:sales}}"
+  - type: kpi
+    title: Maximum
+    format: currency
+    sql: "SELECT MAX(revenue) AS value FROM sales WHERE {{filters:sales}}"
+  - type: echarts
+    preset: bar
+    title: Revenue vs target by region
+    click: region
+    exclude: [region]
+    sql: >
+      SELECT s.region AS x, SUM(s.revenue) AS y, 'revenue' AS series
+      FROM sales s WHERE {{filters:sales AS s}} GROUP BY 1
+      UNION ALL
+      SELECT region, target, 'target' FROM targets WHERE {{filters:targets}}
+      ORDER BY 3, 1
+  - type: echarts
+    preset: bar
+    title: Revenue by channel
+    click: channel
+    sql: >
+      SELECT channel AS x, SUM(revenue) AS y
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: Revenue by month
+    sql: >
+      SELECT strftime(order_date, '%Y-%m') AS x, SUM(revenue) AS y
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: pivot
+    title: Region × month
+    format: currency
+    click: region
+    sql: >-
+      SELECT COALESCE(region, 'Total') AS r,
+      COALESCE(strftime(order_date, '%Y-%m'), 'Total') AS c,
+      SUM(revenue) AS v,
+      GROUPING(region) = 1 AS r_total,
+      GROUPING(strftime(order_date, '%Y-%m')) = 1 AS c_total
+      FROM sales WHERE {{filters:sales}}
+      GROUP BY GROUPING SETS (
+        (region, strftime(order_date, '%Y-%m')),
+        (region),
+        (strftime(order_date, '%Y-%m')),
+        ()
+      )
+      ORDER BY r_total, r, c_total, c
+  - type: table
+    title: Sales rows
+    source: sales
+    columns: [order_date, region, channel, revenue]

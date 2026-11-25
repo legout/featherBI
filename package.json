@@ -5,7 +5,8 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "test": "node --test 'tests/*.test.mjs' && playwright test",
-    "build:css": "node tools/build-css.mjs"
+    "build:css": "node tools/build-css.mjs",
+    "timing": "node tests/timing.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.65.1",

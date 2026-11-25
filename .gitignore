@@ -2,3 +2,4 @@ node_modules/
 fixtures/**/dist/
 test-results/
 playwright-report/
+fixtures/volume/*.parquet

@@ -71,6 +71,12 @@ test('uploads exact snapshot once and preflights; credentials remain secret', as
   const hashed = await run([fixture, '--remote', 's3://bucket/issue#81', '--out', out], { AWS_ENDPOINT_URL: s.endpoint });
   if (hashed.code !== 0) assert.equal(s.requests.length, before);
   else for (const req of s.requests.slice(before)) assert.match(req.key, /^\/bucket\/issue%2381\/[0-9a-f]{64}\.parquet$/);
+  // An empty internal segment is almost always a typo: rejected before any signed request, error names the prefix.
+  const afterHash = s.requests.length;
+  const emptySeg = await run([fixture, '--remote', 's3://bucket/team//issue#81', '--out', out], { AWS_ENDPOINT_URL: s.endpoint });
+  assert.notEqual(emptySeg.code, 0);
+  assert.match(emptySeg.stderr, /team\/\/issue#81/);
+  assert.equal(s.requests.length, afterHash);
 });
 for (const [name, options, message] of [['HEAD 403', { head: 403 }, /403/], ['HEAD 301', { head: 301 }, /301/], ['missing CORS', { cors: false }, /cors/i], ['preflight 200', { get: 200 }, /cors/i]]) {
   test(`${name} fails without HTML or credential leaks`, async t => {

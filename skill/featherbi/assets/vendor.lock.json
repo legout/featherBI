@@ -2,8 +2,18 @@
   "apache-arrow": {
     "version": "17.0.0",
     "url": "https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/+esm",
-    "integrity": null,
-    "note": "jsDelivr generates +esm bundles on request, so they cannot carry SRI."
+    "integrity": "sha384-EzZLPOtWBlnrvdnpaH2VJM2UiyH4TouFRMyo/WZvX1rfp3nDBJQhdcwCF6xb6FSm",
+    "note": "The engine module imports it by name. jsDelivr serves a version's +esm bundle as immutable, so it is pinned by hash like any other file; an --offline build inlines it and the `dependencies` its bundle imports by site-absolute path.",
+    "dependencies": [
+      {
+        "url": "https://cdn.jsdelivr.net/npm/tslib@2.6.3/+esm",
+        "integrity": "sha384-BXphtxj4LOPhlu1vuQhAtk80EyXwQgrmUdz9TPZICalKSfjqkv3XgQgOL60e9gmG"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/flatbuffers@24.3.25/+esm",
+        "integrity": "sha384-9t2LsOpj4opUuy/f9D4vSA+NfESv+rqXvUoQ19ZhmNsA6j4TI+V8q87FY16S+KjY"
+      }
+    ]
   },
   "ag-grid": {
     "version": "34.3.1",
@@ -30,6 +40,13 @@
       "wasm": {
         "url": "https://cdn.jsdelivr.net/npm/@haybarn/haybarn-wasm@2.0.1-rc3/dist/duckdb-base.wasm",
         "integrity": "sha384-Gef4RBP5AMajsFulzK2tM4VWmtGKXVUMuxbfGcdnW/+Ppqvtp3FywK8ncbn8PSnu"
+      },
+      "extensions": {
+        "parquet": {
+          "url": "https://haybarn-extensions.query.farm/core/v2.0.1/wasm_eh/parquet.duckdb_extension.wasm",
+          "integrity": "sha384-ZTl7Jhng5Mz9kh81v0Uas98Bpb0QFtGfQPxQnQge1ykwxgyScbwIZeKvUmXUI+xa",
+          "note": "The engine reads Parquet through this extension, which its worker would otherwise download at the first query. The page supplies the pinned copy (assets/renderer.js); an offline build inlines it. It must stay the URL the engine's own getExtensionUrl reports."
+        }
       }
     },
     "duckdb-wasm": {
@@ -51,7 +68,7 @@
   },
   "perspective": {
     "version": "5.10.0",
-    "note": "Explore only, loaded on first open. The client and viewer fetch their wasm from the CDN without SRI. `charts` is the bundle tools/patch-perspective.mjs patches into assets/perspective-charts.patched.js, which is inlined.",
+    "note": "Explore only, loaded on first open. In a default build the client and viewer fetch their wasm (`wasm`) from the CDN without SRI; an --offline build inlines it, checked against its hash. `charts` is the bundle tools/patch-perspective.mjs patches into assets/perspective-charts.patched.js, which is inlined.",
     "client": {
       "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/client@5.10.0/dist/cdn/perspective.js",
       "integrity": "sha384-30cqYZeEOV6oQnFHm0OVHeWmB/swQFx7J/Mye/K2AJZatr0rFKP+xvlCF3I9pkY3"
@@ -71,6 +88,28 @@
     "css": {
       "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/viewer@5.10.0/dist/css/themes.css",
       "integrity": "sha384-ZbbGZlDtaHPHqLi+vyMcEUWQp0KXFXZNS6PrDHPKqwJFGnm5Mxz09Kh6SqenIOeN"
-    }
+    },
+    "wasm": [
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/client@5.10.0/dist/wasm/perspective-js.wasm",
+        "integrity": "sha384-1WIDysqgf+/5HQ9O+lUog+/pFZ5w+ZjO7HO9/VFkzOa7CDljB75/qVryR2JkORnP"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/client@5.10.0/dist/wasm/perspective-migrate.wasm",
+        "integrity": "sha384-vnaBcnBNmByyK5FfZ4XjDEGttv4M/Zbtc7MdFWDeOvtjPVUorkh4WjaMPR9180x/"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/viewer@5.10.0/dist/wasm/perspective-viewer.wasm",
+        "integrity": "sha384-xWl9dq5sHhFKwGfOhfdlnxdZrLFuBGPigpnRON3mjDxT9ZS3JbBl8WF4gy7dn14/"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/server@5.10.0/dist/wasm/perspective-server.wasm",
+        "integrity": "sha384-XJ994i83vUzRiNSHRjbqmH/pZo22ZVCWOggQaQe54MXZYHg2TXEWxR2xmcX+/3Xr"
+      },
+      {
+        "url": "https://cdn.jsdelivr.net/npm/@perspective-dev/server@5.10.0/dist/wasm/perspective-server.memory64.wasm",
+        "integrity": "sha384-IR1MsgHPML2gZOeZgPYALLHptsRapwuj9jBQPzTeNyqQH1tKTktdtvfLgEoRwwmW"
+      }
+    ]
   }
 }

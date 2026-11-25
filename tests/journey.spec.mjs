@@ -28,7 +28,7 @@ const painted = chart =>
     }),
   );
 // A real mouse click on the chart at the pixel the chart library reports for a data point.
-async function clickChart(page, title, point, dx = 0) {
+async function chartPoint(page, title, point, dx = 0) {
   const chart = tile(page, title);
   await expect(chart).not.toHaveAttribute("aria-busy", "true");
   await expect.poll(() => painted(chart)).toBe(true);
@@ -40,7 +40,11 @@ async function clickChart(page, title, point, dx = 0) {
     const [x, y] = echarts.getInstanceByDom(node).convertToPixel({ seriesIndex: 0 }, point);
     return { x: box.x + x, y: box.y + y };
   }, point);
-  await page.mouse.click(at.x + dx, at.y);
+  return { x: at.x + dx, y: at.y };
+}
+async function clickChart(page, title, point, dx = 0) {
+  const at = await chartPoint(page, title, point, dx);
+  await page.mouse.click(at.x, at.y);
 }
 
 // Expected values are the hand-computed ones in fixtures/hand/README.md.
@@ -219,18 +223,25 @@ test("latest state wins on every tile: EU then US before the first result paints
       new MutationObserver(() => window.__seen[title].push(text(node))).observe(node, { childList: true, characterData: true, subtree: true, attributes: true });
     }
   }, titles);
+  const euBar = await chartPoint(page, "Revenue vs target by region", ["EU", 400], -20);
+  const usBar = await chartPoint(page, "Revenue vs target by region", ["US", 400], -20);
   await page.evaluate(() => {
     window.__lag = 1500;
     for (const title in window.__seen) window.__seen[title].length = 0; // only what paints after the clicks counts
   });
-  await page.getByRole("combobox", { name: /^region/ }).selectOption("EU");
-  await page.getByRole("combobox", { name: /^region/ }).selectOption("US");
+  // Click the EU bar, then the US bar (revenue bar is 20 px left of the pair's middle), without waiting for any result.
+  await page.mouse.click(euBar.x, euBar.y);
+  await page.mouse.click(usBar.x, usBar.y);
   const kpi = tile(page, "Revenue").locator(".stat-value");
   await expect(kpi).toHaveText("$1,410.50"); // README: US total
   const pivot = tile(page, "Region × month");
   await expect(pivot.getByRole("row", { name: /^US/ }).getByRole("cell").nth(1)).toHaveText("$490.00"); // US × 2025-02
   await expect(pivot.getByRole("row", { name: /^EU/ })).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Sales rows" })).toContainText("6 rows (filtered)");
+  // By content: the first US row of the README (2025-01-05, US), not just six rows.
+  const firstRow = page.getByRole("group", { name: "Sales rows" }).locator('[role="row"][aria-rowindex="2"]').getByRole("gridcell");
+  await expect(firstRow.nth(0)).toHaveText("2025-01-05");
+  await expect(firstRow.nth(1)).toHaveText("US");
   await expect(tile(page, "Revenue by channel").getByRole("img")).toHaveAttribute("aria-label", /for Online is 0, 660,.*for Retail is 1, 750\.5\./s);
   await expect(tile(page, "Revenue vs target by region").getByRole("img")).toHaveAttribute("aria-label", /for EU is 0, 850,.*for US is 1, 1410\.5\./s); // region is excluded from its own bar
   const seen = await page.evaluate(() => window.__seen);
@@ -242,5 +253,20 @@ test("latest state wins on every tile: EU then US before the first result paints
   for (const [title, pattern] of Object.entries(eu)) for (const shown of seen[title]) expect(shown, title).not.toMatch(pattern);
   // The table keeps showing the unfiltered grid (EU and US) until US arrives; an EU result would show EU cells without US ones.
   for (const shown of seen["Sales rows"]) expect(/\bEU\b/.test(shown) && !/\bUS\b/.test(shown), shown).toBe(false);
+  await page.evaluate(() => (window.__lag = 0));
+
+  // Hash: selecting EU sets #region=EU; a fresh tab on that URL shows the README EU values on every value-bearing tile.
+  await page.getByRole("combobox", { name: /^region/ }).selectOption("EU");
+  await expect(kpi).toHaveText("$850.00");
+  expect(page.url()).toMatch(/#region=EU$/);
+  const fresh = await page.context().newPage();
+  await fresh.goto(page.url());
+  await expect(tile(fresh, "Revenue").getByText("$850.00", { exact: true })).toBeVisible();
+  await expect(tile(fresh, "Revenue vs target by region").getByRole("img")).toHaveAttribute("aria-label", /representing revenue\..*for EU is 0, 850.*representing target\..*for EU is 0, 800/s);
+  await expect(tile(fresh, "Region × month").getByRole("row", { name: /^EU/ }).getByRole("cell").nth(1)).toHaveText("$300.00");
+  await expect(fresh.getByRole("group", { name: "Sales rows" })).toContainText("6 rows (filtered)");
+  const freshRow = fresh.getByRole("group", { name: "Sales rows" }).locator('[role="row"][aria-rowindex="2"]').getByRole("gridcell");
+  await expect(freshRow.nth(0)).toHaveText("2025-01-05");
+  await expect(freshRow.nth(1)).toHaveText("EU");
   expect(errors).toEqual([]);
 });

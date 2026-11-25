@@ -144,6 +144,23 @@ test("--offline: with every non-file: request blocked, every tile renders and Ex
     await expect(page.getByRole("button", { name: "Explore" })).toHaveCount(0);
     expect(network).toEqual([]);
     expect(plainErrors).toEqual([]);
+
+    // Fixture 1 itself (sales + targets.xlsx, revenue-and-target bar), offline: README values, Explore opens.
+    const fixture = path.join(dir, "fixture1.html");
+    build(["fixtures/hand/acceptance.yaml", "--offline", "--out", fixture]);
+    const fixtureErrors = await open(page, pathToFileURL(fixture).href);
+    await expect(tile(page, "Revenue").getByText("$2,260.50", { exact: true })).toBeVisible();
+    const bars = tile(page, "Revenue vs target by region");
+    await expect.poll(() => painted(bars)).toBe(true);
+    await expect(bars.getByRole("img")).toHaveAttribute("aria-label", /representing revenue\..*for EU is 0, 850,.*for US is 1, 1410\.5\..*representing target\..*for EU is 0, 800,.*for US is 1, 1500\./s);
+    await expect(tile(page, "Revenue by channel").getByRole("img")).toHaveAttribute("aria-label", /for Online is 0, 1020,.*for Retail is 1, 1240\.5\./s);
+    await expect(tile(page, "Region × month").getByRole("row", { name: /^EU/ }).getByRole("cell").nth(1)).toHaveText("$300.00");
+    await expect(tile(page, "Sales rows")).toContainText("12 rows (filtered)");
+    await expect(tile(page, "Note").locator("strong")).toHaveText("rows");
+    await page.getByRole("button", { name: "Explore" }).click();
+    await expect(page.locator("perspective-viewer")).toBeVisible();
+    expect(network).toEqual([]);
+    expect(fixtureErrors).toEqual([]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

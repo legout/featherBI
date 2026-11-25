@@ -149,17 +149,17 @@ test("--offline: with every non-file: request blocked, every tile renders and Ex
   }
 });
 
-test("--split served by http.server shows the same KPI and pivot values as the default build", async ({ page }) => {
+test("--split served by http.server shows the acceptance 1 values: totals, EU click, channel Online, Reset", async ({ page }) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "outputs-split-"));
   let server;
   try {
-    build(["fixtures/hand/pivot-table.yaml"]); // the default build: fixtures/hand/dist/hand-pivot-table.html
-    const folder = path.join(dir, "hand-pivot-table");
-    build(["fixtures/hand/pivot-table.yaml", "--split", "--out", folder]);
-    expect(fs.readdirSync(folder).sort()).toEqual(["index.html", "sales.parquet"]); // one Parquet per snapshot table
+    build(["fixtures/hand/acceptance.yaml"]); // the default build: fixtures/hand/dist/hand-acceptance.html
+    const folder = path.join(dir, "hand-acceptance");
+    build(["fixtures/hand/acceptance.yaml", "--split", "--out", folder]);
+    expect(fs.readdirSync(folder).sort()).toEqual(["index.html", "sales.parquet", "targets.parquet"]); // one Parquet per snapshot table
 
     // The default build over file:// is the reference.
-    const referenceErrors = await open(page, pathToFileURL(path.join(root, "fixtures/hand/dist/hand-pivot-table.html")).href);
+    const referenceErrors = await open(page, pathToFileURL(path.join(root, "fixtures/hand/dist/hand-acceptance.html")).href);
     const reference = await shown(page);
     expect(reference.kpi).toBe("$2,260.50");
     expect(reference.pivot).toContain("$300.00"); // EU × 2025-02
@@ -185,6 +185,34 @@ test("--split served by http.server shows the same KPI and pivot values as the d
     const errors = await open(page, `${origin}/index.html`);
     expect(await shown(page)).toEqual(reference);
     expect(requests).toContain(`${origin}/sales.parquet`); // the snapshot is fetched relative to the page
+    // Acceptance 1 on the split page; values from fixtures/hand/README.md.
+    const kpi = amount => expect(tile(page, "Revenue").getByText(amount, { exact: true })).toBeVisible();
+    const bars = tile(page, "Revenue vs target by region").getByRole("img");
+    const pivotRow = region => tile(page, "Region × month").getByRole("row", { name: new RegExp(`^${region}`) });
+    await expect.poll(() => painted(tile(page, "Revenue vs target by region"))).toBe(true);
+    await expect(bars).toHaveAttribute("aria-label", /representing revenue\..*for EU is 0, 850,.*for US is 1, 1410\.5\..*representing target\..*for EU is 0, 800,.*for US is 1, 1500\./s);
+    const chart = tile(page, "Revenue vs target by region");
+    const at = await bars.evaluate(async node => {
+      const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
+      const echarts = await import(charts.url);
+      const box = node.getBoundingClientRect();
+      const [x, y] = echarts.getInstanceByDom(node).convertToPixel({ seriesIndex: 0 }, ["EU", 400]);
+      return { x: box.x + x, y: box.y + y };
+    });
+    await chart.scrollIntoViewIfNeeded();
+    await page.mouse.click(at.x - 20, at.y); // the EU revenue bar (target bar sits to its right)
+    await kpi("$850.00");
+    await expect(pivotRow("EU").getByRole("cell").nth(1)).toHaveText("$300.00");
+    await expect(pivotRow("US")).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Sales rows" })).toContainText("6 rows (filtered)");
+    await expect(bars).toHaveAttribute("aria-label", /representing revenue\..*for EU is 0, 850.*representing target\..*for EU is 0, 800/s);
+    await page.getByRole("combobox", { name: /^channel/ }).selectOption("Online");
+    await kpi("$360.00");
+    await expect(bars).toHaveAttribute("aria-label", /representing target\..*for EU is 0, 800,.*for US is 1, 1500\./s);
+    await page.getByRole("button", { name: "Reset" }).click();
+    await kpi("$2,260.50");
+    await expect(pivotRow("US")).toHaveCount(1);
+    await expect(page.getByRole("group", { name: "Sales rows" })).toContainText("12 rows (filtered)");
     expect(errors).toEqual([]);
   } finally {
     server?.kill();

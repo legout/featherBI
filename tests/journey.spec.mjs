@@ -17,6 +17,32 @@ async function open(page, html) {
   return errors;
 }
 
+const tile = (page, title) => page.getByRole("group", { name: title, exact: true });
+// True once any canvas of the tile holds a painted pixel.
+const painted = chart =>
+  chart.evaluate(node =>
+    [...node.querySelectorAll("canvas")].some(c => {
+      const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      for (let i = 3; i < data.length; i += 4) if (data[i]) return true;
+      return false;
+    }),
+  );
+// A real mouse click on the chart at the pixel the chart library reports for a data point.
+async function clickChart(page, title, point, dx = 0) {
+  const chart = tile(page, title);
+  await expect(chart).not.toHaveAttribute("aria-busy", "true");
+  await expect.poll(() => painted(chart)).toBe(true);
+  await chart.scrollIntoViewIfNeeded();
+  const at = await chart.getByRole("img").evaluate(async (node, point) => {
+    const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
+    const echarts = await import(charts.url);
+    const box = node.getBoundingClientRect();
+    const [x, y] = echarts.getInstanceByDom(node).convertToPixel({ seriesIndex: 0 }, point);
+    return { x: box.x + x, y: box.y + y };
+  }, point);
+  await page.mouse.click(at.x + dx, at.y);
+}
+
 // Expected values are the hand-computed ones in fixtures/hand/README.md.
 for (const [engine, config, html] of [
   ["Haybarn-Wasm", "fixtures/hand/dashboard.yaml", "fixtures/hand/dist/hand.html"],
@@ -54,7 +80,7 @@ test("selects narrow the KPI, chips appear and clear, Reset restores totals and 
   await page.getByLabel("region").selectOption("EU");
   await revenue("$850.00");
   await expect(chips).toContainText("region: EU");
-  await page.getByLabel("channel").selectOption("Online");
+  await page.getByRole("combobox", { name: /^channel/ }).selectOption("Online");
   await revenue("$360.00"); // EU + Online: 100 + 120 + 140
   await page.getByRole("button", { name: "Clear region" }).click();
   await revenue("$1,020.00");
@@ -118,5 +144,103 @@ test("latest state wins: EU then US before the first result paints only US; the 
   await page.getByRole("button", { name: "Reset" }).click();
   await expect(kpi).toHaveText("$2,260.50");
   expect(page.url()).not.toContain("#");
+  expect(errors).toEqual([]);
+});
+
+// Spec 0001 acceptance 1 and 3, in full, on fixtures/hand/acceptance.yaml. Every value is from fixtures/hand/README.md.
+test("acceptance 1 and 3: every tile renders; EU click, channel Online and Reset give the README values; Explore shows only EU rows", async ({ page }) => {
+  build("fixtures/hand/acceptance.yaml");
+  const errors = await open(page, "fixtures/hand/dist/hand-acceptance.html");
+  const kpi = amount => expect(tile(page, "Revenue").getByText(amount, { exact: true })).toBeVisible();
+  const bars = tile(page, "Revenue vs target by region").getByRole("img");
+  const pivot = tile(page, "Region × month");
+  const rows = page.getByRole("group", { name: "Sales rows" });
+  const labelOf = (revenue, target) => new RegExp(`representing revenue\\..*${revenue}.*representing target\\..*${target}`, "s");
+
+  // Before any filter: every tile renders, the bar shows each region's revenue and target, the KPI is the hand total.
+  await kpi("$2,260.50");
+  for (const title of ["Revenue vs target by region", "Revenue by channel"]) await expect.poll(() => painted(tile(page, title))).toBe(true);
+  await expect(bars).toHaveAttribute("aria-label", labelOf("for EU is 0, 850,.*for US is 1, 1410\\.5\\.", "for EU is 0, 800,.*for US is 1, 1500\\."));
+  await expect(pivot.getByRole("row", { name: /^US/ })).toHaveCount(1);
+  await expect(rows).toContainText("12 rows (filtered)");
+  await expect(tile(page, "Note").locator("strong")).toHaveText("rows");
+
+  // Click EU in the bar tile (the revenue bar is 20 px left of the pair's middle).
+  await clickChart(page, "Revenue vs target by region", ["EU", 400], -20);
+  await kpi("$850.00");
+  await expect(pivot.getByRole("row", { name: /^EU/ }).getByRole("cell").nth(1)).toHaveText("$300.00"); // EU × 2025-02
+  await expect(pivot.getByRole("row", { name: /^US/ })).toHaveCount(0);
+  await expect(rows).toContainText("6 rows (filtered)");
+  await expect(bars).toHaveAttribute("aria-label", labelOf("for EU is 0, 850", "for EU is 0, 800")); // the target bar stays
+
+  // Channel Online: revenue narrows (EU Online 360, US Online 660), the targets do not.
+  await page.getByRole("combobox", { name: /^channel/ }).selectOption("Online");
+  await kpi("$360.00");
+  await expect(bars).toHaveAttribute("aria-label", labelOf("for EU is 0, 360,.*for US is 1, 660\\.", "for EU is 0, 800,.*for US is 1, 1500\\."));
+
+  // Explore with region = EU: six rows (README).
+  await page.getByRole("combobox", { name: /^channel/ }).selectOption("");
+  await kpi("$850.00");
+  await page.getByRole("button", { name: "Explore" }).click();
+  const viewer = page.locator("perspective-viewer");
+  await expect(viewer).toBeVisible();
+  await expect.poll(() => viewer.evaluate(async el => (await el.getView()).num_rows())).toBe(6);
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: "Reset" }).click();
+  await kpi("$2,260.50");
+  await expect(bars).toHaveAttribute("aria-label", labelOf("for EU is 0, 850,.*for US is 1, 1410\\.5\\.", "for EU is 0, 800,.*for US is 1, 1500\\."));
+  await expect(pivot.getByRole("row", { name: /^US/ })).toHaveCount(1);
+  await expect(rows).toContainText("12 rows (filtered)");
+  expect(errors).toEqual([]);
+});
+
+// Spec 0001 acceptance 8a on every tile: EU then US while the engine lags; no tile ever paints an EU-only value, all end on US.
+test("latest state wins on every tile: EU then US before the first result paints only US values in all tiles", async ({ page }) => {
+  build("fixtures/hand/acceptance.yaml");
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (...args) {
+      if (window.__lag) setTimeout(() => post.apply(this, args), window.__lag);
+      else post.apply(this, args);
+    };
+  });
+  const errors = await open(page, "fixtures/hand/dist/hand-acceptance.html");
+  const titles = ["Revenue", "Revenue vs target by region", "Revenue by channel", "Region × month", "Sales rows", "Note"];
+  await expect(tile(page, "Revenue").locator(".stat-value")).toHaveText("$2,260.50");
+  for (const title of titles.slice(1, 5)) await expect(page.getByRole("group", { name: title })).not.toHaveAttribute("aria-busy", "true");
+  // Every mutation inside a tile (text, or the chart's aria-label) records what the tile shows then.
+  await page.evaluate(titles => {
+    window.__seen = {};
+    const text = n => n.innerText + " " + [...n.querySelectorAll("[aria-label]")].map(e => e.getAttribute("aria-label")).join(" ");
+    for (const title of titles) {
+      const node = [...document.querySelectorAll('[role="group"]')].find(g => g.getAttribute("aria-labelledby") && document.getElementById(g.getAttribute("aria-labelledby")).textContent.trim().startsWith(title));
+      window.__seen[title] = [];
+      new MutationObserver(() => window.__seen[title].push(text(node))).observe(node, { childList: true, characterData: true, subtree: true, attributes: true });
+    }
+  }, titles);
+  await page.evaluate(() => {
+    window.__lag = 1500;
+    for (const title in window.__seen) window.__seen[title].length = 0; // only what paints after the clicks counts
+  });
+  await page.getByRole("combobox", { name: /^region/ }).selectOption("EU");
+  await page.getByRole("combobox", { name: /^region/ }).selectOption("US");
+  const kpi = tile(page, "Revenue").locator(".stat-value");
+  await expect(kpi).toHaveText("$1,410.50"); // README: US total
+  const pivot = tile(page, "Region × month");
+  await expect(pivot.getByRole("row", { name: /^US/ }).getByRole("cell").nth(1)).toHaveText("$490.00"); // US × 2025-02
+  await expect(pivot.getByRole("row", { name: /^EU/ })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Sales rows" })).toContainText("6 rows (filtered)");
+  await expect(tile(page, "Revenue by channel").getByRole("img")).toHaveAttribute("aria-label", /for Online is 0, 660,.*for Retail is 1, 750\.5\./s);
+  await expect(tile(page, "Revenue vs target by region").getByRole("img")).toHaveAttribute("aria-label", /for EU is 0, 850,.*for US is 1, 1410\.5\./s); // region is excluded from its own bar
+  const seen = await page.evaluate(() => window.__seen);
+  const eu = {
+    Revenue: /\$850\.00/,
+    "Revenue by channel": /\b(360|490)\b/, // README: EU Online, EU Retail
+    "Region × month": /\$300\.00/, // README: EU × 2025-02 and 2025-03; no US cell is 300
+  };
+  for (const [title, pattern] of Object.entries(eu)) for (const shown of seen[title]) expect(shown, title).not.toMatch(pattern);
+  // The table keeps showing the unfiltered grid (EU and US) until US arrives; an EU result would show EU cells without US ones.
+  for (const shown of seen["Sales rows"]) expect(/\bEU\b/.test(shown) && !/\bUS\b/.test(shown), shown).toBe(false);
   expect(errors).toEqual([]);
 });

@@ -52,7 +52,12 @@ test('uploads exact snapshot once and preflights; credentials remain secret', as
     const r = await run(args, { AWS_ENDPOINT_URL: s.endpoint });
     assert.equal(r.code, 0, r.stderr);
     const html = await readFile(out, 'utf8');
-    for (const value of [secret, token]) for (const text of [html, r.stdout, r.stderr]) assert.ok(!text.includes(value));
+    for (const text of [html, r.stdout, r.stderr]) assert.ok(!text.includes(secret));
+    for (const text of [r.stdout, r.stderr]) assert.ok(!text.includes(token));
+    const data = JSON.parse(html.match(/<script type="application\/json" id="dashboard">(.*?)<\/script>/s)[1]);
+    const urls = Object.values(data.remote.tables).map(table => new URL(table.url));
+    assert.ok(urls.length > 0);
+    for (const url of urls) assert.equal(url.searchParams.get('X-Amz-Security-Token'), token);
   }
   const puts = s.requests.filter(r => r.method === 'PUT');
   assert.equal(puts.length, 1); assert.deepEqual(puts[0].body, bytes);
@@ -85,7 +90,7 @@ for (const [name, args] of [
 
 test('reports remote size, warns above 200 MB, and skips embedded warning', async t => {
   const dir = await clean(t), s = await store(t), config = path.join(dir, 'big.yaml'), out = path.join(dir, 'dash.html');
-  await writeFile(config, `title: Big\nname: big\nsources:\n  big:\n    read: "(SELECT random() AS x FROM range(32000000))"\ntiles:\n  - { type: kpi, title: Rows, sql: "SELECT COUNT(*) AS value FROM big" }\n`);
+  await writeFile(config, `title: Big\nname: big\nsources:\n  big:\n    read: "(SELECT random() AS x FROM range(36000000))"\ntiles:\n  - { type: kpi, title: Rows, sql: "SELECT COUNT(*) AS value FROM big" }\n`);
   const r = await run([config, '--remote', 's3://bucket/prefix', '--out', out], { AWS_ENDPOINT_URL: s.endpoint });
   assert.equal(r.code, 0, r.stderr);
   const bytes = s.requests.find(r => r.method === 'PUT').body.length; assert.ok(bytes > 200 * 1024 * 1024);

@@ -1,5 +1,7 @@
 # Spec 0002: remote snapshot with presigned URLs
 
+Revision 3 (owner, 2026-11-25, #81): permit the session token inside presigned URLs in the HTML.
+
 Status: **approved**, revision 2 (owner, 2026-11-24, together with plan 0002). Revision 1 was approved by the owner on 2026-11-24 ("approved", `3c7c46f`); the owner chose option 1 (whole file per table) after the range-read spike. Revision 2 changes only step 3 (who uploads), found during planning: DuckDB `COPY` re-encodes the Parquet, so the object would not match the hash in its key.
 Builds on: [spec 0001](2026-11-24-0001-featherbi-v1.md) (revision 4). Evidence: [research/2026-11-24-presigned-range-reads-spike.md](../research/2026-11-24-presigned-range-reads-spike.md). SQLRooms does the same for URL sources: it downloads the file whole with progress, then loads it into a table (`@sqlrooms/room-shell` `downloadFile` → `loadFile`, main 1347dd2).
 
@@ -30,7 +32,7 @@ A dashboard whose HTML stays small: the snapshot tables live in an S3-compatible
 - With an endpoint URL, requests use path-style addressing.
 - The upload and the signing use the same values, so the two cannot disagree.
 - When the build cannot learn the lifetime of a session token, it prints a warning: "links stop working when the session token expires, possibly before `--expires`".
-- Credentials never appear in the config, the HTML, logs or error messages.
+- The secret key never appears in the config, HTML, logs or errors. A session token appears only inside the presigned URLs in the HTML (it expires with them), and never in logs or errors.
 
 ## Behavior in the browser
 
@@ -69,7 +71,7 @@ The objects and their keys are deterministic under spec 0001's preconditions. Th
 2. **Idempotent upload.** Building twice uploads nothing new the second time (no PUT requests), and both dashboards work.
 3. **Expiry.** A build with `--expires 1h`, opened after the hour has passed (simulated by the viewer clock or a URL signed with a past time), shows the expiry message and no console errors from tiles.
 4. **CORS preflight.** Against a bucket without CORS, the build stops with an error that names the bucket rule, and no HTML is written.
-5. **No secrets.** None of the credential values appears in the HTML or the build output (checked by a search over both).
+5. **No secrets.** The secret key never appears in the config, HTML, logs or errors. A session token appears only inside the presigned URLs in the HTML (it expires with them), and never in logs or errors.
 6. **Flag errors.** `--remote` combined with `--offline` or `--split`, and `--expires 8d`, are rejected.
 
 ## Capture checkpoint

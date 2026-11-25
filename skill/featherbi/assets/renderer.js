@@ -472,6 +472,49 @@ function fail(message, error) {
   document.querySelector("main").prepend(Object.assign(el("div", "alert alert-error", message), { role: "alert" }));
 }
 
+// Remote snapshot (spec 0002): every table is downloaded whole, in parallel, under one progress bar.
+// -> { <table>: Uint8Array } without the tables that failed (each reported by name), or null when a 403 says the links have expired.
+async function download(remote) {
+  const mb = bytes => (bytes / 2 ** 20).toFixed(1);
+  const total = Object.values(remote.tables).reduce((sum, t) => sum + t.bytes, 0);
+  let done = 0;
+  let expired = false;
+  const box = el("div", "space-y-1");
+  const label = el("p", "text-sm text-base-content/80 tabular-nums");
+  const bar = el("progress", "progress progress-primary w-full");
+  bar.max = total;
+  bar.setAttribute("aria-label", "Loading data");
+  const show = () => {
+    label.textContent = `Loading data ${mb(done)} / ${mb(total)} MB`;
+    bar.value = done;
+  };
+  show();
+  box.append(label, bar);
+  document.querySelector("main").prepend(box);
+  const tables = {};
+  await Promise.all(Object.entries(remote.tables).map(async ([table, { url }]) => {
+    let status = "network or CORS error";
+    try {
+      const response = await fetch(url);
+      status = `HTTP ${response.status}`;
+      if (response.status === 403) expired = true; // S3 answers an expired signature with 403
+      if (!response.ok) throw new Error(status);
+      const chunks = [];
+      const reader = response.body.getReader();
+      for (let part = await reader.read(); !part.done; part = await reader.read()) {
+        chunks.push(part.value);
+        done += part.value.length;
+        show();
+      }
+      tables[table] = new Uint8Array(await new Blob(chunks).arrayBuffer());
+    } catch (error) {
+      if (!expired) fail(`Table “${table}” could not be loaded (${status}). Tiles that use it show an error.`, error);
+    }
+  }));
+  box.remove();
+  return expired ? null : tables;
+}
+
 // Filter state: one value per dimension plus the date range; the default range is anchored on the snapshot.
 const filters = config.filters;
 const state = { dims: {}, ...filters.range };
@@ -541,16 +584,31 @@ const library = config.tiles.some(t => t.type === "echarts") ? import(config.cha
 const gridLibrary = config.tiles.some(t => t.type === "table") ? loadGrid(config.grid) : null;
 library?.catch(() => {}); // reported below, once the engine has had its turn
 gridLibrary?.catch(() => {});
+// A remote page past its expiry (the viewer's clock) loads nothing; otherwise its download runs while the engine starts.
+const EXPIRED = "This dashboard's data link has expired. Ask the author to rebuild it.";
+const remote = config.remote;
+let expired = remote && Date.now() >= Date.parse(remote.expiresAt);
+const until = remote && !expired ? el("p", "px-3 text-right text-xs text-base-content/80", `Data available until ${new Date(remote.expiresAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`) : null;
+if (until) document.querySelector("header h1").after(until);
+const downloaded = until && download(remote);
 let engine;
 try {
-  engine = await startEngine(config.engine);
+  if (!expired) engine = await startEngine(config.engine);
 } catch (error) {
   fail("The query engine could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
 }
-// Each snapshot is a data: URL (embedded) or a Parquet file next to the page (--split).
-const tables = {};
+const remoteTables = await downloaded;
+if (remote && !remoteTables) {
+  // Expired: the layout and the filter bar stay, and without an engine no tile runs a query.
+  expired = true;
+  engine = undefined;
+  until?.remove();
+  document.querySelector("main").prepend(Object.assign(el("div", "alert alert-warning", EXPIRED), { role: "alert" }));
+}
+// Each snapshot is a data: URL (embedded), a Parquet file next to the page (--split) or a downloaded remote table.
+const tables = { ...remoteTables };
 try {
-  for (const [table, url] of Object.entries(config.snapshots)) tables[table] = new Uint8Array(await (await fetch(url)).arrayBuffer());
+  for (const [table, url] of Object.entries(config.snapshots ?? {})) tables[table] = new Uint8Array(await (await fetch(url)).arrayBuffer());
   await engine?.open(tables);
 } catch (error) {
   fail("The snapshot could not be loaded. Check your network connection, then reload this page. (A --split dashboard is served by a web server such as python3 -m http.server; it does not open from file://.)", error);
@@ -587,7 +645,7 @@ await refresh();
 
 // Explore (spec 0001 §Explore): a navbar button opens Perspective on one table. Perspective loads on the first open only;
 // each open loads the table with the filters active at that moment, and the filter path never touches it.
-if (config.explore) {
+if (config.explore && !expired) {
   const { table: name, perspective: psp, charts, assets } = config.explore;
   const button = el("button", "btn btn-sm btn-ghost", "Explore");
   const dialog = el("dialog", "rounded-box bg-base-100 shadow-sm");

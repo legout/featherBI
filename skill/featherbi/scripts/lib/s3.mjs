@@ -35,7 +35,9 @@ export async function remote(snapshots, target, { expiresSec, env, now = new Dat
   // S3 bucket naming rules, so the bucket can never change the host or path it is sent to.
   if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) throw new Error(`--remote: "${bucket}" is not a valid S3 bucket name (3-63 lowercase letters, digits, dots and hyphens)`);
   // The prefix is path data: each segment is percent-encoded, so "#" or "?" stays part of the key.
-  const prefix = rawPrefix.split("/").filter(Boolean).map(enc).join("/");
+  const parts = rawPrefix.split("/");
+  if (parts.slice(1, -1).includes("")) throw new Error(`--remote: prefix "${rawPrefix}" contains an empty segment (double slash); fix the prefix`); // collapses to a different key
+  const prefix = parts.filter(Boolean).map(enc).join("/");
   const { region } = credentials(env);
   // With an endpoint (SeaweedFS and other non-AWS stores) path-style, otherwise AWS virtual-hosted style.
   const base = env.AWS_ENDPOINT_URL ? `${env.AWS_ENDPOINT_URL.replace(/\/+$/, "")}/${bucket}` : `https://${bucket}.s3.${region}.amazonaws.com`;

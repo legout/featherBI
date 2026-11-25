@@ -47,7 +47,7 @@ async function open(page, url) {
   return errors;
 }
 
-const tile = (page, title) => page.getByRole("group", { name: title });
+const tile = (page, title) => page.getByRole("group", { name: title, exact: true });
 
 test.beforeAll(async () => {
   server = createServer(async (req, res) => {
@@ -108,7 +108,7 @@ test("a remote dashboard shows when its data expires, one progress bar while loa
   await page.goto(page_(pivot).url);
   await expect(tile(page, "Revenue").getByText("$2,260.50", { exact: true })).toBeVisible();
   await expect(tile(page, "Region × month").getByRole("row", { name: /^EU/ }).getByRole("cell").nth(1)).toHaveText("$300.00");
-  await expect(tile(page, "Sales rows")).toContainText("12 rows (filtered)");
+  await expect(page.getByRole("group", { name: /^Sales rows/ })).toContainText("12 rows (filtered)"); // the title carries the count
   expect(errors).toEqual([]);
 });
 
@@ -120,7 +120,7 @@ test("past expiresAt: the expiry message, no download and no tile query; filters
   await expect(revenue.locator(".stat-value")).toHaveText("–");
   await expect(tile(page, "Region × month")).not.toHaveAttribute("aria-busy", "true");
   await expect(tile(page, "Region × month").getByRole("row")).toHaveCount(0);
-  await expect(page.getByLabel("region")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: /^region/ })).toBeVisible();
   await expect(page.getByRole("banner")).not.toContainText("Data available until");
   expect(s3.gets).toBe(0);
   expect(errors).toEqual([]);

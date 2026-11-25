@@ -21,15 +21,16 @@ const run = (args, env = {}) => new Promise((resolve, reject) => {
 });
 const absent = async file => assert.rejects(readFile(file), { code: 'ENOENT' });
 const clean = async (t) => { const dir = await mkdtemp(path.join(os.tmpdir(), 'remote-81-')); t.after(() => rm(dir, { recursive: true, force: true })); return dir; };
-async function store(t, { head = 404, cors = true } = {}) {
+async function store(t, { head = 404, cors = true, get = 206 } = {}) {
   const requests = [], objects = new Map();
   const server = createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const body = Buffer.concat(chunks); const key = new URL(req.url, 'http://localhost').pathname;
     requests.push({ method: req.method, key, headers: req.headers, body });
-    if (req.method === 'HEAD') res.writeHead(head === 403 ? 403 : objects.has(key) ? 200 : head).end();
+    if (req.method === 'HEAD' && head === 301) res.writeHead(key === '/moved' ? 200 : 301, { Location: '/moved' }).end();
+    else if (req.method === 'HEAD') res.writeHead(head === 403 ? 403 : objects.has(key) ? 200 : head).end();
     else if (req.method === 'PUT') { objects.set(key, body); res.writeHead(200).end(); }
-    else { res.writeHead(206, cors ? { 'Access-Control-Allow-Origin': '*' } : {}); res.end('x'); }
+    else { res.writeHead(get, cors ? { 'Access-Control-Allow-Origin': '*' } : {}); res.end('x'); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
@@ -65,14 +66,19 @@ test('uploads exact snapshot once and preflights; credentials remain secret', as
   assert.equal(s.requests.filter(r => r.method === 'HEAD').length, 2);
   const gets = s.requests.filter(r => r.method === 'GET'); assert.equal(gets.length, 2);
   for (const get of gets) { assert.equal(get.headers.range, 'bytes=0-0'); assert.equal(get.headers.origin, 'null'); }
+  // A '#' in the prefix is path data: the object keeps its hash filename (or the target is rejected before any request).
+  const before = s.requests.length;
+  const hashed = await run([fixture, '--remote', 's3://bucket/issue#81', '--out', out], { AWS_ENDPOINT_URL: s.endpoint });
+  if (hashed.code !== 0) assert.equal(s.requests.length, before);
+  else for (const req of s.requests.slice(before)) assert.match(req.key, /^\/bucket\/issue%2381\/[0-9a-f]{64}\.parquet$/);
 });
-for (const [name, options, message] of [['HEAD 403', { head: 403 }, /403/], ['missing CORS', { cors: false }, /cors/i]]) {
+for (const [name, options, message] of [['HEAD 403', { head: 403 }, /403/], ['HEAD 301', { head: 301 }, /301/], ['missing CORS', { cors: false }, /cors/i], ['preflight 200', { get: 200 }, /cors/i]]) {
   test(`${name} fails without HTML or credential leaks`, async t => {
     const dir = await clean(t), s = await store(t, options), out = path.join(dir, 'dash.html');
     const r = await run([fixture, '--remote', 's3://bucket/prefix', '--out', out], { AWS_ENDPOINT_URL: s.endpoint });
     assert.notEqual(r.code, 0); assert.match(r.stderr, message); await absent(out);
     assert.ok(!r.stdout.includes(secret) && !r.stderr.includes(secret) && !r.stdout.includes(token) && !r.stderr.includes(token));
-    if (options.head === 403) assert.equal(s.requests.filter(r => r.method === 'PUT').length, 0);
+    if (options.head) assert.equal(s.requests.filter(r => r.method === 'PUT').length, 0);
   });
 }
 for (const [name, args] of [

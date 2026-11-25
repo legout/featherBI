@@ -31,21 +31,26 @@ export async function presign({ method, url, expiresSec, now = new Date(), env }
 export async function remote(snapshots, target, { expiresSec, env, now = new Date() }) {
   const m = /^s3:\/\/([^/]+)\/?(.*)$/.exec(target);
   if (!m) throw new Error(`--remote must be an s3://<bucket>/<prefix> URL, not ${target}`);
-  const [, bucket, prefix] = m;
+  const [, bucket, rawPrefix] = m;
+  // S3 bucket naming rules, so the bucket can never change the host or path it is sent to.
+  if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) throw new Error(`--remote: "${bucket}" is not a valid S3 bucket name (3-63 lowercase letters, digits, dots and hyphens)`);
+  // The prefix is path data: each segment is percent-encoded, so "#" or "?" stays part of the key.
+  const prefix = rawPrefix.split("/").filter(Boolean).map(enc).join("/");
   const { region } = credentials(env);
   // With an endpoint (SeaweedFS and other non-AWS stores) path-style, otherwise AWS virtual-hosted style.
   const base = env.AWS_ENDPOINT_URL ? `${env.AWS_ENDPOINT_URL.replace(/\/+$/, "")}/${bucket}` : `https://${bucket}.s3.${region}.amazonaws.com`;
   const call = async (what, method, key, init) => {
     const url = await presign({ method, url: `${base}/${key}`, expiresSec: method === "GET" ? expiresSec : 900, now, env });
     try {
-      return await fetch(url, { method, ...init });
+      // No redirect following: a 3xx must be reported as itself, not as the status of wherever it points.
+      return await fetch(url, { method, redirect: "manual", ...init });
     } catch (e) {
       throw new Error(`${what}: ${method} s3://${bucket}/${key} failed (${e.cause?.code ?? e.message})`);
     }
   };
   const tables = {};
   for (const [name, bytes] of Object.entries(snapshots)) {
-    const key = [prefix.replace(/\/+$/, ""), `${sha256(bytes)}.parquet`].filter(Boolean).join("/");
+    const key = [prefix, `${sha256(bytes)}.parquet`].filter(Boolean).join("/");
     const what = `table "${name}"`;
     // An object under its content hash already holds these bytes: never upload (or overwrite) it again.
     const head = await call(what, "HEAD", key);
@@ -60,14 +65,15 @@ export async function remote(snapshots, target, { expiresSec, env, now = new Dat
     const what = `table "${name}"`;
     let res;
     try {
-      res = await fetch(url, { headers: { Range: "bytes=0-0", Origin: "null" } });
+      res = await fetch(url, { headers: { Range: "bytes=0-0", Origin: "null" }, redirect: "manual" });
     } catch (e) {
       throw new Error(`${what}: the preflight GET to bucket ${bucket} failed (${e.cause?.code ?? e.message})`);
     }
     await res.body?.cancel();
     const allow = res.headers.get("access-control-allow-origin");
-    if (res.status !== 206) throw new Error(`${what}: the preflight GET to bucket ${bucket} returned ${res.status}, not 206`);
-    if (allow !== "null" && allow !== "*") throw new Error(`${what}: bucket ${bucket} sends no CORS header for Origin: null; add a bucket CORS rule that allows GET from any origin (file:// sends Origin: null) and exposes Content-Length and Content-Range`);
+    const hint = "add a bucket CORS rule that allows GET from any origin (file:// sends Origin: null) and exposes Content-Length and Content-Range";
+    if (res.status !== 206) throw new Error(`${what}: the preflight range GET to bucket ${bucket} returned ${res.status}, not 206; check the bucket CORS rule: ${hint}`);
+    if (allow !== "null" && allow !== "*") throw new Error(`${what}: bucket ${bucket} sends no CORS header for Origin: null; ${hint}`);
   }
   return { tables, expiresAt: new Date(now.getTime() + expiresSec * 1000).toISOString() };
 }

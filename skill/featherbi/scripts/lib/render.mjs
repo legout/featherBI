@@ -10,7 +10,7 @@ const escapeHtml = s => s.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
 // JSON inside <script>: no "<", so no value (tile SQL, titles) can close the element.
 const json = value => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-export async function render(config, snapshots, filters, mode = "default") {
+export async function render(config, snapshots, filters, mode = "default", { remote } = {}) {
   const lock = JSON.parse(read("assets/vendor.lock.json"));
   const engine = lock.engines[config.engine];
   const psp = lock.perspective;
@@ -40,8 +40,11 @@ export async function render(config, snapshots, filters, mode = "default") {
       tiles: config.tiles,
       filters,
       explore: explore && { ...explore, perspective: off?.css ? { ...psp, css: inlined(off.css) } : psp, assets: off?.psp },
+      // A remote page gets { tables: { <table>: { url, bytes } }, expiresAt } instead of the Parquet bytes (spec 0002).
+      ...(remote ? { remote } : {
       // A split page fetches its Parquet files next to it; the other modes embed them as data: URLs.
       snapshots: Object.fromEntries(Object.entries(snapshots).map(([name, bytes]) => [name, mode === "split" ? `${name}.parquet` : `data:application/octet-stream;base64,${bytes.toString("base64")}`])),
+      }),
     }),
     // The renderer shares filters.mjs with the build: the same file, inlined with its exports dropped.
     renderer: read("scripts/lib/filters.mjs").replace(/^export /gm, "") + read("assets/renderer.js"),

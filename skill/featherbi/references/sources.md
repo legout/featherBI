@@ -24,6 +24,8 @@ Reference for the sources that need a network, a server or a login. Local files 
 | Iceberg REST catalog | unqualified until verified |
 | SharePoint / OneDrive | unqualified until verified |
 
+`--remote` (data in a bucket, presigned links in the HTML) is a different feature: `remote.md`.
+
 ## Postgres
 
 **Status: unqualified until verified.**

@@ -67,11 +67,13 @@ export async function offlineAssets(config, lock) {
   };
   const engine = lock.engines[config.engine];
   const psp = lock.perspective;
-  // Explore is on unless `explore: false`; it takes apache-arrow for its table.
+  // Explore is on unless `explore: false`; it adds Perspective and its wasm.
   const explore = config.explore !== false;
   const types = config.tiles.map(t => t.type);
   await module(engine.module.url, engine.module.integrity);
-  if (explore) await module(lock["apache-arrow"].url);
+  // The engine module imports apache-arrow by name whether or not Explore is on, so Arrow (and the +esm dependencies
+  // it pulls in below) is inlined in every offline build.
+  await module(lock["apache-arrow"].url, lock["apache-arrow"].integrity);
   if (types.includes("echarts")) await module(lock.echarts.url, lock.echarts.integrity);
   if (explore) {
     await module(psp.client.url, psp.client.integrity, s => patch("perspective.js", s));

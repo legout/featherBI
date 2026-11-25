@@ -94,7 +94,7 @@ tiles:
     markdown: "Twelve **rows** of sales."
 `;
 
-test("--offline: every tile renders and Explore opens over file:// with every non-file: request blocked", async ({ page }) => {
+test("--offline: with every non-file: request blocked, every tile renders and Explore opens; with Explore off, the KPI still renders", async ({ page }) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "outputs-offline-"));
   try {
     fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), path.join(dir, "sales.parquet"));
@@ -134,6 +134,16 @@ test("--offline: every tile renders and Explore opens over file:// with every no
 
     expect(network).toEqual([]); // nothing outside the file was even requested
     expect(errors).toEqual([]);
+
+    // Explore off: the engine module imports apache-arrow whatever the config says, so Arrow must still be inlined.
+    fs.writeFileSync(path.join(dir, "plain.yaml"), `${ALL_TILES}explore: false\n`);
+    const plain = path.join(dir, "offline-plain.html");
+    build(["plain.yaml", "--offline", "--out", plain], dir);
+    const plainErrors = await open(page, pathToFileURL(plain).href);
+    await expect(tile(page, "Revenue").getByText("$2,260.50", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Explore" })).toHaveCount(0);
+    expect(network).toEqual([]);
+    expect(plainErrors).toEqual([]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

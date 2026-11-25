@@ -8,6 +8,19 @@ import { render } from "./lib/render.mjs";
 import { profile, snapshot } from "./lib/sources.mjs";
 import { validate } from "./lib/validate.mjs";
 
+// A split folder may be new or empty, or hold only what an earlier featherBI split build wrote there (its index.html lists
+// those files). Anything else is left as it is and the build stops before the first write. -> the files to replace.
+function earlierBuild(out) {
+  if (!fs.existsSync(out)) return [];
+  if (!fs.statSync(out).isDirectory()) throw new Error(`--split: ${out} is a file; --out must name the folder to write`);
+  const present = fs.readdirSync(out);
+  const list = present.includes("index.html") && fs.readFileSync(path.join(out, "index.html"), "utf8").match(/<meta name="featherbi-split" content='([^']*)'>/);
+  const ours = list ? ["index.html", ...JSON.parse(list[1])] : [];
+  const foreign = present.filter(file => !ours.includes(file));
+  if (foreign.length) throw new Error(`--split: ${out} holds files a featherBI build did not write (${foreign.join(", ")}); nothing was written. Build into another folder, or remove them yourself`);
+  return present.map(file => path.join(out, file));
+}
+
 try {
   const { positionals, values } = parseArgs({ allowPositionals: true, options: { out: { type: "string" }, offline: { type: "boolean" }, split: { type: "boolean" } } });
   const [command, file] = positionals;
@@ -29,6 +42,7 @@ try {
   // --split writes a folder (index.html plus one Parquet file per snapshot); the other modes write one file.
   const target = mode === "split" ? config.name : `${config.name}.html`;
   const out = values.out ? path.resolve(values.out) : path.join(dir, "dist", target);
+  const replace = mode === "split" ? earlierBuild(out) : [];
   const snapshots = snapshot(config.sources, dir);
   const filters = validate(config, snapshots);
   if (mode !== "split") {
@@ -36,6 +50,7 @@ try {
     if (mb > 25) console.error(`featherbi: warning: the embedded Parquet is ${mb.toFixed(1)} MB, above 25 MB, which makes the page slow to open and share. Build with --split, or aggregate in the source SQL.`);
   }
   const html = await render(config, snapshots, filters, mode);
+  for (const file of replace) fs.rmSync(file); // only now, after every step that can fail has passed
   fs.mkdirSync(mode === "split" ? out : path.dirname(out), { recursive: true });
   if (mode === "split") {
     fs.writeFileSync(path.join(out, "index.html"), html);

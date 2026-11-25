@@ -1,5 +1,5 @@
-// Output modes at the CLI (spec 0001 §Outputs and §Determinism): byte-identical rebuilds and the 25 MB warning.
-// The rejection of --offline with --split is covered by the rejection cases in validate.test.mjs.
+// Output modes at the CLI (spec 0001 §Outputs and §Determinism): byte-identical rebuilds, the 25 MB warning and the
+// --split folder contract. The rejection of --offline with --split is covered by the rejection cases in validate.test.mjs.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -27,19 +27,19 @@ tiles:
 test("two consecutive builds are byte-identical in every output mode", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "outputs-determinism-"));
   try {
-    const file = ["--out", path.join(dir, "<out>", "dashboard.html")];
+    // Each mode gets its own folder: a --split build refuses one that holds files it did not write.
     const modes = [
-      [["--out", path.join(dir, "<out>", "dashboard.html")], ["dashboard.html"]],
-      [["--split", "--out", path.join(dir, "<out>")], ["index.html", "sales.parquet"]],
-      [["--offline", ...file], ["dashboard.html"]],
+      ["default", ["--out", path.join(dir, "<out>", "default", "dashboard.html")], ["dashboard.html"]],
+      ["split", ["--split", "--out", path.join(dir, "<out>", "split")], ["index.html", "sales.parquet"]],
+      ["offline", ["--offline", "--out", path.join(dir, "<out>", "offline", "dashboard.html")], ["dashboard.html"]],
     ];
-    for (const [args, files] of modes) {
+    for (const [mode, args, files] of modes) {
       for (const out of ["a", "b"]) {
         const r = build(["fixtures/hand/pivot-table.yaml", ...args.map(a => a.replace("<out>", out))], root);
         assert.equal(r.status, 0, r.stderr);
       }
-      assert.deepEqual(fs.readdirSync(path.join(dir, "b")), fs.readdirSync(path.join(dir, "a")));
-      assert.deepEqual(files.map(f => sha256(path.join(dir, "b", f))), files.map(f => sha256(path.join(dir, "a", f))), args.join(" "));
+      assert.deepEqual(fs.readdirSync(path.join(dir, "b", mode)), fs.readdirSync(path.join(dir, "a", mode)));
+      assert.deepEqual(files.map(f => sha256(path.join(dir, "b", mode, f))), files.map(f => sha256(path.join(dir, "a", mode, f))), mode);
     }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -66,6 +66,76 @@ test("the build warns above 25 MB of embedded Parquet and recommends --split", (
     const split = build(["dashboard.yaml", "--split", "--out", "split"], dir); // nothing is embedded, so there is nothing to warn about
     assert.equal(split.status, 0, split.stderr);
     assert.doesNotMatch(split.stderr, /25 MB/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A dashboard whose snapshots are a few bytes; `more` is a second source that a later build drops.
+const SPLIT = more => `title: Split
+name: split
+sources:
+  sales:
+    read: "(SELECT 1 AS x)"
+${more ? '  more:\n    read: "(SELECT 2 AS y)"\n' : ""}tiles:
+  - { type: kpi, title: Rows, sql: "SELECT COUNT(*) AS value FROM sales" }
+`;
+
+test("a --split rebuild into the same folder replaces the earlier build's files and leaves no stale Parquet", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "outputs-split-rebuild-"));
+  try {
+    const file = path.join(dir, "dashboard.yaml");
+    const out = path.join(dir, "dist", "split"); // the default folder
+    fs.writeFileSync(file, SPLIT(true));
+    const first = build(["dashboard.yaml", "--split"], dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.deepEqual(fs.readdirSync(out).sort(), ["index.html", "more.parquet", "sales.parquet"]);
+
+    fs.writeFileSync(file, SPLIT(false)); // a source is dropped
+    const second = build(["dashboard.yaml", "--split"], dir);
+    assert.equal(second.status, 0, second.stderr);
+    assert.deepEqual(fs.readdirSync(out).sort(), ["index.html", "sales.parquet"]); // more.parquet is gone
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--split refuses a folder that holds files a featherBI build did not write, and writes nothing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "outputs-split-foreign-"));
+  try {
+    // The output folder is the one that holds the input Parquet of the same name.
+    fs.mkdirSync(path.join(dir, "split"));
+    const input = path.join(dir, "split", "sales.parquet");
+    fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), input);
+    const before = sha256(input);
+    fs.writeFileSync(path.join(dir, "dashboard.yaml"), SPLIT(true).replace('"(SELECT 1 AS x)"', '"read_parquet(\'split/sales.parquet\')"'));
+    const r = build(["dashboard.yaml", "--split", "--out", "split"], dir);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /--split: .*sales\.parquet/); // names the file it will not touch
+    assert.equal(sha256(input), before);
+    assert.deepEqual(fs.readdirSync(path.join(dir, "split")), ["sales.parquet"]);
+
+    // A file added to an earlier build's folder stays, and the earlier build is left as it was.
+    fs.writeFileSync(path.join(dir, "dashboard.yaml"), SPLIT(true));
+    const out = path.join(dir, "dist", "split");
+    assert.equal(build(["dashboard.yaml", "--split"], dir).status, 0);
+    const index = sha256(path.join(out, "index.html"));
+    const note = path.join(out, "notes.txt");
+    fs.writeFileSync(note, "keep me");
+    const added = build(["dashboard.yaml", "--split"], dir);
+    assert.notEqual(added.status, 0);
+    assert.match(added.stderr, /notes\.txt/);
+    assert.equal(fs.readFileSync(note, "utf8"), "keep me");
+    assert.equal(sha256(path.join(out, "index.html")), index);
+
+    // An index.html featherBI did not write is not a reason to take over the folder either.
+    const site = path.join(dir, "site");
+    fs.mkdirSync(site);
+    fs.writeFileSync(path.join(site, "index.html"), "<html>mine</html>");
+    const taken = build(["dashboard.yaml", "--split", "--out", "site"], dir);
+    assert.notEqual(taken.status, 0);
+    assert.match(taken.stderr, /index\.html/);
+    assert.equal(fs.readFileSync(path.join(site, "index.html"), "utf8"), "<html>mine</html>");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

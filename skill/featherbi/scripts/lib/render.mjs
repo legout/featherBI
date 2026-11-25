@@ -46,5 +46,7 @@ export async function render(config, snapshots, filters, mode = "default") {
     renderer: read("scripts/lib/filters.mjs").replace(/^export /gm, "") + read("assets/renderer.js"),
   };
   // One pass over the template, so "{{…}}" inside inserted content is never substituted.
-  return read("templates/dashboard.html").replace(/\{\{(\w+)\}\}/g, (_, key) => parts[key]);
+  const html = read("templates/dashboard.html").replace(/\{\{(\w+)\}\}/g, (_, key) => parts[key]);
+  // A split page lists the files of its folder, so the next build into it can tell its own files from anyone else's (featherbi.mjs).
+  return mode === "split" ? html.replace("</head>", `<meta name="featherbi-split" content='${json(Object.keys(snapshots).map(name => `${name}.parquet`))}'>\n</head>`) : html;
 }

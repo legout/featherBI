@@ -1,26 +1,37 @@
-// --offline: fetches the pinned CDN files at build time (cached, SRI-checked where the lock has a hash) so the build can inline them.
+// --offline: fetches the pinned CDN files at build time (cached per user, every one checked against the hash the lock pins) so the build can inline them.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 const CDN = "https://cdn.jsdelivr.net/npm";
-const cache = path.join(os.tmpdir(), "featherbi-vendor-cache");
+// Private to the user (XDG_CACHE_HOME, by default ~/.cache): an inlined file runs in the recipient's browser, so it must
+// not come from a folder other users of the machine can write.
+const cache = path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "featherbi");
 const dataUrl = (type, bytes) => `data:${type};base64,${Buffer.from(bytes).toString("base64")}`; // bytes: a Buffer or module text
 const sri = bytes => `sha384-${crypto.createHash("sha384").update(bytes).digest("base64")}`;
 
+// Every file the lock pins, by URL: each fetch is checked against its hash and an unpinned file is refused.
+function pinned(node, out = {}) {
+  if (!node || typeof node !== "object") return out;
+  if (node.url && node.integrity) out[node.url] = node.integrity;
+  for (const value of Object.values(node)) pinned(value, out);
+  return out;
+}
+
 async function get(url, integrity) {
+  if (!integrity) throw new Error(`${url}: vendor.lock.json pins no hash for this file; --offline inlines verified files only`);
   const file = path.join(cache, crypto.createHash("sha256").update(url).digest("hex"));
   let bytes = fs.existsSync(file) ? fs.readFileSync(file) : null;
-  if (bytes && integrity && sri(bytes) !== integrity) bytes = null; // a damaged cache entry is fetched again
+  if (bytes && sri(bytes) !== integrity) bytes = null; // a damaged cache entry is fetched again
   if (!bytes) {
     const response = await fetch(url).catch(() => {
       throw new Error(`could not fetch ${url}; --offline needs network access at build time`);
     });
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
     bytes = Buffer.from(await response.arrayBuffer());
-    if (integrity && sri(bytes) !== integrity) throw new Error(`${url}: does not match its hash in vendor.lock.json`);
-    fs.mkdirSync(cache, { recursive: true });
+    if (sri(bytes) !== integrity) throw new Error(`${url}: does not match its hash in vendor.lock.json`);
+    fs.mkdirSync(cache, { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, bytes);
   }
   return bytes;
@@ -55,11 +66,12 @@ function patch(name, source) {
 // -> { imports: import-map entries (CDN URL -> data: URL) for every module the page imports;
 //      worker, wasm, extensions: data: URLs of the engine files; grid, css: data: URLs; psp: { <Perspective wasm file>: data: URL } }.
 export async function offlineAssets(config, lock) {
+  const hash = pinned(lock);
   const imports = {};
   const pending = [];
-  const module = async (url, integrity, transform = s => s) => {
+  const module = async (url, transform = s => s) => {
     if (imports[url]) return;
-    const bytes = await get(url, integrity);
+    const bytes = await get(url, hash[url]);
     const text = transform(bytes.toString("utf8"));
     // jsDelivr's +esm bundles import their dependencies by site-absolute path, which a data: URL cannot resolve.
     for (const [, spec] of text.matchAll(/["']\/npm\/([^"']+)["']/g)) pending.push(`${CDN}/${spec}`);
@@ -70,24 +82,22 @@ export async function offlineAssets(config, lock) {
   // Explore is on unless `explore: false`; it adds Perspective and its wasm.
   const explore = config.explore !== false;
   const types = config.tiles.map(t => t.type);
-  await module(engine.module.url, engine.module.integrity);
+  await module(engine.module.url);
   // The engine module imports apache-arrow by name whether or not Explore is on, so Arrow (and the +esm dependencies
   // it pulls in below) is inlined in every offline build.
-  await module(lock["apache-arrow"].url, lock["apache-arrow"].integrity);
-  if (types.includes("echarts")) await module(lock.echarts.url, lock.echarts.integrity);
+  await module(lock["apache-arrow"].url);
+  if (types.includes("echarts")) await module(lock.echarts.url);
   if (explore) {
-    await module(psp.client.url, psp.client.integrity, s => patch("perspective.js", s));
-    await module(psp.viewer.url, psp.viewer.integrity, s => patch("perspective-viewer.js", s));
-    await module(psp.datagrid.url, psp.datagrid.integrity);
+    await module(psp.client.url, s => patch("perspective.js", s));
+    await module(psp.viewer.url, s => patch("perspective-viewer.js", s));
+    await module(psp.datagrid.url);
   }
   while (pending.length) await module(pending.shift()); // the dependencies of the +esm bundles
-  const inline = async (entry, type) => dataUrl(type, await get(entry.url, entry.integrity));
+  const inline = async (entry, type) => dataUrl(type, await get(entry.url, hash[entry.url]));
   const extensions = {};
   for (const [name, entry] of Object.entries(engine.extensions ?? {})) extensions[name] = await inline(entry, "application/wasm");
   const pspWasm = {};
-  for (const [pkg, file] of [["client", "perspective-js.wasm"], ["client", "perspective-migrate.wasm"], ["viewer", "perspective-viewer.wasm"], ["server", "perspective-server.wasm"], ["server", "perspective-server.memory64.wasm"]]) {
-    pspWasm[file] = dataUrl("application/wasm", await get(`${CDN}/@perspective-dev/${pkg}@${psp.version}/dist/wasm/${file}`));
-  }
+  for (const entry of explore ? psp.wasm : []) pspWasm[entry.url.split("/").pop()] = await inline(entry, "application/wasm");
   return {
     imports,
     worker: await inline(engine.worker, "text/javascript"),

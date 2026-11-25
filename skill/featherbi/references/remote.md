@@ -53,7 +53,7 @@ S3 (`aws s3api put-bucket-cors --bucket reports --cors-configuration file://cors
 }
 ```
 
-SeaweedFS accepts the same S3 API call; point it at the endpoint (`aws --endpoint-url http://seaweed.internal:8333 s3api put-bucket-cors …` with the JSON above). The S3 gateway may also take an allowed-origins start option (e.g. `weed s3 -allowedOrigins="*"`); that flag is unverified here, check `weed s3 -h`; R4 (#84) proves the snippets. A SeaweedFS instance may already send permissive CORS by default (seen in the #81 verification); the build's preflight tells you either way.
+SeaweedFS accepts the same S3 API call; point it at the endpoint (`aws --endpoint-url http://seaweed.internal:8333 s3api put-bucket-cors …` with the JSON above). The gateway also has a start option, `weed s3 -allowedOrigins="*"` (`-s3.allowedOrigins` in `weed mini`); `weed s3 -h` (seen on the local weed) shows its default as `*`. R4 (#84) proves the snippets. A SeaweedFS instance may already send permissive CORS by default (seen in the #81 verification); the build's preflight tells you either way.
 
 ## Caveats
 

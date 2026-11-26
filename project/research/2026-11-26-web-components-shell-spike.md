@@ -56,7 +56,7 @@ Shoelace made zero non-`file:` requests even when the network was *not* blocked:
 
 1. **One HTML file; no relative module files.** Chrome refuses `<script type="module" src="./x.mjs">` from `file://` (origin `null`); Firefox allows it. Inline all JS into the file or as `data:` module URLs.
 2. **`data:` modules have no base URL.** `import.meta.url` is opaque, so anything that resolves assets relative to it fails. Keep styles and icons in JS strings, or inject a base path.
-3. **No runtime network fetches.** Fonts, icons and CSS must be embedded. A `fetch()` from origin `null` fails offline, and was CORS-blocked even in the CORS test of Probe 1.
+3. **No runtime network fetches.** Fonts, icons and CSS must be embedded. A runtime `fetch()` of an https font failed in all three runs (the scout also states, without a separate online run in this report, that origin `null` is CORS-blocked).
 4. **Shoelace, if chosen:** works pre-bundled to one ESM file for select, tabs and dialog. `sl-icon name="…"` with the default icon library `fetch()`es an SVG via `getAssetPath()` (derived from `import.meta.url`), so it would break from a `data:` module; use system icons or inline SVG. (This is the scout's reading of the library; the default-icon case was **not** driven in a test.) The CDN autoloader fetches chunks lazily and cannot work offline.
 5. **Inline the theme CSS** (`data:text/css` or `<style>`). esbuild ignores bare `.css` imports by default, so the bundle step must resolve them.
 6. **Shadow DOM works in both browsers.** Test automation must pierce shadow roots; Playwright `selectOption` on a custom element failed in Probe 1.

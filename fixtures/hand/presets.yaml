@@ -165,3 +165,39 @@ tiles:
     sql: >
       SELECT order_date AS x, SUM(revenue) AS y
       FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  # The four presets of spec 0004. Pareto rows arrive by name, so the page does the sorting.
+  - type: echarts
+    preset: pareto
+    title: Revenue Pareto
+    sql: >
+      SELECT region || ' ' || channel AS x, SUM(revenue) AS y
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: histogram
+    title: Order value distribution
+    sql: >
+      SELECT floor(revenue / 50) * 50 AS lo, floor(revenue / 50) * 50 + 50 AS hi,
+        COUNT(*) AS count
+      FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  # Candlestick and timeline have their own hand rows (README.md), written inline.
+  - type: echarts
+    preset: candlestick
+    title: Price by day
+    sql: >
+      SELECT * FROM (VALUES
+        ('2025-01-06', 100, 115, 95, 110, 1000),
+        ('2025-01-07', 110, 112, 98, 102, 1500),
+        ('2025-01-08', 102, 120, 101, 118, 800)
+      ) AS t(x, open, high, low, close, volume)
+      ORDER BY x
+  - type: echarts
+    preset: timeline
+    title: Machine states
+    sql: >
+      SELECT * FROM (VALUES
+        ('M1', TIMESTAMP '2025-01-06 08:00', TIMESTAMP '2025-01-06 12:00', 'run'),
+        ('M1', TIMESTAMP '2025-01-06 12:00', TIMESTAMP '2025-01-06 13:00', 'down'),
+        ('M1', TIMESTAMP '2025-01-06 14:00', TIMESTAMP '2025-01-06 16:00', 'run'),
+        ('M2', TIMESTAMP '2025-01-06 09:00', TIMESTAMP '2025-01-06 15:00', 'run')
+      ) AS t(name, start, "end", state)
+      ORDER BY start, name

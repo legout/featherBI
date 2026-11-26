@@ -4,8 +4,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-// Spec 0001 §Tile types: the 17 presets of v1.
-const PRESETS = ["line", "area", "bar", "stacked-bar", "hbar", "pie", "donut", "scatter", "heatmap", "treemap", "sunburst", "funnel", "gauge", "sankey", "waterfall", "boxplot", "calendar"];
+// Spec 0001 §Tile types: the 17 presets of v1; spec 0004 §Four new presets.
+const PRESETS = ["pareto", "histogram", "candlestick", "timeline", "line", "area", "bar", "stacked-bar", "hbar", "pie", "donut", "scatter", "heatmap", "treemap", "sunburst", "funnel", "gauge", "sankey", "waterfall", "boxplot", "calendar"];
 
 test.beforeAll(() => {
   execFileSync("node", ["skill/featherbi/scripts/featherbi.mjs", "build", "fixtures/hand/presets.yaml"], { cwd: root, stdio: "pipe" });
@@ -46,7 +46,7 @@ async function clickChart(page, title, point, dx = 0) {
   await page.mouse.click(at.x + dx, at.y);
 }
 
-test("all 17 presets render, the bar tile shows revenue and target per region, KPI and text tiles are filled", async ({ page }) => {
+test("all 21 presets render, the bar tile shows revenue and target per region, KPI and text tiles are filled", async ({ page }) => {
   const errors = await open(page);
   const tiles = await page.evaluate(() => JSON.parse(document.getElementById("dashboard").textContent).tiles.filter(t => t.type === "echarts"));
   expect(tiles.map(t => t.preset).sort()).toEqual([...PRESETS].sort());
@@ -104,6 +104,110 @@ test("a click on a bar, a donut slice or a heatmap cell sets the filter, and the
   await clickChart(page, "Region × channel", ["EU", "Online"]);
   await revenue(page, "$2,260.50");
   await expect(chips).toBeEmpty();
+  expect(errors).toEqual([]);
+});
+
+// The canvas colour [r, g, b, a] at a data point of a chart, with the pixel it was read at.
+async function at(page, title, point, seriesIndex = 0) {
+  const chart = tile(page, title);
+  await expect(chart).not.toHaveAttribute("aria-busy", "true");
+  return chart.getByRole("img").evaluate(
+    async (node, { point, seriesIndex }) => {
+      const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
+      const echarts = await import(charts.url);
+      const [x, y] = echarts.getInstanceByDom(node).convertToPixel({ seriesIndex }, point);
+      const canvas = node.querySelector("canvas");
+      const scale = canvas.width / canvas.clientWidth;
+      return { x, y, rgba: [...canvas.getContext("2d", { willReadFrequently: true }).getImageData(Math.round(x * scale), Math.round(y * scale), 1, 1).data] };
+    },
+    { point, seriesIndex },
+  );
+}
+const colour = (...args) => at(...args).then(p => p.rgba.join());
+
+test("pareto sorts the bars descending and its cumulative line ends at 100 %", async ({ page }) => {
+  const errors = await open(page);
+  const title = "Revenue Pareto";
+  // README: US Retail 750.50, US Online 660, EU Retail 490, EU Online 360; the SQL returns them by name.
+  const order = ["US Retail", "US Online", "EU Retail", "EU Online"];
+  const xs = [];
+  for (const name of order) xs.push((await at(page, title, [name, 0])).x);
+  expect(xs).toEqual([...xs].sort((a, b) => a - b));
+  expect(new Set(xs).size).toBe(4);
+  // The line (series 1, right axis 0..100) passes through the hand-computed cumulative shares and ends at 100.
+  const bar = await colour(page, title, ["US Retail", 100]);
+  const line = () => colour(page, title, ["EU Online", 100], 1);
+  await expect.poll(line).not.toBe("0,0,0,0");
+  expect(await line()).not.toBe(bar);
+  const shares = { "US Retail": 33.2, "US Online": 62.4, "EU Retail": 84.07 };
+  for (const [name, share] of Object.entries(shares)) await expect.poll(() => colour(page, title, [name, share], 1), name).toBe(await line());
+  expect(errors).toEqual([]);
+});
+
+test("histogram bars share their edges on a value axis and are as high as their count", async ({ page }) => {
+  const errors = await open(page);
+  const title = "Order value distribution";
+  // README: bins 100..150 (3), 150..200 (3), 200..250 (4), 250..300 (2).
+  await expect.poll(() => painted(tile(page, title))).toBe(true);
+  await expect.poll(async () => (await at(page, title, [225, 3.7])).rgba[3], "the 200..250 bar reaches 4").toBe(255);
+  const fill = await colour(page, title, [125, 0.5]);
+  // Just left and right of every shared edge is bar, with no gap between.
+  for (const edge of [150, 200, 250]) for (const x of [edge - 2, edge + 2]) expect(await colour(page, title, [x, 0.5]), `at ${x}`).toBe(fill);
+  expect(await colour(page, title, [225, 3.7])).toBe(fill);
+  expect(await colour(page, title, [125, 3.3]), "above the 100..150 bar").not.toBe(fill);
+  expect(await colour(page, title, [275, 2.3]), "above the 250..300 bar").not.toBe(fill);
+  expect(await colour(page, title, [275, 1.7])).toBe(fill);
+  expect(errors).toEqual([]);
+});
+
+test("candlestick draws a rising row in the theme's success colour, with the volume below", async ({ page }) => {
+  const errors = await open(page);
+  const title = "Price by day";
+  // The theme's own success and error colours, resolved to RGB by the browser.
+  const theme = await page.evaluate(() => {
+    const context = document.createElement("canvas").getContext("2d");
+    return Object.fromEntries(
+      ["success", "error"].map(name => {
+        context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(`--color-${name}`);
+        context.fillRect(0, 0, 1, 1);
+        return [name, [...context.getImageData(0, 0, 1, 1).data]];
+      }),
+    );
+  });
+  const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  // README: 2025-01-06 rises from 100 to 110, 2025-01-07 falls from 110 to 102.
+  const body = point => at(page, title, point).then(p => p.rgba);
+  await expect.poll(async () => (await body(["2025-01-06", 105]))[3]).toBe(255);
+  const [rising, falling] = [await body(["2025-01-06", 105]), await body(["2025-01-07", 106])];
+  expect(distance(rising, theme.success)).toBeLessThan(distance(rising, theme.error));
+  expect(distance(falling, theme.error)).toBeLessThan(distance(falling, theme.success));
+  // Volume 1500 on 2025-01-07: a bar (series 1) below the candle's low of 98.
+  await expect.poll(async () => (await at(page, title, ["2025-01-07", 750], 1)).rgba[3]).toBe(255);
+  expect((await at(page, title, ["2025-01-07", 750], 1)).y).toBeGreaterThan((await at(page, title, ["2025-01-07", 98])).y);
+  expect(errors).toEqual([]);
+});
+
+test("timeline draws one bar per row from its start to its end", async ({ page }) => {
+  const errors = await open(page);
+  const title = "Machine states";
+  const hour = h => Date.UTC(2025, 0, 6, 0, h * 60);
+  // Series are the states in row order: 0 = run, 1 = down. Both share the axes, so either finds a pixel.
+  const bar = (name, h) => colour(page, title, [hour(h), name]);
+  await expect.poll(async () => (await at(page, title, [hour(10), "M1"])).rgba[3]).toBe(255);
+  const run = await bar("M1", 10); // M1 08:00..12:00 run
+  expect(await bar("M1", 8.2)).toBe(run);
+  expect(await bar("M1", 11.8)).toBe(run);
+  const down = await bar("M1", 12.5); // M1 12:00..13:00 down
+  expect(down).not.toBe(run);
+  expect(await bar("M1", 12.2)).toBe(down);
+  expect(await bar("M1", 12.8)).toBe(down);
+  expect(await bar("M1", 13.5), "M1 has no row from 13:00 to 14:00").not.toBe(run);
+  expect(await bar("M1", 13.5)).not.toBe(down);
+  expect(await bar("M1", 15)).toBe(run); // M1 14:00..16:00 run
+  expect(await bar("M2", 9.2)).toBe(run); // M2 09:00..15:00 run
+  expect(await bar("M2", 14.8)).toBe(run);
+  expect(await bar("M2", 8.5), "M2 starts at 09:00").not.toBe(run);
+  expect(await bar("M2", 15.5), "M2 ends at 15:00").not.toBe(run);
   expect(errors).toEqual([]);
 });
 

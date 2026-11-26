@@ -24,8 +24,12 @@ Output modes: default (one file, JS from a CDN), `--offline` (everything inlined
 
 ## Development
 
-`npm ci`, then `npm test` (node:test and Playwright, Chrome and Firefox). Specs and decisions are in `project/`; terms in `CONTEXT.md`. The previous implementation is on the `legacy` branch and the `legacy-final` tag.
+`npm ci`, then `npm test` (node:test and Playwright, Chrome and Firefox). Specs and decisions are in `project/`; terms in `CONTEXT.md`.
 
 ## The old npm package
 
 `featherbi` on npm is retired; this repository is the product ([ADR 0002](project/adr/0002-repository-is-the-skill.md)).
+
+## License
+
+MIT, see [LICENSE](LICENSE). Bundled third-party libraries keep their own licenses (pinned in `skill/featherbi/assets/vendor.lock.json`).

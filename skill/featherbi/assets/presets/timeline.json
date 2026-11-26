@@ -1,0 +1,48 @@
+{
+  "columns": [
+    "name",
+    "start",
+    "end"
+  ],
+  "optional": [
+    "state"
+  ],
+  "click": [
+    "name"
+  ],
+  "split": "state",
+  "option": {
+    "useUTC": true,
+    "tooltip": {
+      "trigger": "item",
+      "formatter": "@span"
+    },
+    "legend": {},
+    "grid": {},
+    "xAxis": {
+      "type": "time"
+    },
+    "yAxis": {
+      "type": "category",
+      "data": "@uniq:name",
+      "inverse": true
+    },
+    "dataset": {
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "type": "custom",
+        "renderItem": "@spans",
+        "clip": true,
+        "encode": {
+          "x": [
+            "start",
+            "end"
+          ],
+          "y": "name"
+        }
+      }
+    ]
+  }
+}

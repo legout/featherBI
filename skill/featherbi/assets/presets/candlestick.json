@@ -1,0 +1,120 @@
+{
+  "columns": [
+    "x",
+    "open",
+    "high",
+    "low",
+    "close"
+  ],
+  "optional": [
+    "volume"
+  ],
+  "click": [
+    "x"
+  ],
+  "option": {
+    "tooltip": {
+      "trigger": "axis",
+      "axisPointer": {
+        "type": "shadow"
+      }
+    },
+    "grid": [
+      {}
+    ],
+    "xAxis": [
+      {
+        "type": "category",
+        "data": "@uniq:x"
+      }
+    ],
+    "yAxis": [
+      {
+        "type": "value",
+        "scale": true
+      }
+    ],
+    "dataset": {
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "type": "candlestick",
+        "barMaxWidth": 32,
+        "encode": {
+          "x": "x",
+          "y": [
+            "open",
+            "close",
+            "low",
+            "high"
+          ],
+          "tooltip": [
+            "open",
+            "high",
+            "low",
+            "close"
+          ]
+        }
+      }
+    ]
+  },
+  "with": {
+    "volume": {
+      "axisPointer": {
+        "link": [
+          {
+            "xAxisIndex": "all"
+          }
+        ]
+      },
+      "grid": [
+        {
+          "left": 56,
+          "bottom": "40%",
+          "containLabel": false
+        },
+        {
+          "left": 56,
+          "top": "72%",
+          "bottom": 28,
+          "containLabel": false
+        }
+      ],
+      "xAxis": [
+        {
+          "axisLabel": {
+            "show": false
+          }
+        },
+        {
+          "type": "category",
+          "gridIndex": 1,
+          "data": "@uniq:x"
+        }
+      ],
+      "yAxis": [
+        {},
+        {
+          "type": "value",
+          "gridIndex": 1,
+          "splitNumber": 2
+        }
+      ],
+      "series": [
+        {},
+        {
+          "type": "bar",
+          "name": "volume",
+          "xAxisIndex": 1,
+          "yAxisIndex": 1,
+          "barMaxWidth": 32,
+          "encode": {
+            "x": "x",
+            "y": "volume"
+          }
+        }
+      ]
+    }
+  }
+}

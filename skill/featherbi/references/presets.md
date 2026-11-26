@@ -42,7 +42,7 @@ All tile SQL runs in the browser over the snapshot tables. Put `{{filters:<table
 
 Rows are drawn in the order the SQL returns them, so add an `ORDER BY`.
 
-### The 17 presets
+### The 21 presets
 
 | Preset | Required columns | Optional | Click key columns | Notes |
 |---|---|---|---|---|
@@ -63,8 +63,28 @@ Rows are drawn in the order the SQL returns them, so add an `ORDER BY`.
 | `waterfall` | `x, y` | | `x` | `y` is the **change** of each step; the bars float on the running total. Rises and falls have different colours. |
 | `boxplot` | `name, min, q1, median, q3, max` | | `name` | One box per row; compute the quantiles in SQL (`quantile_cont`, `median`). |
 | `calendar` | `x, y` | | none | `x` is a DATE, one row per day; the range runs from the first to the last date. |
+| `pareto` | `x, y` | | `x` | Bars sorted by `y`, largest first, plus a line of the cumulative share on a 0–100 % right axis. The page sorts and sums; the SQL needs no `ORDER BY`. |
+| `histogram` | `lo, hi, count` | `series` | none | One bar per row from `lo` to `hi` on a numeric axis, `count` high. The bins come from SQL, see the recipe below. |
+| `candlestick` | `x, open, high, low, close` | `volume` | `x` | A rising row (`close` > `open`) has the theme's success colour, a falling one its error colour. `volume` adds bars in a second panel below. |
+| `timeline` | `name, start, end` | `state` | `name` | One line per `name`, one bar per row from `start` to `end` (TIMESTAMP or DATE), coloured by `state`. For downtime, machine states, sessions. Times are shown in UTC. |
 
-Each preset file (`assets/presets/<name>.json`) holds `columns`, `optional`, `click` (the click key columns) and `option` (the ECharts option template). In the template, a string starting with `@` binds data from the tile's rows: `@rows`, `@uniq:<column>`, `@min:<column>`, `@max:<column>`, `@names:<column>,<column>` (sankey nodes) and `@steps` (waterfall running totals).
+Each preset file (`assets/presets/<name>.json`) holds `columns`, `optional`, `click` (the click key columns) and `option` (the ECharts option template). In the template, a string starting with `@` binds data from the tile's rows: `@rows`, `@uniq:<column>`, `@min:<column>`, `@max:<column>`, `@names:<column>,<column>` (sankey nodes), `@steps` (waterfall running totals), `@pareto` (rows sorted by `y` with their cumulative `share`), `@bins` and `@spans` (the histogram and timeline bars) and `@bin` and `@span` (their tooltips). Two optional keys: `with: {<column>: <option part>}` merges a part into `option` only when the rows have that optional column (candlestick `volume`), and `split: <column>` names the column that splits the series when it is not `series` (timeline `state`).
+
+### Histogram bins
+
+A histogram tile gets its bins from SQL. Pick a bin width (here 50) and `floor` every value to the start of its bin:
+
+```yaml
+- type: echarts
+  preset: histogram
+  title: Order value distribution
+  sql: >
+    SELECT floor(revenue / 50) * 50 AS lo, floor(revenue / 50) * 50 + 50 AS hi,
+      COUNT(*) AS count
+    FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+```
+
+Each bin includes `lo` and excludes `hi`, so the `hi` of one bar is the `lo` of the next and the bars touch. A bin without rows is left out and shows as a gap. For about 20 bins over the whole range, use `(SELECT (MAX(revenue) - MIN(revenue)) / 20 FROM sales)` as the width.
 
 ### `click`
 
@@ -72,7 +92,7 @@ Each preset file (`assets/presets/<name>.json`) holds `columns`, `optional`, `cl
 - Clicking the same element again clears the dimension(s). A click on another element replaces the value.
 - Every `click` dimension must be declared in `dims`, and its values must match the key column's values (click on `region` needs `region AS x`).
 - A tile that is filtered by its own click shrinks to the clicked element. Add `exclude: [<dim>]` to keep the other elements visible and clickable.
-- Presets without click key columns (`scatter`, `gauge`, `calendar`) ignore `click`.
+- Presets without click key columns (`scatter`, `gauge`, `calendar`, `histogram`) ignore `click`.
 
 ### `option`
 

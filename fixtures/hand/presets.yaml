@@ -165,7 +165,8 @@ tiles:
     sql: >
       SELECT order_date AS x, SUM(revenue) AS y
       FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
-  # The four presets of spec 0004. Pareto rows arrive by name, so the page does the sorting.
+  # The four presets of spec 0004. Pareto rows arrive by name, so the page
+  # does the sorting.
   - type: echarts
     preset: pareto
     title: Revenue Pareto
@@ -176,10 +177,10 @@ tiles:
     preset: histogram
     title: Order value distribution
     sql: >
-      SELECT floor(revenue / 50) * 50 AS lo, floor(revenue / 50) * 50 + 50 AS hi,
-        COUNT(*) AS count
+      SELECT floor(revenue / 50) * 50 AS lo,
+        floor(revenue / 50) * 50 + 50 AS hi, COUNT(*) AS count
       FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
-  # Candlestick and timeline have their own hand rows (README.md), written inline.
+  # Candlestick and timeline have their own hand rows (README.md), inline.
   - type: echarts
     preset: candlestick
     title: Price by day
@@ -194,10 +195,12 @@ tiles:
     preset: timeline
     title: Machine states
     sql: >
-      SELECT * FROM (VALUES
-        ('M1', TIMESTAMP '2025-01-06 08:00', TIMESTAMP '2025-01-06 12:00', 'run'),
-        ('M1', TIMESTAMP '2025-01-06 12:00', TIMESTAMP '2025-01-06 13:00', 'down'),
-        ('M1', TIMESTAMP '2025-01-06 14:00', TIMESTAMP '2025-01-06 16:00', 'run'),
-        ('M2', TIMESTAMP '2025-01-06 09:00', TIMESTAMP '2025-01-06 15:00', 'run')
-      ) AS t(name, start, "end", state)
+      SELECT name, TIMESTAMP '2025-01-06 00:00' + to_hours(a) AS start,
+        TIMESTAMP '2025-01-06 00:00' + to_hours(b) AS "end", state
+      FROM (VALUES
+        ('M1', 8, 12, 'run'),
+        ('M1', 12, 13, 'down'),
+        ('M1', 14, 16, 'run'),
+        ('M2', 9, 15, 'run')
+      ) AS t(name, a, b, state)
       ORDER BY start, name

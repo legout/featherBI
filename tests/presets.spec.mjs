@@ -135,12 +135,12 @@ test("pareto sorts the bars descending and its cumulative line ends at 100 %", a
   expect(xs).toEqual([...xs].sort((a, b) => a - b));
   expect(new Set(xs).size).toBe(4);
   // The line (series 1, right axis 0..100) passes through the hand-computed cumulative shares and ends at 100.
-  const bar = await colour(page, title, ["US Retail", 100]);
-  const line = () => colour(page, title, ["EU Online", 100], 1);
-  await expect.poll(line).not.toBe("0,0,0,0");
-  expect(await line()).not.toBe(bar);
-  const shares = { "US Retail": 33.2, "US Online": 62.4, "EU Retail": 84.07 };
-  for (const [name, share] of Object.entries(shares)) await expect.poll(() => colour(page, title, [name, share], 1), name).toBe(await line());
+  const line = name => colour(page, title, [name, { "US Retail": 33.2, "US Online": 62.4, "EU Retail": 84.07, "EU Online": 100 }[name]], 1);
+  // The line is drawn from left to right, so its last point matches its first one only when it is complete.
+  await expect.poll(async () => (await line("EU Online")) === (await line("US Retail"))).toBe(true);
+  const stroke = await line("US Retail");
+  expect(stroke).not.toBe(await colour(page, title, ["US Retail", 100])); // the bar under it
+  for (const name of order) expect(await line(name), name).toBe(stroke);
   expect(errors).toEqual([]);
 });
 

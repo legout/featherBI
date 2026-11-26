@@ -1,6 +1,6 @@
 # Remote snapshot (`--remote`)
 
-**Status: unqualified until R4 (#84) passes.** Do not tell a user this mode works or is supported until this line says `verified`. Real AWS S3 has not been tried at all; only SeaweedFS is planned for qualification.
+**Status: verified 2026-11-26 for SeaweedFS (4.55, `weed mini` with its default CORS; R4 #84, report on #80). AWS S3: unverified, never tried.** Do not tell a user this mode works or is supported on a store until this line lists it as verified.
 
 The HTML holds presigned GET URLs instead of the Parquet bytes. The snapshot tables live in an S3-compatible bucket (S3, SeaweedFS). Anyone with the file opens the dashboard until the links expire, from `file://` or a web server, without credentials. A refresh is a rebuild.
 
@@ -53,7 +53,7 @@ S3 (`aws s3api put-bucket-cors --bucket reports --cors-configuration file://cors
 }
 ```
 
-SeaweedFS accepts the same S3 API call; point it at the endpoint (`aws --endpoint-url http://seaweed.internal:8333 s3api put-bucket-cors …` with the JSON above). The gateway also has a start option, `weed s3 -allowedOrigins="*"` (`-s3.allowedOrigins` in `weed mini`); `weed s3 -h` (seen on the local weed) shows its default as `*`. R4 (#84) proves the snippets. A SeaweedFS instance may already send permissive CORS by default (seen in the #81 verification); the build's preflight tells you either way.
+SeaweedFS accepts the same S3 API call; point it at the endpoint (`aws --endpoint-url http://seaweed.internal:8333 s3api put-bucket-cors …` with the JSON above). The gateway also has a start option, `weed s3 -allowedOrigins="*"` (`-s3.allowedOrigins` in `weed mini`); `weed s3 -h` (seen on the local weed) shows its default as `*`. R4 (#84) ran against `weed mini` 4.55 with its default CORS, and with `-s3.allowedOrigins` set to another origin (the build then stops at its preflight); the `aws s3api put-bucket-cors` call itself was not run. A SeaweedFS instance may already send permissive CORS by default (seen in the #81 verification); the build's preflight tells you either way.
 
 ## Caveats
 

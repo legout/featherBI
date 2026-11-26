@@ -1,8 +1,8 @@
 # Spec 0005: SQL tables, locale, KPI notes, header line, sections and a replaceable page shell
 
-Status: **proposed**, revision 1 (2026-11-26). Not approved. Owner direction so far (2026-11-26): take over the useful parts of two hand-built single-file dashboard drafts (SQL result tables, number formats, KPI notes, a data-status line, sections or tabs), and prepare the page so a separately maintained derived edition can replace its UI components without forking the renderer.
+Status: **approved**, revision 2 (owner, 2026-11-26). Revision 2 (owner decisions after the foreman's comparison with specs 0001–0004 and the code): "unchanged" means the same rendered page, not byte-identical HTML (the renderer and template are embedded, so any renderer change alters the bytes); table numbers follow the locale and the column's decimal scale; `tab` is a reserved dimension name; ADR 0003 amends ADR 0001's single-renderer rule. §6 is planned after a spike on Web Components under `file://` and `--offline`. Revision 1 owner direction (2026-11-26): take over the useful parts of two hand-built single-file dashboard drafts (SQL result tables, number formats, KPI notes, a data-status line, sections or tabs), and prepare the page so a separately maintained derived edition can replace its UI components without forking the renderer.
 Builds on: [spec 0001](2026-11-24-0001-featherbi-v1.md) r4 (tiles, filters, layout, determinism) and [spec 0003](2026-11-26-0003-themes.md) r1 (theme key and logo in the header).
-Architecture: [ADR 0001](../adr/0001-dashboard-stack.md) (DaisyUI 5 + Tailwind 4, ECharts, AG Grid, one generic renderer), [ADR 0002](../adr/0002-repository-is-the-skill.md).
+Architecture: [ADR 0001](../adr/0001-dashboard-stack.md) (DaisyUI 5 + Tailwind 4, ECharts, AG Grid, one generic renderer; amended by ADR 0003), [ADR 0002](../adr/0002-repository-is-the-skill.md), [ADR 0003](../adr/0003-replaceable-page-shell.md) (renderer/shell split).
 Contract: planning-contract v1.
 
 ## Goal
@@ -34,6 +34,7 @@ Large dashboards stay readable and trustworthy:
 
 - New optional top-level key `locale` (a BCP 47 tag, e.g. `de-DE`). Default `en-US`, which renders exactly as today.
 - It applies to every number the renderer formats (KPI values and Δ %, chart tooltips and value-axis labels, pivot cells, table cells) and to dates the renderer formats (table date column, the header line in §4).
+- **Table cells** (`source` and `sql` tables) format numbers with the locale and, for `DECIMAL(p,s)` columns, exactly `s` fraction digits (`850.00`, `1,410.50` in `en-US`); other numeric columns use at most 2. This applies with and without `locale` and is a deliberate change: today table cells show raw values (`1410.5`).
 - Dates use the locale's numeric short form (`2-digit` day and month, `numeric` year, UTC): `05.01.2025` in `de-DE`, `01/05/2025` in `en-US`. Without `locale` the table date column stays ISO (`2025-01-05`) as today.
 - Separators are what `Intl` produces for the locale, including non-breaking spaces (`2.260,50 €`, `25 %`).
 - `format` (on `kpi`, `echarts`, `pivot`) accepts, besides `number` and `currency`:
@@ -64,14 +65,15 @@ Large dashboards stay readable and trustworthy:
   - `tabs`: one tab per section, in config order, the first one open on load.
 - **Filters** (filter bar, chips, Reset, cross-filter clicks, URL hash) work across all sections exactly as in spec 0001.
 - **Tabs and queries:** tiles in a closed tab do not query. Opening a tab queries its tiles for the current filter state; latest state wins (spec 0001) applies per tab.
-- **URL hash:** the open tab is added as `tab=<n>` (1-based) when it is not the first. On load an invalid or out-of-range value is ignored, like every other hash part.
+- **URL hash:** the open tab is added as `tab=<n>` (1-based) when it is not the first. On load an invalid or out-of-range value is ignored, like every other hash part. `tab` is a reserved dimension name, like `date` (build rejection: a dimension named `tab`).
 - **Accessibility:** `role=tablist`, `tab`, `tabpanel`; arrow keys move between tabs, Home and End jump to the first and last; the open tab has `aria-selected=true`.
 - **Errors** name the section and the tile: `section "<title>", tile "<id or number>": …`.
+- **Build rejection:** both `tiles` and `sections`, neither, `layout` without `sections`, a section without `title` or tiles, a duplicate section title, a dimension named `tab`.
 
 ### 6. Replaceable page shell
 
 - The renderer creates the page chrome only through one module, the **shell**: the header (title, logo from spec 0003, header line, theme toggle, Explore button), the filter bar (selects, date inputs, chips, Reset), the section or tab container, the tile cards (title, busy state, error state), the KPI card, the table host and the Explore dialog.
-- The default shell is `skill/featherbi/assets/shell.js` and renders today's DaisyUI markup. With the default shell the HTML of every existing fixture is **byte-identical** to the build before this change.
+- The default shell is `skill/featherbi/assets/shell.js` and renders today's DaisyUI markup. With the default shell every existing fixture renders the **same page** as before this change (see acceptance 1).
 - `references/shell.md` documents the shell interface as a versioned contract (`shell: 1`): each function, its arguments, what it returns and which events it reports back (filter change, tab change, Explore open, theme toggle). Charts (ECharts) and the grid (AG Grid) stay in the renderer; a shell gets the DOM element to mount them in.
 - **Selecting a shell:** the dashboard config has no shell key. A shell is chosen by the skill installation: `build --shell <file>` (a path) uses that file instead of the default. The build inlines it like the renderer; `--offline` inlines it too. The build fails when the file is missing or does not declare `shell: 1`.
 - No other shell ships in this repository.
@@ -88,7 +90,7 @@ Large dashboards stay readable and trustworthy:
 
 Fixture: the hand fixture (`fixtures/hand`, 12 sales rows, oracle values in its README).
 
-1. **Default unchanged.** Every existing fixture config builds byte-identical HTML before and after this change (default shell, no new keys).
+1. **Default unchanged (same rendered page).** For every existing fixture config (default shell, no new keys), built before and after the change: the embedded dashboard data (the `#dashboard` JSON) and the CSS are byte-identical, and after load in Chromium the page's accessibility tree under `header` and `main` (roles, names, texts) is identical. Planned deliberate differences are listed in the plan task that makes them (for example table number formats, §2) and excluded from that comparison only for the elements they name. Byte-identical HTML is not required: the renderer and template are embedded, so any renderer change alters the bytes.
 2. **SQL table.** A `table` tile with `sql: SELECT region, SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1` shows 2 rows, EU 850.00 and US 1,410.50; after selecting channel Online it shows EU 360.00 and US 660.00. With `click: region`, clicking the EU row sets region = EU: the Revenue KPI shows 850.00.
 3. **Row cap.** A `sql` table over a 1 001-row result shows 1 000 rows and "first 1 000 rows"; over a 1 000-row result it shows all 1 000 and no note.
 4. **Locale.** With `locale: de-DE`, the hand fixture's Revenue KPI with `format: {style: currency, currency: EUR}` shows `2.260,50 €`; a KPI with `format: {decimals: 1, unit: t}` and value 1234.5 shows `1.234,5 t`; `format: percent` with value 0.25 shows `25 %`; the table date column shows `05.01.2025` for 2025-01-05.
@@ -102,8 +104,8 @@ Fixture: the hand fixture (`fixtures/hand`, 12 sales rows, oracle values in its 
 ## Capture checkpoint
 
 - **Vocabulary:** adds **section** (a titled group of tiles), **layout** (`stack` or `tabs`), **shell** (the module that renders the page chrome) and **header line** to CONTEXT.md on approval.
-- **Decisions:** a replaceable shell is a new extension point; it is an architectural choice (costly to reverse once a derived edition depends on it). **Proposed ADR 0003 "Replaceable page shell"** for approval with this spec: the renderer keeps engine, filters, charts and grid; the shell owns chrome; the contract is versioned; no shell key in the config. Everything else stays within ADR 0001.
+- **Decisions:** a replaceable shell is a new extension point; it is an architectural choice (costly to reverse once a derived edition depends on it). **ADR 0003 "Replaceable page shell"**, accepted with this revision: the renderer keeps engine, filters, charts and grid; the shell owns chrome; the contract is versioned; no shell key in the config. It amends ADR 0001's "one generic renderer"; everything else stays within ADR 0001.
 - **Behavior:** this spec.
 - **Uncertainty (blocking for §6 only):**
-  - Whether a Web Components library rendered by a shell works from `file://` and in an `--offline` build is not verified. A probe should precede the plan task for §6; §1–§5 do not depend on it.
+  - Whether a Web Components library rendered by a shell works from `file://` and in an `--offline` build is not verified. A spike precedes the plan task for §6 (owner decision r2); if it shows §6 cannot work as written, §6 returns to this spec before implementation. §1–§5 do not depend on it.
   - The exact shell function list is fixed in the plan; this spec fixes its scope and the byte-identity rule.

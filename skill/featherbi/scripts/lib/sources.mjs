@@ -72,11 +72,34 @@ export function profile(exprs, cwd) {
     const q = sql => JSON.parse(run(["-json", "-c", `${prelude} ${sql}`], cwd) || "[]");
     const schema = q(`SELECT column_name AS name, column_type AS type FROM (DESCRIBE ${query})`);
     const [{ n }] = q(`SELECT count(*)::BIGINT AS n FROM (${query})`);
+    // Above 5 M rows the per-column statistics use a fixed-seed 1 M-row sample; count stays exact.
+    const sampled = Number(n) > 5_000_000;
+    const base = sampled ? `(SELECT * FROM (${query}) USING SAMPLE 1000000 ROWS (reservoir, 42))` : `(${query})`;
+    const total = sampled ? 1_000_000 : Number(n);
     const samples = {};
-    for (const { name } of schema) {
+    for (const { name, type } of schema) {
       const c = ident(name);
       samples[name] = q(`SELECT DISTINCT ${c} AS v FROM (${query}) WHERE ${c} IS NOT NULL ORDER BY v LIMIT 5`).map(r => r.v);
+      const approx = total > 100_000;
+      const [s] = q(
+        `SELECT (count(*) - count(${c}))::DOUBLE / nullif(count(*), 0) AS nulls, ` +
+          `${approx ? `approx_count_distinct(${c})` : `count(DISTINCT ${c})`}::BIGINT AS distinct, min(${c}) AS min, max(${c}) AS max FROM ${base}`,
+      );
+      const isTime = /^(DATE|TIMESTAMP)/.test(type);
+      const col = { nulls: s.nulls ?? 0, distinct: Number(s.distinct) };
+      if (approx) col.distinct_approx = true;
+      if (isTime || /^(DECIMAL|[U]?(TINY|SMALL|BIG|HUGE)?INT|DOUBLE|FLOAT|REAL)/.test(type)) Object.assign(col, { min: s.min, max: s.max });
+      if (type === "VARCHAR" && col.distinct <= 50) {
+        col.top = q(`SELECT ${c} AS value, count(*)::BIGINT AS count FROM ${base} WHERE ${c} IS NOT NULL GROUP BY ALL ORDER BY count DESC, value LIMIT 10`);
+      }
+      if (isTime) {
+        const [g] = q(
+          `SELECT median(g)::VARCHAR AS step FROM (SELECT d - lag(d) OVER (ORDER BY d) AS g FROM (SELECT DISTINCT ${c}::TIMESTAMP AS d FROM ${base} WHERE ${c} IS NOT NULL))`,
+        );
+        if (g?.step) col.step = g.step;
+      }
+      Object.assign(schema.find(x => x.name === name), col);
     }
-    return { source: expr, schema, count: Number(n), samples };
+    return { source: expr, schema, count: Number(n), ...(sampled && { sampled }), samples };
   });
 }

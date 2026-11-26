@@ -123,3 +123,17 @@ sources:
 ```
 
 Anything that needs an interactive login (Microsoft sign-in, MFA, a cookie) is **unsupported**. Do not put a session cookie or token in the config or URL. A share link that embeds an access token is a credential: treat it like one and do not commit it.
+
+## `profile` output
+
+`profile` prints a JSON array, one object per source: `source`, `schema`, `count` (always exact), `samples` (up to 5 distinct values per column), and `sampled: true` when the statistics come from a sample. It never writes files or sends data anywhere. Each `schema` entry (`name`, `type`) also carries:
+
+| Field | For | Meaning |
+|---|---|---|
+| `nulls` | all | share of NULLs, 0–1 |
+| `distinct` | all | distinct values; approximate above 100 000 rows, then `distinct_approx: true` |
+| `min`, `max` | numeric, date, timestamp | |
+| `top` | text with ≤ 50 distinct values | up to 10 `{value, count}`, most frequent first |
+| `step` | date, timestamp | median gap between consecutive distinct values as a DuckDB interval (`10 days`, `00:15:00`) |
+
+Above 5 000 000 rows the statistics use `USING SAMPLE 1000000 ROWS (reservoir, 42)` (fixed seed, repeatable).

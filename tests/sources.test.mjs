@@ -68,3 +68,24 @@ test("profile prints schema, count and 5 samples per column as JSON", () => {
   assert.equal(a.samples.name.length, 5);
   assert.deepEqual([...a.samples.id].sort(), [1, 2, 3, 4, 5]);
 });
+
+const cliPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "skill", "featherbi", "scripts", "featherbi.mjs");
+const handDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "hand");
+
+test("profile reports nulls, distinct, min/max, top values and date step (spec 0004 acceptance 1)", () => {
+  const [p] = JSON.parse(execFileSync("node", [cliPath, "profile", "sales.parquet"], { cwd: handDir, encoding: "utf8" }));
+  const col = n => p.schema.find(c => c.name === n);
+  assert.equal(p.count, 12);
+  assert.equal(p.sampled, undefined);
+  assert.deepEqual([col("revenue").min, col("revenue").max, col("revenue").nulls, col("revenue").distinct], ["100.00", "270.00", 0, 12]);
+  assert.deepEqual(col("region").top, [{ value: "EU", count: 6 }, { value: "US", count: 6 }]);
+  const d = col("order_date");
+  assert.deepEqual([d.min, d.max, d.distinct, d.step], ["2025-01-05", "2025-03-25", 9, "10 days"]);
+});
+
+test("profile samples sources above 5 M rows but keeps the exact count", () => {
+  const [p] = JSON.parse(execFileSync("node", [cliPath, "profile", "(SELECT range AS id FROM range(6000000))"], { encoding: "utf8" }));
+  assert.equal(p.sampled, true);
+  assert.equal(p.count, 6000000);
+  assert.equal(p.schema[0].distinct_approx, true);
+});

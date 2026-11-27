@@ -54,7 +54,7 @@ logo: ./logo.svg                # SVG or PNG, embedded, up to 200 KB, shown left
 
 ## Worked example: Acme
 
-`examples/acme-theme/` in the repository (`theme.yaml`, `logo.svg`, `dashboard.yaml`) is a theme for a fictitious brand. Taking the colours from a brand guide:
+`examples/acme-theme/` in the repository (`theme.yaml`, `logo.svg`, a font file with its licence, `dashboard.yaml`) is a theme for a fictitious brand. Taking the colours from a brand guide:
 
 1. **Brand colour → `primary`.** The guide's main colour, as hex: Acme Blue `#0b5fff`.
 2. **Text on it → `primary-content`.** White or near-black, whichever reaches 4.5:1. White on Acme Blue is 5.13:1.
@@ -66,4 +66,4 @@ logo: ./logo.svg                # SVG or PNG, embedded, up to 200 KB, shown left
 
 ## Fonts and logos: licence
 
-A font file and a logo are embedded in every page built with the theme, so everyone who gets the HTML gets the files. Embed a font only when its licence allows embedding in web pages (many desktop licences do not); otherwise give `font.family` alone and the viewer's installed fonts are used. Use a logo only with the owner's permission. The user is responsible for both; ask when unsure. The Acme logo was drawn for the example and its theme embeds no font.
+A font file and a logo are embedded in every page built with the theme, so everyone who gets the HTML gets the files. Embed a font only when its licence allows embedding in web pages (many desktop licences do not); otherwise give `font.family` alone and the viewer's installed fonts are used. Use a logo only with the owner's permission. The user is responsible for both; ask when unsure. The Acme logo was drawn for the example; its font is Inter, whose SIL Open Font License allows embedding and redistribution, and the licence text ships next to the file.

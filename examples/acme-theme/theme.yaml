@@ -20,6 +20,7 @@ dark:
 palette: ["#0b5fff", "#ff7a00", "#00a37a"]
 radius: 0.5rem
 font:
-  # no font file: the viewer's own fonts
-  family: "Avenir Next, Segoe UI, system-ui, sans-serif"
+  # Inter Regular, Latin subset: SIL Open Font License 1.1 (Inter-LICENSE.txt)
+  family: "Inter, system-ui, sans-serif"
+  file: ./Inter-Regular.woff2
 logo: ./logo.svg

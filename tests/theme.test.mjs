@@ -183,7 +183,7 @@ assert.equal(ratio([0, 0, 0], [255, 255, 255]), 21);
 const rgb = hex => (assert.match(hex, /^#[0-9a-f]{6}$/), [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
 const SCHEMES = ["light", "dark"];
 
-// Plan 0003 TH2: every file in themes/ builds the hand fixture's data without a contrast warning. The three that TH2 adds
+// Plan 0003 TH2: every file in themes/ builds the hand fixture (its dashboard.yaml, with `theme` added) without a contrast warning. The three that TH2 adds
 // write their colours as hex, so the ratios are computed here from the file: base and primary pairs >= 4.5:1 in both
 // schemes; high-contrast >= 7:1 for base-content on base-100 and >= 4.5:1 for every *-content pair.
 const themes = path.join(root, "skill/featherbi/themes");
@@ -192,12 +192,14 @@ test("the built-in themes are default, corporate, minimal and high-contrast", ()
 });
 for (const name of fs.readdirSync(themes).map(file => path.basename(file, ".yaml"))) {
   test(`the built-in theme builds without a contrast warning and meets its contrast: ${name}`, () => {
-    const dir = project(name, {}, { data: true });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-built-in-"));
     try {
+      fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), path.join(dir, "sales.parquet"));
+      fs.writeFileSync(path.join(dir, "dashboard.yaml"), `${fs.readFileSync(path.join(root, "fixtures/hand/dashboard.yaml"), "utf8")}theme: ${name}\n`);
       const r = build(["dashboard.yaml"], dir);
       assert.equal(r.status, 0, r.stderr);
       assert.doesNotMatch(r.stderr, /warning/);
-      assert.ok(fs.existsSync(path.join(dir, "dist", "themed.html")));
+      assert.ok(fs.existsSync(path.join(dir, "dist", "hand.html")));
       if (name === "default") return; // written in oklch(): its ratios are measured in the browser, below
       const theme = parse(fs.readFileSync(path.join(themes, `${name}.yaml`), "utf8"));
       for (const scheme of SCHEMES) {

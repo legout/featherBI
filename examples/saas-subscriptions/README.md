@@ -17,6 +17,6 @@ Row `i` (0 … 299): `plan` by i mod 3 (Basic 10, Pro 30, Team 100 per month); `
 | Subscriptions | `300` | rows 0 … 299 |
 | Active subscriptions | `240` | 4 of every 5 rows (i mod 5 ≠ 0) |
 | MRR | `11,200` | per 15-row cycle 4 active per plan: 4 · (10 + 30 + 100) = 560; 20 cycles |
-| Churn rate % | `20` | i mod 5 = 0 gives 60 churned of 300 |
+| Churned share of all % | `20` | i mod 5 = 0 gives 60 churned of 300 ever started (a snapshot share, not a rate over time) |
 
 Bar check: active MRR by plan is Basic 800, Pro 2 400, Team 8 000 (80 active per plan).

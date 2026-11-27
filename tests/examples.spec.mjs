@@ -140,3 +140,30 @@ test("sensor and SPC charts: a line click filters nothing, the SPC centre series
     fs.rmSync(spc.out, { recursive: true, force: true });
   }
 });
+
+// Named scenarios from the PR #135 review. Hand data replaces the example's table; the recipe or the dashboard tile runs on it.
+const tile = (d, title) => parse(fs.readFileSync(path.join(root, "examples", d, "dashboard.yaml"), "utf8")).tiles.find(t => t.title === title).sql.replace(/\{\{filters:\w+\}\}/g, "TRUE");
+const dir = d => path.join(root, "examples", d);
+
+test("sales: two lines of one order are one order, and the average order value divides by orders", () => {
+  // Order 1 has lines of 20 and 30: one order worth 50, not two orders averaging 25.
+  const orders = "CREATE VIEW orders AS SELECT * FROM (VALUES (1, 20, 0), (1, 30, 0)) t(order_id, revenue, returned);";
+  const [count, aov] = recipes("sales-ecommerce");
+  for (const sql of [count, tile("sales-ecommerce", "Orders")]) expect(csv(dir("sales-ecommerce"), `${orders} ${sql}`), sql).toEqual(["1"]);
+  for (const sql of [aov, tile("sales-ecommerce", "Average order value")]) expect(Number(csv(dir("sales-ecommerce"), `${orders} ${sql}`)[0]), sql).toBe(50);
+});
+
+test("SaaS: ARPA is per active customer, so two active plans of one customer count once", () => {
+  // C1 has Basic (10) and Pro (30) active: ARPA 40, not 20.
+  const subs = "CREATE VIEW subscriptions AS SELECT * FROM (VALUES ('C1', 10, 'active'), ('C1', 30, 'active')) t(customer, mrr, status);";
+  const arpa = recipes("saas-subscriptions").find(r => r.includes("arpa"));
+  expect(Number(csv(dir("saas-subscriptions"), `${subs} ${arpa}`)[0])).toBe(40);
+});
+
+test("web: the funnel's last step is converted sessions that also viewed 3+ pages", () => {
+  // One single-page conversion and one five-page non-conversion: 2 sessions, 1 deep, 0 deep conversions.
+  const sessions = "CREATE VIEW sessions AS SELECT * FROM (VALUES (1, 'Search', 1, 1), (2, 'Search', 5, 0)) t(session_id, source, pages, converted);";
+  const steps = sql => csv(dir("web-product-analytics"), `${sessions} ${sql}`).map(r => Number(r.split(",").pop()));
+  expect(steps(recipes("web-product-analytics").find(r => r.includes("Viewed 3+ pages")))).toEqual([2, 1, 0]);
+  expect(steps(tile("web-product-analytics", "Session funnel"))).toEqual([2, 1, 0]);
+});

@@ -18,4 +18,4 @@ Row `i` (0 … 1999): `day = 2025-03-01 + (i mod 14)` days; `source` by i mod 4 
 | Pages per session | `3` | mean of 1 … 5 over complete cycles of five rows |
 | Conversion rate % | `4` | i mod 25 = 4 gives 80 of 2 000 |
 
-Funnel check: 2 000 sessions, 1 200 with 3+ pages (i mod 5 ≥ 2), 80 converted.
+Funnel check: 2 000 sessions, 1 200 with 3+ pages (i mod 5 ≥ 2), 80 converted after 3+ pages (converted sessions have 5 pages).

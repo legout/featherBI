@@ -24,7 +24,7 @@ tiles:
       SELECT SUM(mrr) AS value
       FROM subscriptions WHERE status = 'active' AND {{filters:subscriptions}}
   - type: kpi
-    title: Churn rate %
+    title: Churned share of all %
     sql: >
       SELECT 100.0 * COUNT(*) FILTER (WHERE status = 'churned')
         / COUNT(*) AS value

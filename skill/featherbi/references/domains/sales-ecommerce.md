@@ -20,7 +20,7 @@ Playbook for brainstorming mode. Example: `examples/sales-ecommerce/`.
 SELECT COUNT(DISTINCT order_id) AS orders FROM orders;
 SELECT SUM(revenue) AS revenue FROM orders;
 SELECT SUM(revenue) / COUNT(DISTINCT order_id) AS average_order_value FROM orders;
-SELECT 100.0 * SUM(returned) / COUNT(*) AS return_rate FROM orders;
+SELECT 100.0 * SUM(returned) / COUNT(*) AS return_rate_of_lines FROM orders;
 SELECT category, SUM(revenue) AS revenue FROM orders GROUP BY 1 ORDER BY 2 DESC;
 SELECT channel, SUM(revenue) AS revenue FROM orders GROUP BY 1 ORDER BY 2 DESC;
 ```

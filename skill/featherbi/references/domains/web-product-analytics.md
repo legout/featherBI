@@ -22,7 +22,7 @@ SELECT 100.0 * COUNT(*) FILTER (WHERE pages = 1) / COUNT(*) AS bounce_rate FROM 
 SELECT AVG(pages) AS pages_per_session FROM sessions;
 SELECT 100.0 * SUM(converted) / COUNT(*) AS conversion_rate FROM sessions;
 SELECT source, COUNT(*) AS sessions, 100.0 * SUM(converted) / COUNT(*) AS conversion_rate FROM sessions GROUP BY 1 ORDER BY 2 DESC;
-SELECT 'Sessions' AS step, COUNT(*) AS n FROM sessions UNION ALL SELECT 'Viewed 3+ pages', COUNT(*) FROM sessions WHERE pages >= 3 UNION ALL SELECT 'Converted', COUNT(*) FROM sessions WHERE converted = 1;
+SELECT 'Sessions' AS step, COUNT(*) AS n FROM sessions UNION ALL SELECT 'Viewed 3+ pages', COUNT(*) FROM sessions WHERE pages >= 3 UNION ALL SELECT 'Converted after 3+ pages', COUNT(*) FROM sessions WHERE pages >= 3 AND converted = 1;
 ```
 
 ## Tile ideas
@@ -35,7 +35,7 @@ SELECT 'Sessions' AS step, COUNT(*) AS n FROM sessions UNION ALL SELECT 'Viewed 
 ## Traps
 
 - Event rows: count distinct sessions, never rows.
-- Funnel steps must be nested (a converted session also viewed pages); otherwise the funnel is not monotone.
+- Funnel steps must be nested: count a step only among sessions that passed the one before (`pages >= 3 AND converted = 1`), and keep the overall conversion rate as its own KPI.
 - Rates are ratios of sums; never average per-day or per-source percentages.
 - Time zones: a day boundary in UTC splits a local evening; state the zone.
 - Sampled or consent-filtered data understates traffic.

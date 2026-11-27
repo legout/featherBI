@@ -1,4 +1,5 @@
-// Themes at the CLI (spec 0003 r2): the default page is unchanged, every validation case stops the build, the contrast warning.
+// Themes at the CLI (spec 0003 r3): the default page is unchanged except its contrast-corrected colour, every validation case stops
+// the build, the contrast warning, and the built-in themes and the Acme example build without one.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -8,6 +9,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
+import { parse } from "../skill/featherbi/scripts/lib/vendor/yaml/index.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "skill/featherbi/scripts/featherbi.mjs");
@@ -38,7 +40,10 @@ const MAIN = {
   main: '- main:\n  - region "Filters":\n    - text: region\n    - combobox "region":\n      - option "All" [selected]\n      - option "EU"\n      - option "US"\n    - text: channel\n    - combobox "channel":\n      - option "All" [selected]\n      - option "Online"\n      - option "Retail"\n    - text: From\n    - textbox "From": 2024-04-01\n    - text: To\n    - textbox "To": 2025-03-25\n    - button "Reset"\n  - region "Key figures":\n    - group "Revenue": Revenue $2,260.50\n  - region "Charts and notes"',
 };
 
-test("without `theme` the hand fixture renders the same page as main before themes", async t => {
+// Spec 0003 r3 (owner decision on #108): the default's light primary-content was 3.62:1 on primary; white is 4.72:1.
+const CONTRAST_FIX = { main: "--color-primary-content:oklch(91.372% .051 257.57)", now: "--color-primary-content:oklch(100% 0 0)" };
+
+test("without `theme` the hand fixture renders the same page as main before themes, apart from the corrected colour", async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-default-"));
   const browser = await chromium.launch();
   try {
@@ -55,7 +60,9 @@ test("without `theme` the hand fixture renders the same page as main before them
     }
     const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)];
     assert.equal(styles.length, 1, "one <style>");
-    assert.equal(sha256(styles[0][1]), MAIN.css, "CSS");
+    // Revision 3 changed one colour value of the default (CONTRAST_FIX). With main's value put back, the CSS is main's.
+    assert.equal(styles[0][1].split(CONTRAST_FIX.now).length, 2, "the corrected colour is in the CSS once");
+    assert.equal(sha256(styles[0][1].replace(CONTRAST_FIX.now, CONTRAST_FIX.main)), MAIN.css, "CSS apart from the corrected colour");
 
     const page = await browser.newPage();
     await page.goto(pathToFileURL(out).href);
@@ -136,8 +143,8 @@ for (const [name, colour] of VALID) {
 // - oklch(100% 0 none): a missing hue counts as 0 and chroma is 0, so it is white; on white 1.05 / 1.05 = 1.00.
 // - base-100 #fff0 is fully transparent, so the header shows the page's base-200 under it (templates/dashboard.html:
 //   body bg-base-200, header bg-base-100): #000 text on #000 is 0.05 / 0.05 = 1.00.
-// - the default light theme's own primary pair (DaisyUI winter), inherited by a file that sets neither token: Chromium
-//   paints it as rgb(206,228,255) on rgb(0,105,255), 3.62 after 8-bit rounding; unrounded it is within 0.03 of that.
+// - primary #ffff00 with the primary-content the file leaves out, which is the default theme's (white since r3):
+//   L(yellow) = 0.2126 + 0.7152 = 0.9278, 1.05 / 0.9778 = 1.07.
 // [case, light tokens, the warnings: [pair, ratio]]. PRIMARY passes (#ffffff on #0b5fff is 5.13), so it adds no warning.
 const PRIMARY = 'primary: "#0b5fff", primary-content: "#ffffff"';
 const CONTRAST = [
@@ -147,7 +154,7 @@ const CONTRAST = [
   ["half-transparent oklch() text", `base-100: "#ffffff", base-content: "oklch(0 0 0 / 50%)", ${PRIMARY}`, [["base-content on base-100", /3\.98:1/]]],
   ["white text written with a missing hue", `base-100: "#ffffff", base-content: "oklch(100% 0 none)", ${PRIMARY}`, [["base-content on base-100", /1\.00:1/]]],
   ["black text on a transparent surface over a black page", `base-100: "#fff0", base-200: "#000", base-content: "#000", ${PRIMARY}`, [["base-content on base-100", /1\.00:1/]]],
-  ["an inherited pair the file does not set", 'base-100: "#ffffff", base-content: "#1a1a1a"', [["primary-content on primary", /3\.(59|6[0-5]):1/]]],
+  ["a token the file leaves out, taken from the default theme", 'base-100: "#ffffff", base-content: "#1a1a1a", primary: "#ffff00"', [["primary-content on primary", /1\.07:1/]]],
   ["pairs that pass", `base-100: "#ffffff", base-content: "#1a1a1a", ${PRIMARY}`, []],
 ];
 for (const [name, tokens, expected] of CONTRAST) {
@@ -168,3 +175,99 @@ for (const [name, tokens, expected] of CONTRAST) {
     }
   });
 }
+
+// WCAG 2.x contrast of two opaque sRGB colours ([r, g, b], 0..255), written out here so that it is independent of the build's.
+const luminance = rgb => rgb.map(c => c / 255).map(c => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+const ratio = (a, b) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05);
+assert.equal(ratio([0, 0, 0], [255, 255, 255]), 21);
+const rgb = hex => (assert.match(hex, /^#[0-9a-f]{6}$/), [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)));
+const SCHEMES = ["light", "dark"];
+
+// Plan 0003 TH2: every file in themes/ builds the hand fixture's data without a contrast warning. The three that TH2 adds
+// write their colours as hex, so the ratios are computed here from the file: base and primary pairs >= 4.5:1 in both
+// schemes; high-contrast >= 7:1 for base-content on base-100 and >= 4.5:1 for every *-content pair.
+const themes = path.join(root, "skill/featherbi/themes");
+test("the built-in themes are default, corporate, minimal and high-contrast", () => {
+  assert.deepEqual(fs.readdirSync(themes).sort(), ["corporate.yaml", "default.yaml", "high-contrast.yaml", "minimal.yaml"]);
+});
+for (const name of fs.readdirSync(themes).map(file => path.basename(file, ".yaml"))) {
+  test(`the built-in theme builds without a contrast warning and meets its contrast: ${name}`, () => {
+    const dir = project(name, {}, { data: true });
+    try {
+      const r = build(["dashboard.yaml"], dir);
+      assert.equal(r.status, 0, r.stderr);
+      assert.doesNotMatch(r.stderr, /warning/);
+      assert.ok(fs.existsSync(path.join(dir, "dist", "themed.html")));
+      if (name === "default") return; // written in oklch(): its ratios are measured in the browser, below
+      const theme = parse(fs.readFileSync(path.join(themes, `${name}.yaml`), "utf8"));
+      for (const scheme of SCHEMES) {
+        const contrast = text => ratio(rgb(theme[scheme][text]), rgb(theme[scheme][text === "base-content" ? "base-100" : text.replace("-content", "")]));
+        assert.ok(contrast("base-content") >= (name === "high-contrast" ? 7 : 4.5), `${scheme} base-content: ${contrast("base-content")}`);
+        assert.ok(contrast("primary-content") >= 4.5, `${scheme} primary-content: ${contrast("primary-content")}`);
+        if (name === "high-contrast") {
+          const texts = Object.keys(theme[scheme]).filter(token => token.endsWith("-content"));
+          assert.equal(texts.length, 9, `${scheme}: every *-content token is set`);
+          for (const text of texts) assert.ok(contrast(text) >= 4.5, `${scheme} ${text}: ${contrast(text)}`);
+        }
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
+// Plan 0003 TH2 and spec 0003 r3: a page without `theme` and one with `theme: default` paint the same colours, and both
+// pairs reach 4.5:1 in both schemes. The colours are the ones Chromium paints (each token drawn on a canvas and read back).
+const TOKENS = ["base-100", "base-200", "base-300", "base-content", ...["primary", "secondary", "accent", "neutral", "info", "success", "warning", "error"].flatMap(name => [name, `${name}-content`])];
+test("without `theme` and with `theme: default` the hand fixture has the same colours, at 4.5:1 or more in light and dark", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-default-"));
+  const browser = await chromium.launch();
+  try {
+    fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), path.join(dir, "sales.parquet"));
+    const config = fs.readFileSync(path.join(root, "fixtures/hand/dashboard.yaml"), "utf8");
+    const painted = {};
+    for (const [name, theme] of [["none", ""], ["default", "theme: default\n"]]) {
+      fs.writeFileSync(path.join(dir, "dashboard.yaml"), config + theme);
+      const r = build(["dashboard.yaml", "--out", `${name}.html`], dir);
+      assert.equal(r.status, 0, r.stderr);
+      assert.doesNotMatch(r.stderr, /warning/);
+      const page = await browser.newPage();
+      await page.goto(pathToFileURL(path.join(dir, `${name}.html`)).href);
+      for (const scheme of SCHEMES) {
+        await page.getByRole("checkbox", { name: "Dark theme" }).setChecked(scheme === "dark");
+        const colours = await page.evaluate(tokens => {
+          const canvas = document.createElement("canvas").getContext("2d");
+          const css = getComputedStyle(document.documentElement);
+          return tokens.map(token => {
+            canvas.fillStyle = css.getPropertyValue(`--color-${token}`);
+            canvas.fillRect(0, 0, 1, 1);
+            return [token, [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)]];
+          });
+        }, TOKENS);
+        painted[`${name} ${scheme}`] = Object.fromEntries(colours);
+      }
+      await page.close();
+    }
+    for (const scheme of SCHEMES) {
+      const colours = painted[`none ${scheme}`];
+      assert.deepEqual(painted[`default ${scheme}`], colours, scheme);
+      for (const [text, surface] of [["base-content", "base-100"], ["primary-content", "primary"]]) assert.ok(ratio(colours[text], colours[surface]) >= 4.5, `${scheme} ${text} on ${surface}: ${ratio(colours[text], colours[surface])}`);
+    }
+    assert.notDeepEqual(painted["none light"], painted["none dark"]);
+  } finally {
+    await browser.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the Acme example builds without a warning", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-acme-"));
+  try {
+    const r = build(["examples/acme-theme/dashboard.yaml", "--out", path.join(dir, "acme.html")], root);
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stderr, /warning/);
+    assert.ok(fs.existsSync(path.join(dir, "acme.html")));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

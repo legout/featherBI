@@ -27,7 +27,7 @@ SELECT g.subgroup, g.m FROM g, lim WHERE abs(g.m - lim.centre) > lim.width ORDER
 
 ## Tile ideas
 
-- `line` X-bar chart: subgroup mean with centre line and limits as extra series. Is the process in control?
+- `line` X-bar chart: subgroup mean with `centre`, `UCL` and `LCL` as extra series. Is the process in control?
 - `line` range chart. Is the spread stable?
 - `histogram` of the diameter. Is it centred, how wide?
 - KPIs: measurements, subgroups, average range, points outside the limits.
@@ -35,6 +35,7 @@ SELECT g.subgroup, g.m FROM g, lim WHERE abs(g.m - lim.centre) > lim.width ORDER
 ## Traps
 
 - The limits `centre ± 0.577 · average range` are for subgroups of exactly 5 (A2 = 0.577); other sizes need another constant (n = 3: 1.023, n = 4: 0.729).
+- The X-bar chart needs the centre line as its own series (`centre`), beside `UCL` and `LCL`.
 - Control limits are not specification limits; do not mix them on one axis.
 - Limits computed from data that contains the shift are widened by it; use a baseline period when one exists.
 - Unequal subgroup sizes break the constants: check `COUNT(*)` per subgroup first.

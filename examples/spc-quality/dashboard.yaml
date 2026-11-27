@@ -39,6 +39,7 @@ tiles:
         FROM samples WHERE {{filters:samples}} GROUP BY subgroup),
       lim AS (SELECT AVG(m) AS centre, 0.577 * AVG(r) AS width FROM g)
       SELECT subgroup AS x, ROUND(m, 4) AS y, 'mean' AS series FROM g
+      UNION ALL SELECT subgroup, ROUND(centre, 4), 'centre' FROM g, lim
       UNION ALL SELECT subgroup, ROUND(centre + width, 4), 'UCL' FROM g, lim
       UNION ALL SELECT subgroup, ROUND(centre - width, 4), 'LCL' FROM g, lim
       ORDER BY 3, 1

@@ -22,10 +22,8 @@ tiles:
   - type: echarts
     preset: line
     title: Hourly average by sensor
-    click: sensor
-    exclude: [sensor]
     sql: >
-      SELECT strftime(ts, '%H:00') AS x, ROUND(AVG(temp_c), 2) AS y, sensor AS series
+      SELECT strftime(ts, '%Y-%m-%d %H:00') AS x, ROUND(AVG(temp_c), 2) AS y, sensor AS series
       FROM readings WHERE {{filters:readings}} GROUP BY 1, 3 ORDER BY 3, 1
   - type: echarts
     preset: histogram

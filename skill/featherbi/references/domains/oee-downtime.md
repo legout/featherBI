@@ -16,6 +16,8 @@ Per machine and shift: planned and run minutes, produced and scrap counts, an id
 
 ## Figures
 
+Precondition: one ideal rate for all rows in view (one machine, or machines with the same rate). With mixed rates, availability (weighted by minutes) × performance × quality no longer equals OEE (weighted by ideal parts), e.g. M1 480 planned, 240 run at 2/min, 480 produced and M2 480 planned, 480 run at 1/min, 480 produced: availability 75 %, performance 100 %, but OEE 66.7 %. Then group by ideal rate or by machine and do not multiply.
+
 ```sql
 SELECT 100.0 * SUM(run_min) / SUM(planned_min) AS availability FROM shifts;
 SELECT 100.0 * SUM(produced) / SUM(run_min * ideal_per_min) AS performance FROM shifts;
@@ -33,6 +35,7 @@ SELECT reason, SUM(date_diff('minute', start_at, end_at)) AS minutes FROM downti
 
 ## Traps
 
+- Mixed ideal rates: see the precondition under Figures.
 - OEE = availability × performance × quality only when each is a ratio of sums; never average percentages across machines or days.
 - Performance above 100 % means a wrong ideal rate.
 - Stops that cross midnight: filter by start time and say so.

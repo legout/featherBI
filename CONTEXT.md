@@ -17,3 +17,5 @@
 | **Theme** | The look of a dashboard: a built-in name or a theme file, selected with `theme:` in the dashboard config and embedded in the HTML (spec 0003). |
 | **Theme file** | The author's YAML with colours for light and dark, chart palette, corner radius, font and logo. Built-in themes are theme files in the skill. |
 | **Explore** | The on-demand Perspective panel for free pivoting. It is not a tile and is not re-rendered by filters. |
+| **Brainstorming mode** | The skill flow for "make me a dashboard from this data": profile, domain guess, one interview round, three proposals, build the picked one (spec 0004). Skipped when the request is specific. |
+| **Domain playbook** | A per-domain reference in the skill (`references/domains/<domain>.md`) with detection signals, interview questions, figures, tile ideas and traps, read in brainstorming mode. |

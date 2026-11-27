@@ -24,6 +24,10 @@ Needs on the machine: Node >= 22 and the DuckDB CLI >= 2.0 on `PATH`. No npm ins
 
 Paths above are relative to the skill folder (`skill/featherbi/` in a checkout, or wherever `npx skills add` put it).
 
+## Brainstorming mode
+
+When the user names data but not what to show, or asks for ideas, read `references/brainstorm.md` and: (1) profile, (2) guess the domain from `references/domains.md` and say why, (3) ask at most five questions with defaults, (4) propose 3 ideas with 4–8 tiles each, (5) build the picked one. A specific request skips the mode. Never invent data.
+
 ## Rules
 
 - Every tile SQL reads only snapshot tables (the source names) and core DuckDB functions, and puts `{{filters:<table>}}` in each `WHERE`.

@@ -91,6 +91,27 @@ test("hash: every invalid part is ignored and the valid parts still apply", () =
   assert.deepEqual(parseHash("#constructor=EU&__proto__=EU&date=EU", model), state()); // names that exist on every object are not dimensions
 });
 
+// Spec 0005 §5: with `layout: tabs` the model carries the number of tabs; the open tab is `tab=<n>` (1-based) when it is not the first.
+const tabbed = { ...model, tabs: 2 };
+
+test("hash: the open tab follows the filters as `tab=<n>`, only when it is not the first", () => {
+  assert.equal(serializeHash({ ...state({ region: "EU" }), tab: 2 }, tabbed), "#region=EU&tab=2");
+  assert.equal(serializeHash({ ...state({ region: "EU" }, "2025-01-01", "2025-02-28"), tab: 2 }, tabbed), "#region=EU&date=2025-01-01..2025-02-28&tab=2");
+  assert.equal(serializeHash({ ...state(), tab: 2 }, tabbed), "#tab=2");
+  assert.equal(serializeHash({ ...state({ region: "EU" }), tab: 1 }, tabbed), "#region=EU");
+  assert.equal(serializeHash({ ...state(), tab: 1 }, tabbed), "");
+  assert.deepEqual(parseHash("#region=EU&tab=2", tabbed), { ...state({ region: "EU" }), tab: 2 }); // round trip
+  assert.deepEqual(parseHash("#tab=2", tabbed), { ...state(), tab: 2 });
+});
+
+test("hash: an invalid or out-of-range tab is ignored and the valid parts still apply", () => {
+  for (const tab of ["0", "9", "3", "x", "-1", "1.5", "2x", "2e0", "", " 2", "9".repeat(400)]) {
+    assert.deepEqual(parseHash(`#region=EU&tab=${encodeURIComponent(tab)}`, tabbed), state({ region: "EU" }), `tab=${tab.slice(0, 5)}`);
+  }
+  assert.deepEqual(parseHash("#tab=2&tab=9", tabbed), { ...state(), tab: 2 }); // the invalid one is ignored, not the valid one
+  assert.deepEqual(parseHash("#region=EU&tab=2", model), state({ region: "EU" })); // no tabs on the page: nothing to open
+});
+
 test("sequence: a result for an older number is never painted, and the newest state is the one painted", async () => {
   const gates = [];
   const painted = [];

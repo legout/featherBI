@@ -59,7 +59,7 @@ export function buildModel(config, tableColumns, query) {
     const [row] = query(`SELECT min(${d})::VARCHAR AS min, max(${d})::VARCHAR AS max, (min(${d}) FILTER (WHERE isfinite(${d})))::VARCHAR AS first, (max(${d}) FILTER (WHERE isfinite(${d})))::VARCHAR AS last FROM ${ident(t)}`);
     if (row.min) bounds.push(row);
   }
-  const model = { dims: config.dims ?? {}, date: config.date ?? null, tableColumns, options, range: defaultRange(config.date, bounds) };
+  const model = { dims: config.dims ?? {}, date: config.date ?? null, tableColumns, options, range: defaultRange(config.date, bounds), ...(config.layout === "tabs" && { tabs: config.sections.length }) };
   // The first and last real date of all dated tables, for the header line (spec 0005 §4). Not enumerable: the model is
   // embedded in the page as written, and the header line gets its dates from the template.
   const real = bounds.filter(b => b.first);
@@ -67,15 +67,18 @@ export function buildModel(config, tableColumns, query) {
 }
 
 // URL hash (spec 0001 §Filters): `#<dim>=<value>&…&date=<from>..<to>`, dims in config order, date only when it differs from the default.
+// A page with tabs (`model.tabs`, their number) adds the open tab as `tab=<n>`, 1-based, when it is not the first (spec 0005 §5).
 export function serializeHash(state, model) {
   const parts = Object.keys(model.dims).filter(n => state.dims[n] != null).map(n => `${encodeURIComponent(n)}=${encodeURIComponent(state.dims[n])}`);
   if (model.date && (state.from !== model.range.from || state.to !== model.range.to)) parts.push(`date=${state.from}..${state.to}`);
+  if (model.tabs && state.tab > 1) parts.push(`tab=${state.tab}`);
   return parts.length ? `#${parts.join("&")}` : "";
 }
 
 const isoDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
 
-// The hash is untrusted: a dimension must be declared and its value one of the embedded options; date needs two valid ISO dates, from <= to.
+// The hash is untrusted: a dimension must be declared and its value one of the embedded options; date needs two valid ISO dates, from <= to;
+// tab needs the plain digits of one of the page's tab numbers.
 // Every part that fails is ignored. Returns the full state (defaults where the hash says nothing).
 export function parseHash(hash, model) {
   const out = { dims: {}, ...model.range };
@@ -87,6 +90,8 @@ export function parseHash(hash, model) {
       if (name === "date") {
         const [from, to, ...rest] = value.split("..");
         if (model.date && !rest.length && isoDate(from) && isoDate(to) && from <= to) Object.assign(out, { from, to });
+      } else if (name === "tab") {
+        if (/^[1-9]\d*$/.test(value) && Number(value) <= model.tabs) out.tab = Number(value); // no tabs: never true
       } else if (Object.hasOwn(model.dims, name)) {
         const match = model.options[name]?.find(v => String(v) === value);
         if (match !== undefined) out.dims[name] = match;

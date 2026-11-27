@@ -10,7 +10,8 @@ const quote = s => `'${String(s).replaceAll("'", "''")}'`;
 const ident = s => `"${String(s).replaceAll('"', '""')}"`;
 
 // Small JSON-Schema subset: only the keywords dashboard.schema.json uses.
-function check(value, schema, at, errors) {
+function check(value, schema, at, errors, root = schema) {
+  if (schema.$ref) schema = schema.$ref.slice(2).split("/").reduce((node, key) => node[key], root); // "#/properties/tiles"
   const kind = v => (Array.isArray(v) ? "array" : v === null ? "null" : typeof v);
   const types = [].concat(schema.type ?? []);
   if (types.length && !types.includes(kind(value))) return errors.push(`${at}: must be ${types.join(" or ")}`);
@@ -22,7 +23,7 @@ function check(value, schema, at, errors) {
   }
   if (Array.isArray(value)) {
     if (schema.minItems && value.length < schema.minItems) errors.push(`${at}: needs at least ${schema.minItems} item(s)`);
-    value.forEach((v, i) => schema.items && check(v, schema.items, `${at}[${i}]`, errors));
+    value.forEach((v, i) => schema.items && check(v, schema.items, `${at}[${i}]`, errors, root));
   }
   if (kind(value) === "object") {
     const keys = Object.keys(value).filter(k => value[k] !== undefined);
@@ -30,7 +31,7 @@ function check(value, schema, at, errors) {
     for (const r of schema.required ?? []) if (!(r in value)) errors.push(`${at}: \`${r}\` is required`);
     for (const k of keys) {
       const sub = schema.properties?.[k] ?? (typeof schema.additionalProperties === "object" ? schema.additionalProperties : undefined);
-      if (sub) check(value[k], sub, `${at}.${k}`, errors);
+      if (sub) check(value[k], sub, `${at}.${k}`, errors, root);
       else if (schema.additionalProperties === false) errors.push(`${at}: unknown key \`${k}\``);
     }
   }
@@ -62,6 +63,10 @@ export function validate(config, snapshots) {
   const errors = [];
   check(config, JSON.parse(fs.readFileSync(asset("schema/dashboard.schema.json"), "utf8")), "config", errors);
   if (Object.hasOwn(config.dims ?? {}, "date")) errors.push("dims: `date` is reserved for the date range in the URL hash; name the dimension differently");
+  if (Object.hasOwn(config.dims ?? {}, "tab")) errors.push("dims: `tab` is reserved for the open tab in the URL hash; name the dimension differently");
+  // Spec 0005 §5: the tiles are one list or grouped in sections; `layout` says how the sections are shown.
+  if ((config.tiles === undefined) === (config.sections === undefined)) errors.push(config.tiles === undefined ? "give `tiles` or `sections`" : "give either `tiles` or `sections`, not both");
+  if (config.layout !== undefined && config.sections === undefined) errors.push("`layout` is only allowed with `sections`");
   // Spec 0005 §2: the page formats with the viewer's `Intl`; the build's `Intl` stands in for it.
   const supported = tag => {
     try {
@@ -71,9 +76,30 @@ export function validate(config, snapshots) {
     }
   };
   if (typeof config.locale === "string" && !supported(config.locale)) errors.push(`locale: "${config.locale}" is not a locale this build's Intl supports (a BCP 47 tag such as de-DE)`);
-  // A tile is named as the tile checks below name it: its `id`, otherwise its 1-based number.
-  const named = e => e.replace(/^config\.tiles\[(\d+)\]\.?/, (_, i) => `tile "${typeof config.tiles[i]?.id === "string" ? config.tiles[i].id : `tile ${Number(i) + 1}`}": `);
+  // A tile is named as the tile checks below name it: its `id`, otherwise its 1-based number (within its section), after
+  // its section's title (the section's number while it has no title).
+  const tileName = (tiles, i) => `tile "${typeof tiles?.[i]?.id === "string" ? tiles[i].id : `tile ${Number(i) + 1}`}"`;
+  const sectionName = s => (typeof config.sections[s]?.title === "string" && config.sections[s].title ? `section "${config.sections[s].title}"` : `section ${Number(s) + 1}`);
+  const named = e =>
+    e
+      .replace(/^config\.tiles\[(\d+)\]\.?/, (_, i) => `${tileName(config.tiles, i)}: `)
+      .replace(/^config\.sections\[(\d+)\]\.tiles\[(\d+)\]\.?/, (_, s, i) => `${sectionName(s)}, ${tileName(config.sections[s]?.tiles, i)}: `)
+      .replace(/^config\.sections\[(\d+)\](?:\.|: )?/, (_, s) => `${sectionName(s)}: `);
   if (errors.length) throw new Error(`invalid config: ${errors.map(named).join("; ")}`);
+  // Every tile with the name its errors carry. Section titles are unique, and so are tile ids across all sections.
+  const tiles = (config.tiles ?? []).map((tile, i) => [tile, tileName(config.tiles, i)]);
+  const titles = new Set();
+  const ids = new Set();
+  for (const [s, section] of (config.sections ?? []).entries()) {
+    if (titles.has(section.title)) throw new Error(`${sectionName(s)}: the title is used by more than one section`);
+    titles.add(section.title);
+    section.tiles.forEach((tile, i) => {
+      const name = `${sectionName(s)}, ${tileName(section.tiles, i)}`;
+      if (ids.has(tile.id)) throw new Error(`${name}: the id is used by more than one tile`);
+      if (tile.id !== undefined) ids.add(tile.id);
+      tiles.push([tile, name]);
+    });
+  }
 
   const presets = Object.fromEntries(
     fs.readdirSync(asset("assets/presets")).map(f => [path.basename(f, ".json"), JSON.parse(fs.readFileSync(asset(`assets/presets/${f}`), "utf8"))]),
@@ -100,9 +126,8 @@ export function validate(config, snapshots) {
     const noop = { dims: {}, from: null, to: null };
     const sample = { dims: Object.fromEntries(Object.entries(model.options).filter(([, v]) => v.length).map(([k, v]) => [k, v[0]])), ...model.range };
 
-    config.tiles.forEach((tile, i) => {
-      const id = tile.id ?? `tile ${i + 1}`;
-      const fail = msg => { throw new Error(`tile "${id}": ${msg}`); };
+    tiles.forEach(([tile, name]) => {
+      const fail = msg => { throw new Error(`${name}: ${msg}`); };
       const preset = tile.type === "echarts" ? presets[tile.preset] : null;
       if (!["kpi", "echarts", "pivot", "table", "text"].includes(tile.type)) fail(`unknown type "${tile.type}"`);
       if (tile.type === "echarts" && !preset) fail(`unknown preset "${tile.preset}"`);

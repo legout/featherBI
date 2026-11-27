@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { tilesOf } from "./config.mjs";
 
 const CDN = "https://cdn.jsdelivr.net/npm";
 // Private to the user (XDG_CACHE_HOME, by default ~/.cache): an inlined file runs in the recipient's browser, so it must
@@ -81,7 +82,7 @@ export async function offlineAssets(config, lock) {
   const psp = lock.perspective;
   // Explore is on unless `explore: false`; it adds Perspective and its wasm.
   const explore = config.explore !== false;
-  const types = config.tiles.map(t => t.type);
+  const types = tilesOf(config).map(t => t.type);
   await module(engine.module.url);
   // The engine module imports apache-arrow by name whether or not Explore is on, so Arrow (and the +esm dependencies
   // it pulls in below) is inlined in every offline build.

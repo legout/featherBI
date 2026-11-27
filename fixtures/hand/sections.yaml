@@ -1,0 +1,38 @@
+# Two sections of the hand fixture, shown as tabs (spec 0005 §5, acceptance 7
+# and 8; tests/sections.spec.mjs also builds it with `layout: stack`).
+# Values: README.md.
+title: Hand sections
+name: hand-sections
+sources:
+  sales:
+    read: "read_parquet('sales.parquet')"
+dims:
+  region: {col: region}
+  channel: {col: channel}
+date: {col: order_date, default: all}
+layout: tabs
+sections:
+  - title: Overview
+    tiles:
+      - type: kpi
+        title: Revenue
+        format: currency
+        sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}"
+      - type: echarts
+        preset: bar
+        title: Revenue by region
+        click: region
+        exclude: [region]
+        sql: >
+          SELECT region AS x, SUM(revenue) AS y
+          FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  - title: Detail
+    tiles:
+      - type: kpi
+        title: Orders
+        sql: "SELECT COUNT(*) AS value FROM sales WHERE {{filters:sales}}"
+      - type: table
+        title: Revenue by channel
+        sql: >
+          SELECT channel, SUM(revenue) AS revenue
+          FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1

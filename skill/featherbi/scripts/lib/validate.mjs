@@ -35,6 +35,9 @@ function check(value, schema, at, errors) {
   }
 }
 
+// An integer a double cannot hold keeps its digits as text, so a filter option for a BIGINT id stays exact.
+const exact = (_, value, context) => (typeof value === "number" && !Number.isSafeInteger(value) && /^-?\d+$/.test(context.source) ? context.source : value);
+
 // Native DuckDB over one read-only database of the snapshot tables, with the sandbox settings locked.
 function session(db) {
   return (sql, { sandbox = true, csv = false } = {}) => {
@@ -42,7 +45,7 @@ function session(db) {
     const r = spawnSync("duckdb", ["-no-agent", "-readonly", csv ? "-csv" : "-json", db, "-c", `${sandbox ? lock : ""} ${sql}`], { encoding: "utf8", maxBuffer: 1 << 28 });
     if (r.error) throw new Error(r.error.code === "ENOENT" ? "the DuckDB CLI (>= 2.0) was not found on PATH" : r.error.message);
     if (r.status !== 0) return { error: (r.stderr.trim().split("\n")[0] || "DuckDB failed").replace(/^[A-Za-z ]*Error: /, "") };
-    return csv ? { header: r.stdout.split("\n")[0].split(",").map(c => c.replace(/^"|"$/g, "")) } : { rows: JSON.parse(r.stdout || "[]") };
+    return csv ? { header: r.stdout.split("\n")[0].split(",").map(c => c.replace(/^"|"$/g, "")) } : { rows: JSON.parse(r.stdout || "[]", exact) };
   };
 }
 

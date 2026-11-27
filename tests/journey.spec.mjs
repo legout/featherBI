@@ -270,12 +270,14 @@ for (const [size, title, first] of [
 test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers above 2^53 stay exact", async ({ page }) => {
   const config = {
     title: "Types",
-    dims: { day: { col: "order_date" } },
+    // Two neighbouring order ids above 2^53: a double holds only the first.
+    sources: { sales: { read: "read_parquet('sales.parquet')" }, orders: { read: "(VALUES (9007199254740992::BIGINT, 10), (9007199254740993::BIGINT, 20)) t(order_id, amount)" } },
+    dims: { day: { col: "order_date" }, order: { col: "order_id" } },
     tiles: [
+      { type: "kpi", title: "Amount", sql: "SELECT SUM(amount) AS value FROM orders WHERE {{filters:orders}}" },
       { type: "kpi", title: "Revenue", format: "currency", sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}" },
       { type: "table", title: "Days", click: "day", exclude: ["day"], sql: "SELECT order_date, SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1" },
-      // Two neighbours above 2^53: a double holds only the first.
-      { type: "table", title: "Orders", sql: "SELECT * FROM (VALUES (9007199254740992::BIGINT), (9007199254740993::BIGINT)) t(order_id) ORDER BY 1" },
+      { type: "table", title: "Orders", click: "order", exclude: ["order"], sql: "SELECT order_id, amount FROM orders WHERE {{filters:orders}} ORDER BY 1" },
     ],
   };
   await generated(page, config, async () => {
@@ -295,7 +297,22 @@ test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers
     await kpi("$2,260.50");
 
     const orders = page.getByRole("group", { name: "Orders" }).getByRole("gridcell");
-    await expect(orders).toHaveText(["9007199254740992", "9007199254740993"]);
+    await expect(orders).toHaveText(["9007199254740992", "10", "9007199254740993", "20"]);
+    // The second id is a filter value of its own: the select lists both, a click on its row leaves its amount (20, not 10
+    // or 30), and the copied URL opens the same selection.
+    const amount = (p, text) => expect(tile(p, "Amount").getByText(text, { exact: true })).toBeVisible();
+    const select = p => p.getByRole("combobox", { name: /^order/ });
+    await expect(select(page).getByRole("option")).toHaveText(["All", "9007199254740992", "9007199254740993"]);
+    await amount(page, "30");
+    await orders.nth(2).click();
+    await amount(page, "20");
+    expect(page.url()).toMatch(/#order=9007199254740993$/);
+    await expect(select(page)).toHaveValue("9007199254740993");
+    const copied = await page.context().newPage();
+    await copied.goto(page.url());
+    await amount(copied, "20");
+    await expect(select(copied)).toHaveValue("9007199254740993");
+    await expect(copied.getByLabel("Active filters")).toContainText("order: 9007199254740993");
   });
 });
 

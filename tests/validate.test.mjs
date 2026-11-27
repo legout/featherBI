@@ -18,6 +18,12 @@ const base = () => ({
   tiles: [{ id: "rev", type: "kpi", title: "Revenue", sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}" }],
 });
 const tile = t => c => (c.tiles = [{ id: "t1", title: "T", ...t }]);
+// Spec 0005 §5: `sections` in place of `tiles`. `kpiTile` is a tile that is valid on its own.
+const kpiTile = (id, more) => ({ id, type: "kpi", title: id, sql: "SELECT 1 AS value", ...more });
+const sections = (...list) => c => {
+  delete c.tiles;
+  c.sections = list;
+};
 
 // [name, config change, CLI args, expected message]
 const cases = [
@@ -62,6 +68,21 @@ const cases = [
   ["format decimals below 0", tile({ type: "pivot", sql: "SELECT 1 AS r, 1 AS c, 1 AS v", format: { decimals: -1 } }), [], /tile "?t1"?.*decimals/is],
   ["a currency code that is not three letters", tile({ type: "kpi", sql: "SELECT 1 AS value", format: { style: "currency", currency: "EURO" } }), [], /tile "?t1"?.*format.*currency/is],
   ["a dimension named date", c => (c.dims.date = { col: "order_date" }), [], /dims.*date|date.*dimension/is],
+  // Spec 0005 §5: every build rejection, and tile errors that name the section and the tile.
+  ["both tiles and sections", c => (c.sections = [{ title: "A", tiles: [kpiTile("a")] }]), [], /`tiles`.*`sections`/is],
+  ["neither tiles nor sections", c => delete c.tiles, [], /`tiles`.*`sections`/is],
+  ["layout without sections", c => (c.layout = "tabs"), [], /`layout`.*`sections`/is],
+  ["an unknown layout", c => (sections({ title: "A", tiles: [kpiTile("a")] })(c), (c.layout = "grid")), [], /layout.*stack.*tabs/is],
+  ["a section without a title", sections({ title: "A", tiles: [kpiTile("a")] }, { tiles: [kpiTile("b")] }), [], /section 2.*`title`/is],
+  ["a section with an empty title", sections({ title: "", tiles: [kpiTile("a")] }), [], /section 1.*title/is],
+  ["a section without tiles", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "B" }), [], /section "B".*`tiles`/is],
+  ["a section with no tile", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "B", tiles: [] }), [], /section "B".*tiles.*at least 1/is],
+  ["a duplicate section title", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "A", tiles: [kpiTile("b")] }), [], /section "A".*title.*more than one/is],
+  ["a tile id used in two sections", sections({ title: "A", tiles: [kpiTile("rev")] }, { title: "B", tiles: [kpiTile("rev")] }), [], /section "B", tile "rev".*id.*more than one/is],
+  ["a dimension named tab", c => (c.dims.tab = { col: "channel" }), [], /dims.*`tab`.*reserved/is],
+  ["a tile error in a section", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "Detail", tiles: [kpiTile("t1", { type: "echarts", preset: "spiral" })] }), [], /section "Detail", tile "t1".*preset.*spiral/is],
+  ["a SQL error in a section tile without an id", sections({ title: "Detail", tiles: [kpiTile("a"), { type: "kpi", sql: "SELECT SUM(nope) AS value FROM sales" }] }), [], /section "Detail", tile "tile 2".*nope/is],
+  ["a schema error in a section tile", sections({ title: "Detail", tiles: [kpiTile("t1", { format: { style: "money" } })] }), [], /section "Detail", tile "t1".*format.*style/is],
   ["--offline with --split", () => {}, ["--offline", "--split"], /--offline.*--split|--split.*--offline/is],
   ["--offline with engine duckdb-wasm", c => (c.engine = "duckdb-wasm"), ["--offline"], /--offline.*duckdb-wasm/is],
   ...["data", "dataset", "datasetIndex", "encode", "links", "nodes", "source"].map(k => [

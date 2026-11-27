@@ -21,7 +21,7 @@ tiles:
   - { type: echarts, preset: bar, title: Revenue by region, sql: "SELECT region AS x, SUM(revenue) AS y FROM sales GROUP BY 1 ORDER BY 1" }
 `;
 const THEME = `name: Acme
-light: { primary: "#0b5fff", primary-content: "#ffffff", base-100: "#ffffff", base-content: "#1a1a1a" }
+light: { primary: "#0b5fff", primary-content: "#ffffff", secondary: "#7a00cc", base-100: "#ffffff", base-content: "#1a1a1a" }
 dark: { primary: "#6ea0ff", primary-content: "#111418", base-100: "#111418", base-content: "#e8eaed" }
 palette: ["#0b5fff", "#ff7a00", "#00a37a"]
 radius: 0.25rem
@@ -88,9 +88,12 @@ test("--offline with a theme file: colours in light and dark, palette, logo and 
     await expect.poll(bar).toBe("11,95,255,255");
 
     expect(await token(page, "--color-primary")).toBe("#0b5fff");
+    expect(await token(page, "--color-secondary")).toBe("#7a00cc");
     await page.getByRole("checkbox", { name: "Dark theme" }).check();
     expect(await token(page, "--color-primary")).toBe("#6ea0ff");
     expect(await token(page, "--color-base-100")).toBe("#111418");
+    // `secondary` is set for light only: dark falls back to the default theme's dark value (DaisyUI night), not to light's.
+    expect(await token(page, "--color-secondary")).toBe("oklch(68.011% .158 276.934)");
     await expect.poll(bar).toBe("11,95,255,255");
 
     expect(network).toEqual([]);

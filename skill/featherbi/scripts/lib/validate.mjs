@@ -94,7 +94,13 @@ export function validate(config, snapshots) {
       for (const k of Object.keys(tile.option ?? {})) if (DATA_KEYS.includes(k)) fail(`option key "${k}" binds data; data comes from the preset`);
       for (const dim of [].concat(tile.click ?? [])) if (!(dim in (config.dims ?? {}))) fail(`click on "${dim}", which is not declared in \`dims\``);
 
-      if (tile.type === "table") {
+      // A table shows either a source (paged by the renderer) or a tile SQL result (spec 0005 §1).
+      if (tile.type === "table" && tile.source !== undefined && tile.sql !== undefined) fail("a table takes `source` or `sql`, not both");
+      if (tile.type === "table" && tile.source === undefined && tile.sql === undefined) fail("a table needs `source` or `sql`");
+      if (tile.type === "table" && tile.sql !== undefined) {
+        if (tile.columns !== undefined) fail("`columns` is not allowed with `sql`: the columns are the result's columns");
+        if (tile.click !== undefined && typeof tile.click !== "string") fail("`click` on a table names one dimension");
+      } else if (tile.type === "table") {
         if (!(tile.source in columns)) fail(`source "${tile.source}" is not a source`);
         if (!Array.isArray(tile.columns) || !tile.columns.length) fail("a table needs `columns`");
         for (const c of tile.columns) if (!columns[tile.source].includes(c)) fail(`column "${c}" is not in source "${tile.source}"`);
@@ -103,7 +109,7 @@ export function validate(config, snapshots) {
       if (tile.type === "text") return;
       if (typeof tile.sql !== "string") fail("`sql` is required");
 
-      const queries = [[tile.sql, preset ? preset.columns : tile.type === "kpi" ? ["value"] : ["r", "c", "v"]]];
+      const queries = [[tile.sql, preset ? preset.columns : tile.type === "kpi" ? ["value"] : tile.type === "table" ? [] : ["r", "c", "v"]]];
       if (tile.compare) queries.push([tile.compare, ["value"]]);
       if (tile.spark) queries.push([tile.spark, ["x", "y"]]);
       for (const [sql, required] of queries) {

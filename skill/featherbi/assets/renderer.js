@@ -54,6 +54,7 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
       try {
         const result = await statement.query(...params);
         const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type)])));
+        rows.columns = result.schema.fields.map(f => f.name); // in SQL order, also when there are no rows
         rows.dates = result.schema.fields.filter(f => String(f.type).startsWith("Date")).map(f => f.name); // DATE columns, for `@days`
         return rows;
       } finally {
@@ -420,6 +421,7 @@ function loadGrid({ url, integrity }) {
 
 // AG Grid owns scrolling and sorting; every block is a filtered SQL page with __row as its stable tie-breaker.
 function mountTable(tile, index) {
+  if (tile.sql) return mountSqlTable(tile, index);
   const { box, body } = mountCard(tile, index, "h-80 w-full");
   gridBodies.push(body);
   gridTheme(body);
@@ -473,6 +475,55 @@ function mountTable(tile, index) {
       };
       if (api) api.setGridOption("datasource", options.datasource);
       else api = agGrid.createGrid(body, options);
+    } finally {
+      if (current()) box.removeAttribute("aria-busy");
+    }
+  };
+}
+
+// A `sql` table (spec 0005 §1): the result's columns in SQL order, at most 1 000 rows, sorted by the grid in the browser.
+function mountSqlTable(tile, index) {
+  const { box, body } = mountCard(tile, index, "h-80 w-full");
+  gridBodies.push(body);
+  gridTheme(body);
+  box.setAttribute("aria-busy", "true");
+  let api;
+  return async (engine, current) => {
+    try {
+      if (!engine || !agGrid) return;
+      const x = expand(tile.sql, state, filters.dims, filters.date, filters.tableColumns, tile.exclude);
+      // pi-lens-ignore: no-sql-in-code-js
+      const rows = await engine.query(`SELECT * FROM (${x.sql}) LIMIT 1001`, x.params);
+      if (!current()) return;
+      box.querySelector("h2").textContent = `${tile.title} · ${rows.length > 1000 ? "first 1 000" : rows.length} rows`;
+      const rowData = rows.slice(0, 1000);
+      if (api) return api.setGridOption("rowData", rowData);
+      // A row sets the dimension to its value in the first column; the same value again clears it.
+      const pick = row => {
+        const value = row?.[rows.columns[0]];
+        if (value == null) return;
+        if (state.dims[tile.click] === value) delete state.dims[tile.click];
+        else state.dims[tile.click] = value;
+        drawFilters();
+        refresh();
+      };
+      api = agGrid.createGrid(body, {
+        theme: "legacy",
+        columnDefs: rows.columns.map(field => ({
+          field,
+          headerName: field,
+          valueFormatter: rows.dates.includes(field) ? params => (params.value == null ? "" : new Date(params.value).toISOString().slice(0, 10)) : undefined,
+        })),
+        defaultColDef: { sortable: true, resizable: true, flex: 1, minWidth: 100 },
+        suppressFieldDotNotation: true, // a result column may be named `sum(s.revenue)`
+        rowData,
+        animateRows: false,
+        ...(tile.click && {
+          rowClass: "cursor-pointer",
+          onRowClicked: event => pick(event.data),
+          onCellKeyDown: event => event.event.key === "Enter" && pick(event.data),
+        }),
+      });
     } finally {
       if (current()) box.removeAttribute("aria-busy");
     }

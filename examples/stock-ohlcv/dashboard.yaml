@@ -1,0 +1,38 @@
+title: Stock OHLCV
+name: stock-ohlcv
+sources:
+  prices:
+    read: "read_parquet('prices.parquet')"
+dims:
+  ticker: {col: ticker}
+date: {col: day, default: all}
+tiles:
+  - type: kpi
+    title: Rows
+    sql: "SELECT COUNT(*) AS value FROM prices WHERE {{filters:prices}}"
+  - type: kpi
+    title: Volume
+    sql: "SELECT SUM(volume) AS value FROM prices WHERE {{filters:prices}}"
+  - type: kpi
+    title: Highest high
+    sql: "SELECT MAX(high) AS value FROM prices WHERE {{filters:prices}}"
+  - type: kpi
+    title: Lowest low
+    sql: "SELECT MIN(low) AS value FROM prices WHERE {{filters:prices}}"
+  - type: kpi
+    title: AAA last close
+    sql: "SELECT arg_max(close, day) AS value FROM prices WHERE ticker = 'AAA' AND {{filters:prices}}"
+  - type: echarts
+    preset: candlestick
+    title: AAA daily candles
+    sql: >
+      SELECT day AS x, open, high, low, close, volume
+      FROM prices WHERE ticker = 'AAA' AND {{filters:prices}} ORDER BY day
+  - type: echarts
+    preset: bar
+    title: Volume by ticker
+    click: ticker
+    exclude: [ticker]
+    sql: >
+      SELECT ticker AS x, SUM(volume) AS y
+      FROM prices WHERE {{filters:prices}} GROUP BY 1 ORDER BY 1

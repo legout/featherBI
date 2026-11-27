@@ -1,0 +1,44 @@
+title: Weather
+name: weather
+sources:
+  observations:
+    read: "read_parquet('observations.parquet')"
+dims:
+  station: {col: station}
+date: {col: day, default: all}
+tiles:
+  - type: kpi
+    title: Observations
+    sql: "SELECT COUNT(*) AS value FROM observations WHERE {{filters:observations}}"
+  - type: kpi
+    title: Average °C
+    sql: "SELECT ROUND(AVG(temp_c), 2) AS value FROM observations WHERE {{filters:observations}}"
+  - type: kpi
+    title: Maximum °C
+    sql: "SELECT MAX(temp_c) AS value FROM observations WHERE {{filters:observations}}"
+  - type: kpi
+    title: Minimum °C
+    sql: "SELECT MIN(temp_c) AS value FROM observations WHERE {{filters:observations}}"
+  - type: kpi
+    title: Precipitation mm
+    sql: "SELECT SUM(precip_mm) AS value FROM observations WHERE {{filters:observations}}"
+  - type: echarts
+    preset: line
+    title: Daily temperature by station
+    sql: >
+      SELECT strftime(day, '%Y-%m-%d') AS x, temp_c AS y, station AS series
+      FROM observations WHERE {{filters:observations}} ORDER BY 3, 1
+  - type: echarts
+    preset: bar
+    title: Precipitation by station
+    click: station
+    exclude: [station]
+    sql: >
+      SELECT station AS x, SUM(precip_mm) AS y
+      FROM observations WHERE {{filters:observations}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: histogram
+    title: Temperature distribution
+    sql: >
+      SELECT floor(temp_c / 5) * 5 AS lo, floor(temp_c / 5) * 5 + 5 AS hi, COUNT(*) AS count
+      FROM observations WHERE {{filters:observations}} GROUP BY 1 ORDER BY 1

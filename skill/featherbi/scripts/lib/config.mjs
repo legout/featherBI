@@ -35,7 +35,7 @@ export function loadConfig(file) {
 
   need(Array.isArray(c.tiles) && c.tiles.length, "`tiles` needs at least one tile");
   need(c.theme === undefined || (typeof c.theme === "string" && c.theme), "`theme` must be a built-in theme name or the path of a theme file");
-  const config = { title: c.title, name, engine, theme: c.theme, sources: c.sources, dims: c.dims, date: c.date, explore: c.explore, tiles: c.tiles };
+  const config = { title: c.title, name, engine, theme: c.theme, locale: c.locale, sources: c.sources, dims: c.dims, date: c.date, explore: c.explore, tiles: c.tiles };
   // The theme is checked here, before any source is read. Not enumerable: the schema check sees `theme` as the author wrote it.
   return Object.defineProperty(config, "loadedTheme", { value: loadTheme(c.theme, path.dirname(path.resolve(file))) });
 }

@@ -30,6 +30,7 @@ tiles:
 | `dims` | Filterable dimensions: `name: { col, cols? }`. `cols` overrides the column per table (`cols: { targets: region_code }`). A table without the column is not filtered by that dimension. `date` is reserved; do not name a dimension `date`. |
 | `date` | `{ col, cols?, default }`. `default`: `last_12_months` (the 12 months ending at the latest date in the data), `all`, or `{ from: 2025-01-01, to: 2025-03-31 }`. A table without a date column is not date-filtered. |
 | `theme` | Optional. The look: a built-in theme (`default`, `corporate`, `minimal`, `high-contrast`) or a theme file relative to the config file, e.g. `./brand/theme.yaml`. See `themes.md`. |
+| `locale` | Optional. A BCP 47 tag such as `de-DE`: every number and date the page formats uses it (KPI values and Δ %, chart tooltips and value-axis labels, pivot cells, table cells, the table date column). Default `en-US`. The build rejects a tag its `Intl` does not support. It changes formats only, not the page's own labels. |
 | `explore` | `true` (default), `false`, or `{ table: <source> }`. Opens a Perspective viewer on that table (default: the first source) with the filters active at that moment. |
 | `tiles` | Required, at least one. Optional `id` (letters, digits, `_`, `-`) names the tile in error messages. |
 
@@ -47,6 +48,24 @@ tiles:
 | `table` | `source`, `columns` | none: the renderer pages the source table; every column must exist in it |
 | `table` | `sql`, `click`, `exclude` | any: the columns are the result's columns, in SQL order |
 | `text` | `markdown` | none |
+
+`format` (on `kpi`, `echarts`, `pivot`) is `number` (default, at most 2 fraction digits), `currency` (US dollars), `percent` (the value is a ratio: 0.25 → 25 %), or a mapping with any of these keys:
+
+| Key | Meaning |
+|---|---|
+| `style` | `number` (default), `currency` or `percent`. |
+| `decimals` | 0–6: exactly that many fraction digits. |
+| `currency` | A three-letter ISO 4217 code for `style: currency`, e.g. `EUR`. Default `USD`. |
+| `unit` | Text appended after a non-breaking space: `{ decimals: 2, unit: m³/t }` → `88.66 m³/t`. |
+
+```yaml
+locale: de-DE
+tiles:
+  - { type: kpi, title: Revenue, format: { style: currency, currency: EUR },   # 2.260,50 €
+      sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}" }
+```
+
+Table cells take no `format`: a number is written in the locale, a `DECIMAL(p,s)` column with exactly `s` fraction digits (`1,410.50`), any other number with at most 2. The date column is ISO (`2025-01-05`) without `locale` and the locale's numeric short date with it (`05.01.2025`).
 
 A `table` takes exactly one of `source` and `sql`. With `sql` it shows a tile-SQL result (anomalies, top or bottom rows, data-quality findings) in the order the SQL returns it; `columns` is not allowed. The result is capped at 1 000 rows: a longer one shows the first 1 000 and the title says `first 1 000 rows`, so put `ORDER BY` in the SQL. Header clicks sort the loaded rows only. `click: <dim>` makes a row set that dimension to its value in the **first** column.
 

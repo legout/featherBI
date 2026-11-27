@@ -27,7 +27,7 @@ async function generated(page, config, check) {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
-const tile = (page, title) => page.getByRole("group", { name: title });
+const tile = (page, title) => page.getByRole("group", { name: new RegExp(`^${title}`) }); // a table title also carries its row count
 // The exact characters, non-breaking spaces included (toHaveText would normalize them).
 const exactly = (locator, text) => expect.poll(() => locator.textContent()).toBe(text);
 const kpi = (page, title, text) => exactly(tile(page, title).locator(".stat-value"), text);
@@ -51,17 +51,19 @@ test("locale de-DE: currency, decimals with a unit, percent, pivot cells, a char
     await kpi(page, "Share", "25\u00a0%");
     await exactly(tile(page, "Growth").locator(".stat-desc"), "+25\u00a0%"); // Δ %: (1.25 − 1) / 1
     await exactly(tile(page, "Region × channel").getByRole("row", { name: /^EU/ }).getByRole("cell").first(), "360,00\u00a0€"); // README: EU Online
-    await expect(firstRow(tile(page, "Rows")).first()).toBeVisible();
-    expect(await firstRow(tile(page, "Rows")).allTextContents()).toEqual(["05.01.2025", "EU", "100,00"]); // README row 1, DECIMAL(10,2)
+    await expect(firstRow(tile(page, "Rows"))).toHaveText(["05.01.2025", "EU", "100,00"]); // README row 1, DECIMAL(10,2)
     // 2025-01-05: 100 + 200 = 300.00 in two rows; a BIGINT gets the locale's grouping, a DOUBLE at most 2 digits (150 / 3 = 50).
-    expect(await firstRow(tile(page, "Days")).allTextContents()).toEqual(["05.01.2025", "300,00", "2.000", "50"]);
+    await expect(firstRow(tile(page, "Days"))).toHaveText(["05.01.2025", "300,00", "2.000", "50"]);
     // The tooltip of the first bar (EU, README total 850.00), shown by the chart library itself.
     const chart = tile(page, "By region");
     await expect(chart).not.toHaveAttribute("aria-busy", "true");
-    await chart.getByRole("img").evaluate(async node => {
+    const axisLabel = await chart.getByRole("img").evaluate(async node => {
       const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
-      (await import(charts.url)).getInstanceByDom(node).dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex: 0 });
+      const instance = (await import(charts.url)).getInstanceByDom(node);
+      instance.dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex: 0 });
+      return instance.getOption().yAxis[0].axisLabel.formatter(1500); // the value axis writes its ticks with this
     });
+    expect(axisLabel).toBe("1.500");
     await expect.poll(() => chart.textContent()).toContain("850,00\u00a0€");
   });
 });
@@ -73,8 +75,7 @@ test("locale en-US: the table date column takes the numeric short form; numbers 
   ];
   await generated(page, { locale: "en-US", tiles }, async () => {
     await kpi(page, "Revenue", "$2,260.50");
-    await expect(firstRow(tile(page, "Rows")).first()).toBeVisible();
-    expect(await firstRow(tile(page, "Rows")).allTextContents()).toEqual(["01/05/2025", "100.00"]);
+    await expect(firstRow(tile(page, "Rows"))).toHaveText(["01/05/2025", "100.00"]);
   });
 });
 

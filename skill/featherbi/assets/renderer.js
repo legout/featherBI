@@ -57,6 +57,8 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
         const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type, exact)])));
         rows.columns = result.schema.fields.map(f => f.name); // in SQL order, also when there are no rows
         rows.dates = result.schema.fields.filter(f => String(f.type).startsWith("Date")).map(f => f.name); // DATE columns, for `@days`
+        // The numeric columns, each with its DECIMAL scale (null for the other number types), for table cells.
+        rows.numbers = Object.fromEntries(result.schema.fields.filter(f => /^(Int|Uint|Float|Decimal)/.test(String(f.type))).map(f => [f.name, f.type.scale ?? null]));
         return rows;
       } finally {
         await statement.close();
@@ -74,12 +76,30 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
   };
 }
 
-const FORMATS = {
-  // shortcut: currency is always US dollars, upgrade when a tile can name its currency (T5).
-  currency: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }),
-  number: new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }),
-  change: new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" }),
-};
+// Number and date formats (spec 0005 §2): `Intl` in the config's `locale`; without one en-US, as before `locale` existed.
+const number = options => new Intl.NumberFormat(config.locale ?? "en-US", options);
+const fixed = digits => ({ minimumFractionDigits: digits, maximumFractionDigits: digits });
+const PLAIN = number({ maximumFractionDigits: 2 });
+const AXIS = number({ maximumFractionDigits: 20 }); // a tick as the chart library computed it
+const CHANGE = number({ style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
+const DAY = new Intl.DateTimeFormat(config.locale, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+// A tile's `format`: `number`, `currency`, `percent`, or { style, decimals, currency, unit }; `unit` follows a non-breaking space.
+function formatter(format) {
+  const { style = "number", decimals, currency = "USD", unit } = typeof format === "string" ? { style: format } : (format ?? {});
+  const digits = decimals != null ? fixed(decimals) : style === "number" ? { maximumFractionDigits: 2 } : {};
+  const base = number({ ...(style === "currency" ? { style, currency } : style === "percent" ? { style } : {}), ...digits });
+  return unit == null ? base : { format: value => `${base.format(value)}\u00a0${unit}` };
+}
+// A table cell: a DATE in the locale's numeric short form (ISO without `locale`), a number in the locale with exactly the
+// scale of a DECIMAL(p,s) column and at most 2 fraction digits otherwise. `rows` is a result of the column's query.
+const SCALED = {};
+function cellText(rows, field, value, isDate = rows.dates.includes(field)) {
+  if (value == null) return "";
+  if (isDate) return config.locale ? DAY.format(new Date(value)) : new Date(value).toISOString().slice(0, 10);
+  if (!(field in rows.numbers)) return value;
+  const scale = rows.numbers[field];
+  return (scale == null ? PLAIN : (SCALED[scale] ??= number(fixed(scale)))).format(value);
+}
 
 // A clicked value in the form of its embedded filter option. An integer beyond a double is embedded as its exact digits
 // (validate.mjs), while a tile's rows carry it as a number, or as a BigInt in a SQL table.
@@ -123,6 +143,7 @@ function mountKpi(tile, index) {
   const line = svg("polyline", { fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" });
   if (tile.spark) box.append(svg("svg", { class: "mt-1 h-8 w-full text-primary", viewBox: "0 0 100 24", preserveAspectRatio: "none", "aria-hidden": "true" }, line));
   document.getElementById("kpis").append(box);
+  const format = formatter(tile.format);
   return async (engine, current) => {
     let text = "–";
     let change = "";
@@ -130,9 +151,9 @@ function mountKpi(tile, index) {
     try {
       // no engine: its own alert is already shown
       const [[row], [base], spark] = await Promise.all([tile.sql, tile.compare, tile.spark].map(sql => (engine && sql ? run(engine, tile, sql) : [])));
-      if (row?.value != null) text = (FORMATS[tile.format] ?? FORMATS.number).format(row.value);
+      if (row?.value != null) text = format.format(row.value);
       // Δ %: the change of `value` against `compare`; no figure when either is missing or the base is 0.
-      if (row?.value != null && base?.value) change = FORMATS.change.format((row.value - base.value) / Math.abs(base.value));
+      if (row?.value != null && base?.value) change = CHANGE.format((row.value - base.value) / Math.abs(base.value));
       if (!current()) return; // an older state's result is never painted
       const ys = spark.map(r => r.y ?? 0);
       const low = Math.min(...ys);
@@ -249,7 +270,7 @@ const BIND = {
     return { type: "rect", shape: { x, y: y - height / 2, width: api.coord([api.value("end"), api.value("name")])[0] - x, height }, style: api.style() };
   },
   // Tooltips of the two as text nodes, so data is never read as HTML: "150 – 200: 3" (or "Online · 150 – 200: 3") and "M1 · run: 2025-01-06 08:00 – 2025-01-06 12:00" (UTC, like the axis).
-  bin: () => p => el("span", "", `${p.data.series == null ? "" : `${p.data.series} · `}${FORMATS.number.format(p.data.lo)} – ${FORMATS.number.format(p.data.hi)}: ${FORMATS.number.format(p.data.count)}`),
+  bin: () => p => el("span", "", `${p.data.series == null ? "" : `${p.data.series} · `}${PLAIN.format(p.data.lo)} – ${PLAIN.format(p.data.hi)}: ${PLAIN.format(p.data.count)}`),
   span: () => p => {
     const time = v => new Date(v).toISOString().slice(0, 16).replace("T", " ");
     return el("span", "", `${[p.data.name, p.data.state].filter(v => v != null).join(" · ")}: ${time(p.data.start)} – ${time(p.data.end)}`);
@@ -272,11 +293,13 @@ const restyle = (base, over, skip = DATA_KEYS) => {
 
 // The ECharts option of a chart tile: the preset with its data bound, restyled by the tile's `option`.
 function chartOption(tile, preset, rows) {
-  const format = FORMATS[tile.format] ?? FORMATS.number;
+  const format = formatter(tile.format);
   // A preset's `with.<column>` part joins its option only when the rows have that optional column (candlestick volume).
   const template = Object.entries(preset.with ?? {}).reduce((o, [column, part]) => (rows[0][column] === undefined ? o : restyle(o, part, [])), preset.option);
   const option = restyle({ aria: { enabled: true }, animation: !matchMedia("(prefers-reduced-motion: reduce)").matches, ...bind(template, rows) }, tile.option);
   if (option.tooltip) option.tooltip = { confine: true, valueFormatter: v => (typeof v === "number" ? format.format(v) : v), ...option.tooltip };
+  // With a `locale`, value-axis labels take its separators (the chart library writes en-US ones); a preset's own label format stays.
+  if (config.locale) for (const axis of [option.xAxis, option.yAxis].flat()) if (axis?.type === "value" && !axis.axisLabel?.formatter) axis.axisLabel = { ...axis.axisLabel, formatter: v => AXIS.format(v) };
   // A `series` column (timeline: `state`) splits the preset's one series into one per value, each over its own rows.
   const by = preset.split ?? "series";
   if (rows[0][by] !== undefined && [...preset.columns, ...preset.optional].includes(by)) {
@@ -349,7 +372,7 @@ function mountPivot(tile, index) {
         body.append(el("p", "text-base-content/80", "No data for the current filters."));
         return;
       }
-      const format = FORMATS[tile.format] ?? FORMATS.number;
+      const format = formatter(tile.format);
       const columns = [];
       const seenColumns = new Set();
       const byRow = new Map();
@@ -440,6 +463,7 @@ function mountTable(tile, index) {
   gridTheme(body);
   box.setAttribute("aria-busy", "true");
   let api;
+  let latest = { dates: [], numbers: {} }; // the newest page: its column types format the cells
   const source = (engine, current, count) => ({
     async getRows(params) {
       try {
@@ -455,6 +479,7 @@ function mountTable(tile, index) {
           params.startRow,
         ]);
         if (!current()) return params.failCallback();
+        latest = rows;
         params.successCallback(rows, count);
       } catch (error) {
         params.failCallback();
@@ -476,7 +501,7 @@ function mountTable(tile, index) {
         columnDefs: tile.columns.map(field => ({
           field,
           headerName: field,
-          valueFormatter: field === dateColumn ? params => params.value == null ? "" : new Date(params.value).toISOString().slice(0, 10) : undefined,
+          valueFormatter: params => cellText(latest, field, params.value, field === dateColumn),
         })),
         defaultColDef: { sortable: true, resizable: true, flex: 1, minWidth: 100 },
         rowModelType: "infinite",
@@ -528,7 +553,7 @@ function mountSqlTable(tile, index) {
         columnDefs: rows.columns.map(field => ({
           field,
           headerName: field,
-          valueFormatter: rows.dates.includes(field) ? params => (params.value == null ? "" : new Date(params.value).toISOString().slice(0, 10)) : undefined,
+          valueFormatter: params => cellText(rows, field, params.value),
         })),
         defaultColDef: { sortable: true, resizable: true, flex: 1, minWidth: 100 },
         suppressFieldDotNotation: true, // a result column may be named `sum(s.revenue)`

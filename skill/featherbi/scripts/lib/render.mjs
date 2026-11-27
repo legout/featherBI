@@ -46,6 +46,7 @@ export async function render(config, snapshots, filters, mode = "default", { rem
       tiles: config.tiles,
       filters,
       palette: theme?.palette,
+      locale: config.locale, // absent without `locale`: the page then formats as en-US
       explore: explore && { ...explore, perspective: off?.css ? { ...psp, css: inlined(off.css) } : psp, assets: off?.psp },
       // A remote page gets { tables: { <table>: { url, bytes } }, expiresAt } instead of the Parquet bytes (spec 0002).
       ...(remote ? { remote } : {

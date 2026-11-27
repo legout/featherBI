@@ -61,6 +61,15 @@ export function validate(config, snapshots) {
   const errors = [];
   check(config, JSON.parse(fs.readFileSync(asset("schema/dashboard.schema.json"), "utf8")), "config", errors);
   if (Object.hasOwn(config.dims ?? {}, "date")) errors.push("dims: `date` is reserved for the date range in the URL hash; name the dimension differently");
+  // Spec 0005 §2: the page formats with the viewer's `Intl`; the build's `Intl` stands in for it.
+  const supported = tag => {
+    try {
+      return Intl.NumberFormat.supportedLocalesOf(tag).length > 0;
+    } catch {
+      return false; // not a BCP 47 tag
+    }
+  };
+  if (typeof config.locale === "string" && !supported(config.locale)) errors.push(`locale: "${config.locale}" is not a locale this build's Intl supports (a BCP 47 tag such as de-DE)`);
   if (errors.length) throw new Error(`invalid config: ${errors.join("; ")}`);
 
   const presets = Object.fromEntries(
@@ -94,6 +103,9 @@ export function validate(config, snapshots) {
       const preset = tile.type === "echarts" ? presets[tile.preset] : null;
       if (!["kpi", "echarts", "pivot", "table", "text"].includes(tile.type)) fail(`unknown type "${tile.type}"`);
       if (tile.type === "echarts" && !preset) fail(`unknown preset "${tile.preset}"`);
+      if (typeof tile.format === "string" && !["number", "currency", "percent"].includes(tile.format)) fail(`unknown format "${tile.format}"; use number, currency, percent or { style, decimals, currency, unit }`);
+      const decimals = tile.format?.decimals;
+      if (decimals !== undefined && !(Number.isInteger(decimals) && decimals >= 0 && decimals <= 6)) fail("format `decimals` must be a whole number from 0 to 6");
       for (const k of Object.keys(tile.option ?? {})) if (DATA_KEYS.includes(k)) fail(`option key "${k}" binds data; data comes from the preset`);
       for (const dim of [].concat(tile.click ?? [])) if (!Object.hasOwn(config.dims ?? {}, dim)) fail(`click on "${dim}", which is not declared in \`dims\``);
 

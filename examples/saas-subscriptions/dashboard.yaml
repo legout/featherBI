@@ -1,0 +1,54 @@
+title: SaaS subscriptions
+name: saas-subscriptions
+sources:
+  subscriptions:
+    read: "read_parquet('subscriptions.parquet')"
+dims:
+  plan: {col: plan}
+  status: {col: status}
+date: {col: started, default: all}
+tiles:
+  - type: kpi
+    title: Subscriptions
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM subscriptions WHERE {{filters:subscriptions}}
+  - type: kpi
+    title: Active subscriptions
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM subscriptions WHERE status = 'active' AND {{filters:subscriptions}}
+  - type: kpi
+    title: MRR
+    sql: >
+      SELECT SUM(mrr) AS value
+      FROM subscriptions WHERE status = 'active' AND {{filters:subscriptions}}
+  - type: kpi
+    title: Churned share of all %
+    sql: >
+      SELECT 100.0 * COUNT(*) FILTER (WHERE status = 'churned')
+        / COUNT(*) AS value
+      FROM subscriptions WHERE {{filters:subscriptions}}
+  - type: echarts
+    preset: bar
+    title: MRR by plan
+    click: plan
+    exclude: [plan]
+    sql: >
+      SELECT plan AS x, SUM(mrr) AS y
+      FROM subscriptions WHERE status = 'active' AND {{filters:subscriptions}}
+      GROUP BY 1 ORDER BY 2
+  - type: echarts
+    preset: line
+    title: New subscriptions by start month
+    sql: >
+      SELECT strftime(started, '%Y-%m') AS x, COUNT(*) AS y
+      FROM subscriptions WHERE {{filters:subscriptions}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: donut
+    title: Subscriptions by status
+    click: status
+    exclude: [status]
+    sql: >
+      SELECT status AS name, COUNT(*) AS value
+      FROM subscriptions WHERE {{filters:subscriptions}} GROUP BY 1

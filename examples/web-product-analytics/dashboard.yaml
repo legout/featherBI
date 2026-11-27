@@ -1,0 +1,51 @@
+title: Web and product analytics
+name: web-product-analytics
+sources:
+  sessions:
+    read: "read_parquet('sessions.parquet')"
+dims:
+  source: {col: source}
+date: {col: day, default: all}
+tiles:
+  - type: kpi
+    title: Sessions
+    sql: "SELECT COUNT(*) AS value FROM sessions WHERE {{filters:sessions}}"
+  - type: kpi
+    title: Bounce rate %
+    sql: >
+      SELECT 100.0 * COUNT(*) FILTER (WHERE pages = 1) / COUNT(*) AS value
+      FROM sessions WHERE {{filters:sessions}}
+  - type: kpi
+    title: Pages per session
+    sql: "SELECT AVG(pages) AS value FROM sessions WHERE {{filters:sessions}}"
+  - type: kpi
+    title: Conversion rate %
+    sql: >
+      SELECT 100.0 * SUM(converted) / COUNT(*) AS value
+      FROM sessions WHERE {{filters:sessions}}
+  - type: echarts
+    preset: funnel
+    title: Session funnel
+    sql: >
+      SELECT 'Sessions' AS name, COUNT(*) AS value
+      FROM sessions WHERE {{filters:sessions}}
+      UNION ALL
+      SELECT 'Viewed 3+ pages', COUNT(*)
+      FROM sessions WHERE pages >= 3 AND {{filters:sessions}}
+      UNION ALL
+      SELECT 'Converted after 3+ pages', COUNT(*)
+      FROM sessions WHERE pages >= 3 AND converted = 1 AND {{filters:sessions}}
+  - type: echarts
+    preset: line
+    title: Sessions per day
+    sql: >
+      SELECT strftime(day, '%Y-%m-%d') AS x, COUNT(*) AS y
+      FROM sessions WHERE {{filters:sessions}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: Sessions by source
+    click: source
+    exclude: [source]
+    sql: >
+      SELECT source AS x, COUNT(*) AS y
+      FROM sessions WHERE {{filters:sessions}} GROUP BY 1 ORDER BY 1

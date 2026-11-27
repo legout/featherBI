@@ -1,0 +1,45 @@
+title: Vehicle telematics
+name: vehicle-telematics
+sources:
+  trips:
+    read: "read_parquet('trips.parquet')"
+dims:
+  vehicle: {col: vehicle}
+date: {col: trip_date, default: all}
+tiles:
+  - type: kpi
+    title: Trips
+    sql: "SELECT COUNT(*) AS value FROM trips WHERE {{filters:trips}}"
+  - type: kpi
+    title: Distance km
+    sql: "SELECT SUM(distance_km) AS value FROM trips WHERE {{filters:trips}}"
+  - type: kpi
+    title: Average trip km
+    sql: "SELECT AVG(distance_km) AS value FROM trips WHERE {{filters:trips}}"
+  - type: kpi
+    title: Harsh brakes
+    sql: "SELECT SUM(harsh_brakes) AS value FROM trips WHERE {{filters:trips}}"
+  - type: kpi
+    title: Idle minutes
+    sql: "SELECT SUM(idle_min) AS value FROM trips WHERE {{filters:trips}}"
+  - type: echarts
+    preset: line
+    title: Daily distance
+    sql: >
+      SELECT strftime(trip_date, '%Y-%m-%d') AS x, SUM(distance_km) AS y
+      FROM trips WHERE {{filters:trips}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: hbar
+    title: Distance by vehicle
+    click: vehicle
+    exclude: [vehicle]
+    sql: >
+      SELECT vehicle AS x, SUM(distance_km) AS y
+      FROM trips WHERE {{filters:trips}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: histogram
+    title: Trip distance distribution
+    sql: >
+      SELECT floor(distance_km / 5) * 5 AS lo,
+        floor(distance_km / 5) * 5 + 5 AS hi, COUNT(*) AS count
+      FROM trips WHERE {{filters:trips}} GROUP BY 1 ORDER BY 1

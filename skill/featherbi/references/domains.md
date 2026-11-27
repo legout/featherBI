@@ -16,3 +16,11 @@ Index for brainstorming mode (`references/brainstorm.md`). Match the profile aga
 | Accounting plan / actual | `plan`/`budget` and `actual` amounts, a `dept`/`cost_center`, an `account`, a `month` | [accounting-plan-actual](domains/accounting-plan-actual.md) |
 | Weather | `station`/`city`, a day, `temp_c`, `precip_mm`, maybe `wind`/`humidity`; one row per station per day | [weather](domains/weather.md) |
 | Air quality | `station`, an hourly timestamp, `pm25`/`pm10`/`no2` in µg/m³ | [air-quality](domains/air-quality.md) |
+| Vehicle telematics | a `vehicle`/`device` id, a trip timestamp, `distance_km`/`odometer`, `speed`, event counts (`harsh_brakes`, `idle_min`); one row per trip | [vehicle-telematics](domains/vehicle-telematics.md) |
+| Fleet and maintenance | a `vehicle`/`asset` id, a work order id, `job`/`type`, `cost`, `downtime_days`, a `preventive` flag | [fleet-maintenance](domains/fleet-maintenance.md) |
+| Logistics | `shipment_id`, ship date, `carrier`, `region`/`lane`, `transit_days`, a promised date or `on_time` flag | [logistics](domains/logistics.md) |
+| Support tickets | `ticket_id`, opened date, `status`, `priority`, `channel`, `first_response_min`, `csat` | [support-tickets](domains/support-tickets.md) |
+| IT operations / logs | an event `ts`, `service`/`host`, `level` ERROR/WARN/INFO, `latency_ms`; one row per log event | [it-operations-logs](domains/it-operations-logs.md) |
+| Issue tracking | `issue_id`/`key`, opened date, `type` bug/feature/task, `status`, `points`/`estimate` | [issue-tracking](domains/issue-tracking.md) |
+| HR | `employee_id`, `department`, `hire_date`, `salary`, `tenure`, a `left` flag or termination date | [hr](domains/hr.md) |
+| Sports / tournament results | `team`, a game date, `goals_for`/`goals_against` or two scores, `result`/`points` | [sports-tournament-results](domains/sports-tournament-results.md) |

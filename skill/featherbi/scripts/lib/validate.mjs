@@ -17,7 +17,7 @@ function check(value, schema, at, errors) {
   if (schema.enum && !schema.enum.includes(value)) errors.push(`${at}: must be one of ${schema.enum.join(", ")}`);
   if (typeof value === "string") {
     if (schema.minLength && value.length < schema.minLength) errors.push(`${at}: must not be empty`);
-    if (schema.maxLength && value.length > schema.maxLength) errors.push(`${at}: must be at most ${schema.maxLength} characters`);
+    if (schema.maxLength && [...value].length > schema.maxLength) errors.push(`${at}: must be at most ${schema.maxLength} characters`);
     if (schema.pattern && !new RegExp(schema.pattern).test(value)) errors.push(`${at}: must match ${schema.pattern}`);
   }
   if (Array.isArray(value)) {

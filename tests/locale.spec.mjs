@@ -157,9 +157,30 @@ test("header line with locale de-DE: the dates in the locale; the subtitle befor
   });
 });
 
-test("the build rejects a note, subtitle or source label over 200 characters", () => {
+// An open-ended contract: DuckDB's DATE 'infinity' as the last date. The header line takes the last real date, and the
+// tiles and filters mount (the hand fixture's rows plus one open-ended row of 0 revenue).
+test("header line over a date column with DATE 'infinity': the last real date; the tiles still mount", async ({ page }) => {
+  const sources = { sales: { read: `(SELECT order_date AS valid_to, revenue FROM read_parquet('sales.parquet') UNION ALL SELECT DATE 'infinity', 0)` } };
+  const tiles = [{ type: "kpi", title: "Revenue", format: "currency", sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}" }];
+  await generated(page, { sources, date: { col: "valid_to", default: { from: "2025-01-01", to: "2025-03-31" } }, tiles }, async () => {
+    await exactly(headerLine(page), "Data as of 03/25/2025 · Period 01/05/2025 – 03/25/2025");
+    await kpi(page, "Revenue", "$2,260.50");
+    await expect(page.getByLabel("From")).toHaveValue("2025-01-01");
+  });
+});
+
+test("the build rejects a note, subtitle or source label over 200 characters, counted as characters", () => {
   const long = "x".repeat(201);
   const tiles = [{ type: "kpi", title: "Revenue", sql: revenue }];
+  // 198 letters and "📈!": 200 characters (201 UTF-16 units) are within the limit.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "locale-"));
+  try {
+    fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify({ title: "Locale", sources: hand, subtitle: "x".repeat(198) + "📈!", tiles }));
+    execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" });
+    expect(fs.existsSync(path.join(tmp, "dist/locale.html"))).toBe(true);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
   for (const [config, named] of [[{ subtitle: long, tiles }, /subtitle/], [{ source_label: long, tiles }, /source_label/], [{ tiles: [{ ...tiles[0], note: long }] }, /note/]]) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "locale-"));
     try {

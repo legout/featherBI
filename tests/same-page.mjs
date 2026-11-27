@@ -38,8 +38,9 @@ function build(tree, config, out) {
 // Deliberate differences, named by the plan task that makes them:
 //   withoutTiles: titles of tiles cut out of the embedded data text and removed from the page;
 //   exclude: page => locators removed from both pages before the accessibility trees are compared;
+//   check: page => assertions on the new page, run before anything is removed from it;
 //   colours: [before, after] CSS declarations, each put into the reference CSS in place of its old value (it must be there once).
-export async function samePage(page, base, config, { withoutTiles = [], exclude = () => [], colours = [] } = {}) {
+export async function samePage(page, base, config, { withoutTiles = [], exclude = () => [], check = async () => {}, colours = [] } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "featherbi-same-"));
   try {
     const files = { before: path.join(tmp, "before.html"), after: path.join(tmp, "after.html") };
@@ -83,6 +84,7 @@ export async function samePage(page, base, config, { withoutTiles = [], exclude 
       expected = await tree();
     }
     await page.goto(pathToFileURL(files.after).href);
+    await check(page);
     await expect.poll(tree).toBe(expected);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

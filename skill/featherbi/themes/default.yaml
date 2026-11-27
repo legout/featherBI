@@ -1,6 +1,7 @@
 # The look of a dashboard without `theme`: DaisyUI winter (light) and night
 # (dark), as prebuilt into assets/app.css. A token a theme file leaves out
-# takes its value from here.
+# takes its value from here. One colour differs from DaisyUI: light
+# primary-content is white, because winter's own reaches only 3.6:1 on primary.
 name: Default
 light:
   base-100: "oklch(100% 0 0)"
@@ -8,7 +9,7 @@ light:
   base-300: "oklch(93.268% .016 262.751)"
   base-content: "oklch(41.886% .053 255.824)"
   primary: "oklch(56.86% .255 257.57)"
-  primary-content: "oklch(91.372% .051 257.57)"
+  primary-content: "oklch(100% 0 0)"
   secondary: "oklch(42.551% .161 282.339)"
   secondary-content: "oklch(88.51% .032 282.339)"
   accent: "oklch(59.939% .191 335.171)"

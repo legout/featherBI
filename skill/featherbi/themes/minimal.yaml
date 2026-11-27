@@ -1,0 +1,31 @@
+# Black and white with one accent (orange). The chart palette is the accent
+# plus greys, each at least 3:1 against both the white and the black surface.
+name: Minimal
+light:
+  base-100: "#ffffff"
+  base-200: "#f5f5f5"
+  base-300: "#e5e5e5"
+  base-content: "#111111"
+  primary: "#111111"
+  primary-content: "#ffffff"
+  secondary: "#525252"
+  secondary-content: "#ffffff"
+  accent: "#e8590c"
+  accent-content: "#111111"
+  neutral: "#111111"
+  neutral-content: "#ffffff"
+dark:
+  base-100: "#111111"
+  base-200: "#0a0a0a"
+  base-300: "#262626"
+  base-content: "#f5f5f5"
+  primary: "#ffffff"
+  primary-content: "#111111"
+  secondary: "#a3a3a3"
+  secondary-content: "#111111"
+  accent: "#ff7a33"
+  accent-content: "#111111"
+  neutral: "#262626"
+  neutral-content: "#f5f5f5"
+palette: ["#e8590c", "#666666", "#8c8c8c", "#b34509"]
+radius: 0.25rem

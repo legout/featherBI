@@ -1,0 +1,23 @@
+title: Acme sales
+name: acme-theme
+theme: ./theme.yaml
+sources:
+  sales:
+    read: "read_parquet('../../fixtures/hand/sales.parquet')"
+dims:
+  region: {col: region}
+  channel: {col: channel}
+date: {col: order_date, default: all}
+tiles:
+  - type: kpi
+    title: Revenue
+    format: currency
+    sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}"
+  - type: echarts
+    preset: bar
+    title: Revenue by region and channel
+    click: region
+    sql: >
+      SELECT region AS x, SUM(revenue) AS y, channel AS series
+      FROM sales WHERE {{filters:sales}}
+      GROUP BY 1, 3 ORDER BY 1, 3

@@ -37,8 +37,9 @@ function build(tree, config, out) {
 
 // Deliberate differences, named by the plan task that makes them:
 //   withoutTiles: titles of tiles cut out of the embedded data text and removed from the page;
-//   exclude: page => locators removed from both pages before the accessibility trees are compared.
-export async function samePage(page, base, config, { withoutTiles = [], exclude = () => [] } = {}) {
+//   exclude: page => locators removed from both pages before the accessibility trees are compared;
+//   colours: [before, after] CSS declarations, each put into the reference CSS in place of its old value (it must be there once).
+export async function samePage(page, base, config, { withoutTiles = [], exclude = () => [], colours = [] } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "featherbi-same-"));
   try {
     const files = { before: path.join(tmp, "before.html"), after: path.join(tmp, "after.html") };
@@ -58,8 +59,13 @@ export async function samePage(page, base, config, { withoutTiles = [], exclude 
       return text;
     };
     const css = html => [...html.matchAll(/<style>(.*?)<\/style>/gs)].map(m => m[1]);
+    let expectedCss = css(before);
+    for (const [was, now] of colours) {
+      expect(expectedCss.join("").split(was).length, `the reference CSS has "${was}" once`).toBe(2);
+      expectedCss = expectedCss.map(text => text.replace(was, now));
+    }
     expect(data(after) === data(before), "the #dashboard data is byte-identical").toBe(true);
-    expect(css(after), "the CSS is byte-identical").toEqual(css(before));
+    expect(css(after), "the CSS is byte-identical").toEqual(expectedCss);
 
     const dropped = [...withoutTiles.map(title => page.getByRole("group", { name: title })), ...exclude(page)];
     const tree = async () => {

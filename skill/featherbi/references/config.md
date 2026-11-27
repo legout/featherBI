@@ -29,6 +29,7 @@ tiles:
 | `sources` | Required. Name → one of `read` (a DuckDB table expression) or `attach` + `table`/`sql`. The name must be a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`) and becomes the table name in tile SQL. Remote sources: `sources.md`. |
 | `dims` | Filterable dimensions: `name: { col, cols? }`. `cols` overrides the column per table (`cols: { targets: region_code }`). A table without the column is not filtered by that dimension. `date` is reserved; do not name a dimension `date`. |
 | `date` | `{ col, cols?, default }`. `default`: `last_12_months` (the 12 months ending at the latest date in the data), `all`, or `{ from: 2025-01-01, to: 2025-03-31 }`. A table without a date column is not date-filtered. |
+| `theme` | Optional. The look: a built-in theme (`default`, `corporate`, `minimal`, `high-contrast`) or a theme file relative to the config file, e.g. `./brand/theme.yaml`. See `themes.md`. |
 | `explore` | `true` (default), `false`, or `{ table: <source> }`. Opens a Perspective viewer on that table (default: the first source) with the filters active at that moment. |
 | `tiles` | Required, at least one. Optional `id` (letters, digits, `_`, `-`) names the tile in error messages. |
 

@@ -16,7 +16,8 @@ const duckdb = (cwd, input) => execFileSync("duckdb", ["-no-agent"], { cwd, inpu
 const SECTIONS = ["Detection signals", "Interview questions", "Figures", "Tile ideas", "Traps"];
 // Waves add their domains to the examples folder, never to this file; BR3 (industry) is the first wave.
 const INDUSTRY = ["sensor-time-series", "end-of-line-test", "spc-quality", "oee-downtime", "energy-smart-meter"];
-const domains = fs.readdirSync(path.join(root, "examples"), { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort();
+// examples/acme-theme is the theme example of spec 0003 (built in tests/theme.test.mjs), not a domain.
+const domains = fs.readdirSync(path.join(root, "examples"), { withFileTypes: true }).filter(d => d.isDirectory() && d.name !== "acme-theme").map(d => d.name).sort();
 
 test("the industry domains each have an example and a playbook with an index row", () => {
   for (const d of INDUSTRY) expect(domains, d).toContain(d);

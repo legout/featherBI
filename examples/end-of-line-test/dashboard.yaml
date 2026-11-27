@@ -1,0 +1,49 @@
+title: End-of-line test
+name: end-of-line-test
+sources:
+  tests:
+    read: "read_parquet('tests.parquet')"
+dims:
+  station: {col: station}
+  fail_code: {col: fail_code}
+date: {col: tested_at, default: all}
+tiles:
+  - type: kpi
+    title: Units tested
+    sql: "SELECT COUNT(*) AS value FROM tests WHERE {{filters:tests}}"
+  - type: kpi
+    title: Failures
+    sql: "SELECT COUNT(*) AS value FROM tests WHERE result = 'FAIL' AND {{filters:tests}}"
+  - type: kpi
+    title: First-pass yield %
+    sql: "SELECT 100.0 * COUNT(*) FILTER (WHERE result = 'PASS') / COUNT(*) AS value FROM tests WHERE {{filters:tests}}"
+  - type: kpi
+    title: Top failure code share %
+    sql: >
+      SELECT 100.0 * MAX(n) / SUM(n) AS value FROM (
+        SELECT COUNT(*) AS n FROM tests WHERE result = 'FAIL' AND {{filters:tests}} GROUP BY fail_code)
+  - type: kpi
+    title: Average measurement mV
+    sql: "SELECT AVG(meas_mv) AS value FROM tests WHERE {{filters:tests}}"
+  - type: echarts
+    preset: pareto
+    title: Failures by code
+    click: fail_code
+    exclude: [fail_code]
+    sql: >
+      SELECT fail_code AS x, COUNT(*) AS y
+      FROM tests WHERE result = 'FAIL' AND {{filters:tests}} GROUP BY 1
+  - type: echarts
+    preset: histogram
+    title: Measurement distribution (mV)
+    sql: >
+      SELECT floor(meas_mv / 50) * 50 AS lo, floor(meas_mv / 50) * 50 + 50 AS hi, COUNT(*) AS count
+      FROM tests WHERE {{filters:tests}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: Failures by station
+    click: station
+    exclude: [station]
+    sql: >
+      SELECT station AS x, COUNT(*) AS y
+      FROM tests WHERE result = 'FAIL' AND {{filters:tests}} GROUP BY 1 ORDER BY 1

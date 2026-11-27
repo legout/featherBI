@@ -1,0 +1,51 @@
+title: OEE and downtime
+name: oee-downtime
+sources:
+  shifts:
+    read: "read_parquet('shifts.parquet')"
+  downtime:
+    read: "read_parquet('downtime.parquet')"
+dims:
+  machine: {col: machine}
+  reason: {col: reason}
+date: {col: shift_date, cols: {downtime: start_at}, default: all}
+tiles:
+  - type: kpi
+    title: Availability %
+    sql: "SELECT 100.0 * SUM(run_min) / SUM(planned_min) AS value FROM shifts WHERE {{filters:shifts}}"
+  - type: kpi
+    title: Performance %
+    sql: "SELECT 100.0 * SUM(produced) / SUM(run_min * ideal_per_min) AS value FROM shifts WHERE {{filters:shifts}}"
+  - type: kpi
+    title: Quality %
+    sql: "SELECT 100.0 * SUM(produced - scrap) / SUM(produced) AS value FROM shifts WHERE {{filters:shifts}}"
+  - type: kpi
+    title: OEE %
+    sql: >
+      SELECT 100.0 * SUM(produced - scrap) / SUM(planned_min * ideal_per_min) AS value
+      FROM shifts WHERE {{filters:shifts}}
+  - type: kpi
+    title: Downtime minutes
+    sql: "SELECT SUM(date_diff('minute', start_at, end_at)) AS value FROM downtime WHERE {{filters:downtime}}"
+  - type: echarts
+    preset: pareto
+    title: Downtime minutes by reason
+    click: reason
+    exclude: [reason]
+    sql: >
+      SELECT reason AS x, SUM(date_diff('minute', start_at, end_at)) AS y
+      FROM downtime WHERE {{filters:downtime}} GROUP BY 1
+  - type: echarts
+    preset: timeline
+    title: Stops by machine
+    sql: >
+      SELECT machine AS name, start_at AS start, end_at AS "end", reason AS state
+      FROM downtime WHERE {{filters:downtime}} ORDER BY start_at, machine
+  - type: echarts
+    preset: bar
+    title: OEE % by machine
+    click: machine
+    exclude: [machine]
+    sql: >
+      SELECT machine AS x, ROUND(100.0 * SUM(produced - scrap) / SUM(planned_min * ideal_per_min), 2) AS y
+      FROM shifts WHERE {{filters:shifts}} GROUP BY 1 ORDER BY 1

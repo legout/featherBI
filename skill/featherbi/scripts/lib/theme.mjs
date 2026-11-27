@@ -13,7 +13,7 @@ const KEYS = ["name", "light", "dark", "palette", "radius", "font", "logo"];
 const SELECTOR = { light: ":root,[data-theme=winter]", dark: ":root:has(input.theme-controller[value=night]:checked),[data-theme=night]" };
 const HEX = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 // oklch() as CSS writes it: three numbers (or `none`), each with an optional % or angle unit, and an optional alpha.
-const NUMBER = String.raw`[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?`;
+const NUMBER = String.raw`[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?`;
 const OKLCH = new RegExp(String.raw`^oklch\(\s*(${NUMBER}%?|none)\s+(${NUMBER}%?|none)\s+(${NUMBER}(?:deg|grad|rad|turn)?|none)\s*(?:/\s*(${NUMBER}%?|none)\s*)?\)$`, "i");
 const TURN = { deg: 360, grad: 400, rad: 2 * Math.PI, turn: 1 };
 // A file is what its bytes say, not what its name says: [type, the test its first bytes must pass].
@@ -39,7 +39,8 @@ function parseColour(colour) {
   const amount = (text, whole) => (text === undefined ? 1 : /none/i.test(text) ? 0 : text.endsWith("%") ? (parseFloat(text) / 100) * whole : parseFloat(text));
   const clamp = v => Math.min(1, Math.max(0, v));
   const [L, C] = [clamp(amount(m[1], 1)), Math.max(0, amount(m[2], 0.4))];
-  const h = (parseFloat(m[3]) || 0) / TURN[/[a-z]+$/i.exec(m[3])?.[0].toLowerCase() ?? "deg"] * 2 * Math.PI;
+  // A missing hue (`none`) is 0.
+  const h = /none/i.test(m[3]) ? 0 : (parseFloat(m[3]) / TURN[/[a-z]+$/i.exec(m[3])?.[0].toLowerCase() ?? "deg"]) * 2 * Math.PI;
   // OKLCH -> OKLab -> linear sRGB (Björn Ottosson's matrices), clipped to the sRGB gamut, then gamma-encoded.
   const [a, b] = [C * Math.cos(h), C * Math.sin(h)];
   const [x, y, z] = [(L + 0.3963377774 * a + 0.2158037573 * b) ** 3, (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, (L - 0.0894841775 * a - 1.291485548 * b) ** 3];
@@ -119,10 +120,11 @@ export function loadTheme(value, configDir) {
   const t = read(value, builtIn ? path.join(BUILT_IN, `${value}.yaml`) : path.resolve(configDir, value));
   const fallback = read("default", path.join(BUILT_IN, "default.yaml"));
   // Contrast of each pair as the page paints it: tokens the file leaves out come from the default theme, and a
-  // translucent colour is composited over what lies under it (base-100 over the browser's canvas, the rest over base-100).
+  // translucent colour is composited over what lies under it: the header and the tiles (base-100) sit on the page
+  // (base-200), the page on the browser's canvas.
   for (const scheme of t.schemes) {
     const token = name => parseColour(t[scheme][name] ?? fallback[scheme][name]);
-    const page = over(token("base-100"), scheme === "dark" ? [0, 0, 0] : [1, 1, 1]);
+    const page = over(token("base-100"), over(token("base-200"), scheme === "dark" ? [0, 0, 0] : [1, 1, 1]));
     for (const [text, surface] of CONTRAST_PAIRS) {
       const under = surface === "base-100" ? page : over(token(surface), page);
       const ratio = contrast(over(token(text), under), under);

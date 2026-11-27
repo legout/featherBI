@@ -16,13 +16,14 @@ Per machine and shift: planned and run minutes, produced and scrap counts, an id
 
 ## Figures
 
-Precondition: one ideal rate for all rows in view (one machine, or machines with the same rate). With mixed rates, availability (weighted by minutes) × performance × quality no longer equals OEE (weighted by ideal parts), e.g. M1 480 planned, 240 run at 2/min, 480 produced and M2 480 planned, 480 run at 1/min, 480 produced: availability 75 %, performance 100 %, but OEE 66.7 %. Then group by ideal rate or by machine and do not multiply.
+Precondition: the product availability × performance × quality equals OEE only within one ideal rate. With mixed rates, group by `ideal_per_min` (the grouped recipe below) and report one OEE per rate. Group by machine only when that machine's rate is constant. Example: M1 480 planned, 240 run at 2/min, 480 produced; M2 480 planned, 480 run at 1/min, 480 produced. Together availability 75 %, performance 100 %, but OEE 66.7 %; per rate, 50 % and 100 %.
 
 ```sql
 SELECT 100.0 * SUM(run_min) / SUM(planned_min) AS availability FROM shifts;
 SELECT 100.0 * SUM(produced) / SUM(run_min * ideal_per_min) AS performance FROM shifts;
 SELECT 100.0 * SUM(produced - scrap) / SUM(produced) AS quality FROM shifts;
 SELECT 100.0 * SUM(produced - scrap) / SUM(planned_min * ideal_per_min) AS oee FROM shifts;
+SELECT ideal_per_min, 100.0 * SUM(produced - scrap) / SUM(planned_min * ideal_per_min) AS oee FROM shifts GROUP BY ideal_per_min ORDER BY 1;
 SELECT reason, SUM(date_diff('minute', start_at, end_at)) AS minutes FROM downtime GROUP BY 1 ORDER BY 2 DESC;
 ```
 
@@ -35,7 +36,7 @@ SELECT reason, SUM(date_diff('minute', start_at, end_at)) AS minutes FROM downti
 
 ## Traps
 
-- Mixed ideal rates: see the precondition under Figures.
+- Mixed ideal rates: group by `ideal_per_min`; by machine only when its rate is constant (see Figures).
 - OEE = availability × performance × quality only when each is a ratio of sums; never average percentages across machines or days.
 - Performance above 100 % means a wrong ideal rate.
 - Stops that cross midnight: filter by start time and say so.

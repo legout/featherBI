@@ -68,3 +68,67 @@ for (const d of domains) {
     }
   });
 }
+
+// Named scenarios from the PR #134 review, each with a hand-worked expectation.
+// One entry per SQL statement of the playbook (statements end in ";" at a line end).
+const recipes = d => [...fs.readFileSync(path.join(refs, "domains", `${d}.md`), "utf8").matchAll(/```sql\n([\s\S]*?)```/g)].flatMap(m => m[1].split(/;\n/)).map(r => r.trim()).filter(Boolean);
+const csv = (cwd, sql) => execFileSync("duckdb", ["-no-agent", "-csv", "-noheader", "-c", sql], { cwd, encoding: "utf8" }).trim().split("\n");
+
+test("sensor: the same hour on two dates stays two rows in the hourly recipe", () => {
+  const recipe = recipes("sensor-time-series").find(r => r.includes("%H:00"));
+  // Hand data: S1 reads 10.0 at 10:05 on 03-01 and 20.0 at 10:05 on 03-02, so the hourly averages are 10 and 20, not one 15.
+  const sql = `CREATE VIEW readings AS SELECT * FROM (VALUES (TIMESTAMP '2025-03-01 10:05', 'S1', 10.0), (TIMESTAMP '2025-03-02 10:05', 'S1', 20.0)) t(ts, sensor, temp_c); ${recipe}`;
+  expect(csv(root, sql)).toEqual(["2025-03-01 10:00,10.0,S1", "2025-03-02 10:00,20.0,S1"]);
+});
+
+test("OEE: mixed ideal rates break the product of the three ratios, and grouping by rate restores it", () => {
+  const dir = path.join(root, "examples/oee-downtime");
+  const [avail, perf, qual, oee, byRate] = recipes("oee-downtime");
+  // Hand data (reviewer): M1 480 planned, 240 run at 2/min, 480 produced; M2 480 planned, 480 run at 1/min, 480 produced; no scrap.
+  const shifts = `CREATE VIEW shifts AS SELECT * FROM (VALUES ('M1', 480, 240, 2, 480, 0), ('M2', 480, 480, 1, 480, 0)) t(machine, planned_min, run_min, ideal_per_min, produced, scrap);`;
+  const [a, p, q, o] = [avail, perf, qual, oee].map(r => Number(csv(dir, `${shifts} ${r}`)[0]));
+  expect([a, p, q]).toEqual([75, 100, 100]);
+  expect(o).toBeCloseTo(66.667, 2); // 960 good / (480*2 + 480*1) ideal
+  expect(o).not.toBeCloseTo((a * p * q) / 10000, 0); // 75 would be wrong
+  expect(csv(dir, `${shifts} ${byRate}`)).toEqual(["1,100.0", "2,50.0"]); // 480/480 and 480/960
+});
+
+test("sensor and SPC charts: a line click filters nothing, the SPC centre series is 10.001 and distinct from the mean", async ({ page }) => {
+  const build = async d => {
+    const dir = path.join(root, "examples", d);
+    duckdb(dir, fs.readFileSync(path.join(dir, "make.sql"), "utf8"));
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), "example-"));
+    const file = path.join(out, `${d}.html`);
+    execFileSync(process.execPath, [cli, "build", "dashboard.yaml", "--out", file], { cwd: dir, stdio: "pipe" });
+    return { out, url: pathToFileURL(file).href };
+  };
+  const sensor = await build("sensor-time-series");
+  const spc = await build("spc-quality");
+  try {
+    await page.goto(sensor.url);
+    const line = page.getByRole("group", { name: "Hourly average by sensor", exact: true });
+    await expect(line.getByRole("img")).toBeVisible();
+    await expect(line).not.toHaveAttribute("aria-busy", "true");
+    // Click the middle of S1 at hour 12 (a real data point); no dimension may be set.
+    const at = await line.getByRole("img").evaluate(async node => {
+      const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
+      const echarts = await import(charts.url);
+      const box = node.getBoundingClientRect();
+      const [x, y] = echarts.getInstanceByDom(node).convertToPixel({ seriesIndex: 0 }, ["2025-03-01 12:00", 20.3]);
+      return { x: box.x + x, y: box.y + y };
+    });
+    await line.scrollIntoViewIfNeeded();
+    await page.mouse.click(at.x, at.y);
+    await expect(page.getByLabel("Active filters")).toBeEmpty();
+    await expect(page.getByRole("group", { name: "Readings", exact: true }).getByText("5,760", { exact: true })).toBeVisible();
+
+    // SPC: centre = mean of the subgroup means = 10 + 0.1 / 100 = 10.001 (the shift only moves one of 100 subgroups); subgroup 1's mean is 10 - 0.004 = 9.996.
+    await page.goto(spc.url);
+    const xbar = page.getByRole("group", { name: "X-bar chart", exact: true }).getByRole("img");
+    await expect(xbar).toHaveAttribute("aria-label", /representing centre\..*for 2 is 1, 10\.001/s);
+    await expect(xbar).toHaveAttribute("aria-label", /representing mean\..*for 2 is 1, 9\.996/s);
+  } finally {
+    fs.rmSync(sensor.out, { recursive: true, force: true });
+    fs.rmSync(spc.out, { recursive: true, force: true });
+  }
+});

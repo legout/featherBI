@@ -169,7 +169,8 @@ function chartTheme() {
   const gap = { borderColor: surface, borderWidth: 2 };
   const onFill = { color: surface }; // labels that sit on a series colour
   return {
-    color: ["primary", "accent", "success", "warning", "secondary", "error", "info"].map(tone),
+    // A theme's `palette` replaces the derived series colours in both schemes.
+    color: config.palette ?? ["primary", "accent", "success", "warning", "secondary", "error", "info"].map(tone),
     backgroundColor: "transparent",
     textStyle: { color: text, fontFamily: getComputedStyle(document.body).fontFamily },
     grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },

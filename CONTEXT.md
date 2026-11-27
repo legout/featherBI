@@ -14,4 +14,6 @@
 | **Cross-filter** | A filter set by clicking an element of a tile. It applies to all tiles, except where a tile `exclude`s that dimension. |
 | **Engine adapter** | The small layer that hides which browser DuckDB build runs (Haybarn-Wasm by default, upstream duckdb-wasm as an alternative). |
 | **Remote snapshot** | Snapshot tables uploaded to an S3-compatible bucket by `build --remote` and reached from the HTML through presigned GET URLs that expire (spec 0002). |
+| **Theme** | The look of a dashboard: a built-in name or a theme file, selected with `theme:` in the dashboard config and embedded in the HTML (spec 0003). |
+| **Theme file** | The author's YAML with colours for light and dark, chart palette, corner radius, font and logo. Built-in themes are theme files in the skill. |
 | **Explore** | The on-demand Perspective panel for free pivoting. It is not a tile and is not re-rendered by filters. |

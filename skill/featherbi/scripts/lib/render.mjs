@@ -19,9 +19,15 @@ export async function render(config, snapshots, filters, mode = "default", { rem
   const inlined = url => ({ url, integrity: "" });
   // Explore: on unless `explore: false`; the table defaults to the first source.
   const explore = config.explore === false ? null : { table: config.explore?.table ?? Object.keys(config.sources)[0], perspective: psp, charts: read("assets/perspective-charts.patched.js") };
+  const theme = config.loadedTheme; // checked and loaded with the config (config.mjs); null without `theme`
   const parts = {
     title: escapeHtml(config.title),
     css: read("assets/app.css"),
+    // After the app CSS, so the theme's tokens override the prebuilt ones.
+    theme: theme ? `\n<style>${theme.css}</style>` : "",
+    logo: theme?.logo ? `<img class="fb-logo" src="${theme.logo}" alt="">` : "",
+    // A theme with one scheme shows that scheme whatever the viewer's system prefers (its CSS hides the toggle).
+    dark: theme?.schemes.length === 1 ? String(theme.schemes[0] === "dark") : 'matchMedia("(prefers-color-scheme: dark)").matches',
     // Offline: the page still names the CDN URLs and the import map points them at the inlined copies, which the build
     // verified, so there is no integrity left to check.
     importmap: json({
@@ -39,6 +45,7 @@ export async function render(config, snapshots, filters, mode = "default", { rem
       presets: Object.fromEntries(config.tiles.filter(t => t.type === "echarts").map(t => [t.preset, JSON.parse(read(`assets/presets/${t.preset}.json`))])),
       tiles: config.tiles,
       filters,
+      palette: theme?.palette,
       explore: explore && { ...explore, perspective: off?.css ? { ...psp, css: inlined(off.css) } : psp, assets: off?.psp },
       // A remote page gets { tables: { <table>: { url, bytes } }, expiresAt } instead of the Parquet bytes (spec 0002).
       ...(remote ? { remote } : {

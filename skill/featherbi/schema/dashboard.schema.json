@@ -6,6 +6,7 @@
     "title": { "type": "string", "minLength": 1 },
     "name": { "type": "string" },
     "engine": { "enum": ["haybarn", "duckdb-wasm"] },
+    "theme": { "type": "string", "minLength": 1 },
     "sources": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "object" } },
     "dims": {
       "type": "object",

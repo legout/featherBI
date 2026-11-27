@@ -53,7 +53,9 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
       const statement = await conn.prepare(sql);
       try {
         const result = await statement.query(...params);
-        return result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type)])));
+        const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type)])));
+        rows.dates = result.schema.fields.filter(f => String(f.type).startsWith("Date")).map(f => f.name); // DATE columns, for `@days`
+        return rows;
       } finally {
         await statement.close();
       }
@@ -178,6 +180,7 @@ function chartTheme() {
     visualMap: { inRange: { color: [blend("primary", 15, "base-100"), tone("primary")] }, textStyle: { color: muted } },
     calendar: { itemStyle: { color: "transparent", borderColor: line }, splitLine: { lineStyle: { color: muted } }, dayLabel: { color: muted }, monthLabel: { color: muted }, yearLabel: { color: muted } },
     candlestick: { itemStyle: { color: tone("success"), borderColor: tone("success"), color0: tone("error"), borderColor0: tone("error") } },
+    custom: { itemStyle: gap },
     boxplot: { itemStyle: { color: blend("primary", 20, "base-100"), borderColor: tone("primary") } },
     gauge: { axisLine: { lineStyle: { color: [[1, line]] } }, axisLabel: { color: muted }, detail: { color: text }, title: { color: muted } },
     heatmap: { itemStyle: gap },
@@ -206,6 +209,37 @@ const BIND = {
       return { ...r, start, end, low: Math.min(start, end), high: Math.max(start, end) };
     });
   },
+  // pareto: rows sorted by `y`, largest first, each with `share`, the running total in % of the grand total
+  pareto: rows => {
+    const total = rows.reduce((sum, r) => sum + r.y, 0);
+    let sum = 0;
+    return [...rows].sort((a, b) => b.y - a.y).map(r => ({ ...r, share: (100 * (sum += r.y)) / total }));
+  },
+  // candlestick: DATE values as "2025-01-05", so they are categories (a number would be read as a category index) and match the options of a click dimension
+  days: rows => rows.map(r => ({ ...r, ...Object.fromEntries((rows.dates ?? []).filter(c => r[c] != null).map(c => [c, new Date(r[c]).toISOString().slice(0, 10)])) })),
+  // histogram: one rectangle per row, from `lo` to `hi` on the value axis and `count` high; the series of one bin share its width side by side.
+  // Whole pixels and no outline, so neighbours meet without a seam.
+  bins: rows => (params, api) => {
+    const names = BIND.uniq(rows, "series");
+    const inBin = rows.filter(r => r.lo === api.value("lo")).map(r => names.indexOf(r.series));
+    const [left, y] = api.coord([api.value("lo"), api.value("count")]);
+    const [right, bottom] = api.coord([api.value("hi"), 0]);
+    const edge = i => Math.round(left + ((right - left) * i) / inBin.length);
+    const slot = inBin.filter(i => i < params.seriesIndex).length;
+    return { type: "rect", shape: { x: edge(slot), y, width: edge(slot + 1) - edge(slot), height: bottom - y }, style: { fill: api.visual("color") } };
+  },
+  // timeline: one bar per row, from `start` to `end` on the time axis, in the band of its `name`
+  spans: () => (_, api) => {
+    const [x, y] = api.coord([api.value("start"), api.value("name")]);
+    const height = Math.min(api.size([0, 1])[1] * 0.6, 32);
+    return { type: "rect", shape: { x, y: y - height / 2, width: api.coord([api.value("end"), api.value("name")])[0] - x, height }, style: api.style() };
+  },
+  // Tooltips of the two as text nodes, so data is never read as HTML: "150 – 200: 3" (or "Online · 150 – 200: 3") and "M1 · run: 2025-01-06 08:00 – 2025-01-06 12:00" (UTC, like the axis).
+  bin: () => p => el("span", "", `${p.data.series == null ? "" : `${p.data.series} · `}${FORMATS.number.format(p.data.lo)} – ${FORMATS.number.format(p.data.hi)}: ${FORMATS.number.format(p.data.count)}`),
+  span: () => p => {
+    const time = v => new Date(v).toISOString().slice(0, 16).replace("T", " ");
+    return el("span", "", `${[p.data.name, p.data.state].filter(v => v != null).join(" · ")}: ${time(p.data.start)} – ${time(p.data.end)}`);
+  },
 };
 const bind = (node, rows) => {
   if (typeof node === "string" && node[0] === "@") return BIND[node.slice(1).split(":")[0]](rows, node.split(":")[1]);
@@ -215,22 +249,25 @@ const bind = (node, rows) => {
 };
 // A tile `option` restyles the preset: objects merge key by key, arrays item by item. Keys that bind data are ignored, so data comes from the preset only.
 // DATA_KEYS comes from filters.mjs, inlined just above.
-const restyle = (base, over) => {
+const restyle = (base, over, skip = DATA_KEYS) => {
   if (!over || typeof over !== "object" || !base || typeof base !== "object") return over === undefined ? base : over;
   const out = Array.isArray(base) ? [...base] : { ...base };
-  for (const [k, v] of Object.entries(over)) if (!DATA_KEYS.includes(k)) out[k] = restyle(base[k], v);
+  for (const [k, v] of Object.entries(over)) if (!skip.includes(k)) out[k] = restyle(base[k], v, skip);
   return out;
 };
 
 // The ECharts option of a chart tile: the preset with its data bound, restyled by the tile's `option`.
 function chartOption(tile, preset, rows) {
   const format = FORMATS[tile.format] ?? FORMATS.number;
-  const option = restyle({ aria: { enabled: true }, animation: !matchMedia("(prefers-reduced-motion: reduce)").matches, ...bind(preset.option, rows) }, tile.option);
+  // A preset's `with.<column>` part joins its option only when the rows have that optional column (candlestick volume).
+  const template = Object.entries(preset.with ?? {}).reduce((o, [column, part]) => (rows[0][column] === undefined ? o : restyle(o, part, [])), preset.option);
+  const option = restyle({ aria: { enabled: true }, animation: !matchMedia("(prefers-reduced-motion: reduce)").matches, ...bind(template, rows) }, tile.option);
   if (option.tooltip) option.tooltip = { confine: true, valueFormatter: v => (typeof v === "number" ? format.format(v) : v), ...option.tooltip };
-  // A `series` column splits the preset's one series into one per value, each over its own rows.
-  if (rows[0].series !== undefined && [...preset.columns, ...preset.optional].includes("series")) {
-    const names = BIND.uniq(rows, "series");
-    option.dataset = names.map(name => ({ ...option.dataset, source: rows.filter(r => r.series === name) }));
+  // A `series` column (timeline: `state`) splits the preset's one series into one per value, each over its own rows.
+  const by = preset.split ?? "series";
+  if (rows[0][by] !== undefined && [...preset.columns, ...preset.optional].includes(by)) {
+    const names = BIND.uniq(rows, by);
+    option.dataset = names.map(name => ({ ...option.dataset, source: rows.filter(r => r[by] === name) }));
     option.series = names.map((name, datasetIndex) => ({ ...option.series[0], name: String(name), datasetIndex }));
   }
   for (const series of option.series) series.cursor = tile.click && preset.click.length ? "pointer" : "default";

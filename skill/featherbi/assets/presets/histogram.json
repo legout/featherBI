@@ -1,0 +1,45 @@
+{
+  "columns": [
+    "lo",
+    "hi",
+    "count"
+  ],
+  "optional": [
+    "series"
+  ],
+  "click": [],
+  "option": {
+    "tooltip": {
+      "trigger": "item",
+      "formatter": "@bin"
+    },
+    "legend": {},
+    "grid": {},
+    "xAxis": {
+      "type": "value",
+      "min": "@min:lo",
+      "max": "@max:hi"
+    },
+    "yAxis": {
+      "type": "value",
+      "min": 0
+    },
+    "dataset": {
+      "source": "@rows"
+    },
+    "series": [
+      {
+        "type": "custom",
+        "renderItem": "@bins",
+        "clip": true,
+        "encode": {
+          "x": [
+            "lo",
+            "hi"
+          ],
+          "y": "count"
+        }
+      }
+    ]
+  }
+}

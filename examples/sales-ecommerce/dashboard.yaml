@@ -10,7 +10,9 @@ date: {col: order_date, default: all}
 tiles:
   - type: kpi
     title: Orders
-    sql: "SELECT COUNT(DISTINCT order_id) AS value FROM orders WHERE {{filters:orders}}"
+    sql: >
+      SELECT COUNT(DISTINCT order_id) AS value
+      FROM orders WHERE {{filters:orders}}
   - type: kpi
     title: Revenue
     sql: "SELECT SUM(revenue) AS value FROM orders WHERE {{filters:orders}}"

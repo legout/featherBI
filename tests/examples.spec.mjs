@@ -105,20 +105,28 @@ test("sensor and SPC charts: a line click filters nothing, the SPC centre series
   const sensor = await build("sensor-time-series");
   const spc = await build("spc-quality");
   try {
+    await page.emulateMedia({ reducedMotion: "reduce" }); // the renderer then skips the draw-in animation, which would move the point while we click
     await page.goto(sensor.url);
     const line = page.getByRole("group", { name: "Hourly average by sensor", exact: true });
     await expect(line.getByRole("img")).toBeVisible();
     await expect(line).not.toHaveAttribute("aria-busy", "true");
-    // Click the middle of S1 at hour 12 (a real data point); no dimension may be set.
+    await expect.poll(() => line.evaluate(n => [...n.querySelectorAll("canvas")].some(c => c.getContext("2d").getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v)))).toBe(true);
+    // Click S1's point at 2025-03-01 12:00, whose hourly mean is 20 + 2.95 = 22.95 (offset 0; minutes 0..59 add 0.0..5.9); no dimension may be set.
+    await line.scrollIntoViewIfNeeded(); // the mouse clicks at viewport coordinates, so scroll before measuring
     const at = await line.getByRole("img").evaluate(async node => {
       const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
       const echarts = await import(charts.url);
       const box = node.getBoundingClientRect();
-      const [x, y] = echarts.getInstanceByDom(node).convertToPixel({ seriesIndex: 0 }, ["2025-03-01 12:00", 20.3]);
+      const [x, y] = echarts.getInstanceByDom(node).convertToPixel({ seriesIndex: 0 }, ["2025-03-01 12:00", 22.95]);
       return { x: box.x + x, y: box.y + y };
     });
-    await line.scrollIntoViewIfNeeded();
+    // Register a probe after the page's own click handler, so its flag proves that handler has run before we assert.
+    await line.getByRole("img").evaluate(async node => {
+      const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
+      (await import(charts.url)).getInstanceByDom(node).on("click", () => (window.__clicked = true));
+    });
     await page.mouse.click(at.x, at.y);
+    await page.waitForFunction(() => window.__clicked === true);
     await expect(page.getByLabel("Active filters")).toBeEmpty();
     await expect(page.getByRole("group", { name: "Readings", exact: true }).getByText("5,760", { exact: true })).toBeVisible();
 

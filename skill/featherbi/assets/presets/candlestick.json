@@ -24,8 +24,7 @@
     ],
     "xAxis": [
       {
-        "type": "category",
-        "data": "@uniq:x"
+        "type": "category"
       }
     ],
     "yAxis": [
@@ -35,7 +34,7 @@
       }
     ],
     "dataset": {
-      "source": "@rows"
+      "source": "@days"
     },
     "series": [
       {
@@ -89,8 +88,7 @@
         },
         {
           "type": "category",
-          "gridIndex": 1,
-          "data": "@uniq:x"
+          "gridIndex": 1
         }
       ],
       "yAxis": [

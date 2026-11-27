@@ -158,14 +158,17 @@ test("histogram bars share their edges on a value axis and are as high as their 
   expect(await colour(page, title, [275, 2.3]), "above the 250..300 bar").not.toBe(fill);
   expect(await colour(page, title, [275, 1.7])).toBe(fill);
 
-  // By channel (README): only 200..250 holds both, Online 3 and Retail 1. Both counts show, though Online is drawn last.
+  // By channel (README): Online alone in 100..150 and Retail alone in 150..200 fill their bin; 200..250 holds both,
+  // side by side in series order: Online (3) from 200 to 225, Retail (1) from 225 to 250.
   const split = "Order value distribution by channel";
-  await expect.poll(async () => (await at(page, split, [225, 2.7])).rgba[3], "the Online 200..250 bar reaches 3").toBe(255);
+  await expect.poll(async () => (await at(page, split, [212, 2.7])).rgba[3], "the Online 200..250 bar reaches 3").toBe(255);
   const [online, retail] = [await colour(page, split, [125, 0.5]), await colour(page, split, [175, 0.5])];
   expect(online).not.toBe(retail);
-  expect(await colour(page, split, [225, 0.5]), "Retail, 1 high").toBe(retail);
-  expect(await colour(page, split, [225, 2]), "Online, 3 high").toBe(online);
-  expect([online, retail]).not.toContain(await colour(page, split, [225, 3.3]));
+  for (const x of [102, 148]) expect(await colour(page, split, [x, 2.7]), `Online alone at ${x}`).toBe(online);
+  expect(await colour(page, split, [212, 2.7]), "Online, 3 high").toBe(online);
+  expect(await colour(page, split, [237, 0.5]), "Retail, 1 high").toBe(retail);
+  expect([online, retail], "above Retail's 1").not.toContain(await colour(page, split, [237, 2]));
+  expect([online, retail], "above Online's 3").not.toContain(await colour(page, split, [212, 3.3]));
   expect(errors).toEqual([]);
 });
 

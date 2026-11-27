@@ -181,7 +181,7 @@ tiles:
       SELECT floor(revenue / 50) * 50 AS lo,
         floor(revenue / 50) * 50 + 50 AS hi, COUNT(*) AS count
       FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
-  # Online is the later series and the higher bar of the shared 200..250 bin.
+  # Online and Retail share only the 200..250 bin.
   - type: echarts
     preset: histogram
     title: Order value distribution by channel
@@ -189,7 +189,7 @@ tiles:
       SELECT floor(revenue / 50) * 50 AS lo,
         floor(revenue / 50) * 50 + 50 AS hi, COUNT(*) AS count,
         channel AS series
-      FROM sales WHERE {{filters:sales}} GROUP BY 1, 4 ORDER BY 4 DESC, 1
+      FROM sales WHERE {{filters:sales}} GROUP BY 1, 4 ORDER BY 4, 1
   # Candlestick and timeline have their own hand rows (README.md), inline.
   # `x` is a DATE, on three of the sales days, so a click sets `day`.
   - type: echarts

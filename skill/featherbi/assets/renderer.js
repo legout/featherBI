@@ -53,7 +53,9 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
       const statement = await conn.prepare(sql);
       try {
         const result = await statement.query(...params);
-        return result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type)])));
+        const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type)])));
+        rows.dates = result.schema.fields.filter(f => String(f.type).startsWith("Date")).map(f => f.name); // DATE columns, for `@days`
+        return rows;
       } finally {
         await statement.close();
       }
@@ -213,11 +215,18 @@ const BIND = {
     let sum = 0;
     return [...rows].sort((a, b) => b.y - a.y).map(r => ({ ...r, share: (100 * (sum += r.y)) / total }));
   },
-  // histogram: one rectangle per row, from `lo` to `hi` on the value axis and `count` high
-  bins: () => (_, api) => {
-    const [x, y] = api.coord([api.value("lo"), api.value("count")]);
+  // candlestick: DATE values as "2025-01-05", so they are categories (a number would be read as a category index) and match the options of a click dimension
+  days: rows => rows.map(r => ({ ...r, ...Object.fromEntries((rows.dates ?? []).filter(c => r[c] != null).map(c => [c, new Date(r[c]).toISOString().slice(0, 10)])) })),
+  // histogram: one rectangle per row, from `lo` to `hi` on the value axis and `count` high; the series of one bin share its width side by side.
+  // Whole pixels and no outline, so neighbours meet without a seam.
+  bins: rows => (params, api) => {
+    const names = BIND.uniq(rows, "series");
+    const inBin = rows.filter(r => r.lo === api.value("lo")).map(r => names.indexOf(r.series));
+    const [left, y] = api.coord([api.value("lo"), api.value("count")]);
     const [right, bottom] = api.coord([api.value("hi"), 0]);
-    return { type: "rect", shape: { x, y, width: right - x, height: bottom - y }, style: api.style() };
+    const edge = i => Math.round(left + ((right - left) * i) / inBin.length);
+    const slot = inBin.filter(i => i < params.seriesIndex).length;
+    return { type: "rect", shape: { x: edge(slot), y, width: edge(slot + 1) - edge(slot), height: bottom - y }, style: { fill: api.visual("color") } };
   },
   // timeline: one bar per row, from `start` to `end` on the time axis, in the band of its `name`
   spans: () => (_, api) => {
@@ -225,8 +234,8 @@ const BIND = {
     const height = Math.min(api.size([0, 1])[1] * 0.6, 32);
     return { type: "rect", shape: { x, y: y - height / 2, width: api.coord([api.value("end"), api.value("name")])[0] - x, height }, style: api.style() };
   },
-  // Tooltips of the two as text nodes, so data is never read as HTML: "150 – 200: 3" and "M1 · run: 2025-01-06 08:00 – 2025-01-06 12:00" (UTC, like the axis).
-  bin: () => p => el("span", "", `${FORMATS.number.format(p.data.lo)} – ${FORMATS.number.format(p.data.hi)}: ${FORMATS.number.format(p.data.count)}`),
+  // Tooltips of the two as text nodes, so data is never read as HTML: "150 – 200: 3" (or "Online · 150 – 200: 3") and "M1 · run: 2025-01-06 08:00 – 2025-01-06 12:00" (UTC, like the axis).
+  bin: () => p => el("span", "", `${p.data.series == null ? "" : `${p.data.series} · `}${FORMATS.number.format(p.data.lo)} – ${FORMATS.number.format(p.data.hi)}: ${FORMATS.number.format(p.data.count)}`),
   span: () => p => {
     const time = v => new Date(v).toISOString().slice(0, 16).replace("T", " ");
     return el("span", "", `${[p.data.name, p.data.state].filter(v => v != null).join(" · ")}: ${time(p.data.start)} – ${time(p.data.end)}`);

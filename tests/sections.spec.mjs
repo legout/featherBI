@@ -12,13 +12,15 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 // The fixture with the given layout, built next to a copy of the hand fixture's sales rows. -> the page's URL
 function built(tmp, layout) {
   const dir = path.join(tmp, layout);
+  const url = pathToFileURL(path.join(dir, "dist/hand-sections.html")).href;
+  if (fs.existsSync(dir)) return url; // built by an earlier test of this run
   fs.mkdirSync(dir);
   fs.copyFileSync(root + "fixtures/hand/sales.parquet", path.join(dir, "sales.parquet"));
   const yaml = fs.readFileSync(root + "fixtures/hand/sections.yaml", "utf8");
   expect(yaml).toContain("\nlayout: tabs\n");
   fs.writeFileSync(path.join(dir, "dashboard.yaml"), yaml.replace("\nlayout: tabs\n", `\nlayout: ${layout}\n`));
   execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: dir, stdio: "pipe" });
-  return pathToFileURL(path.join(dir, "dist/hand-sections.html")).href;
+  return url;
 }
 let tmp;
 test.beforeAll(() => void (tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sections-"))));

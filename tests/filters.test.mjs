@@ -108,7 +108,7 @@ test("hash: an invalid or out-of-range tab is ignored and the valid parts still 
   for (const tab of ["0", "9", "3", "x", "-1", "1.5", "2x", "2e0", "", " 2", "9".repeat(400)]) {
     assert.deepEqual(parseHash(`#region=EU&tab=${encodeURIComponent(tab)}`, tabbed), state({ region: "EU" }), `tab=${tab.slice(0, 5)}`);
   }
-  assert.deepEqual(parseHash("#tab=2&tab=9", tabbed), { ...state(), tab: 2 });
+  assert.deepEqual(parseHash("#tab=2&tab=9", tabbed), { ...state(), tab: 2 }); // the invalid one is ignored, not the valid one
   assert.deepEqual(parseHash("#region=EU&tab=2", model), state({ region: "EU" })); // no tabs on the page: nothing to open
 });
 

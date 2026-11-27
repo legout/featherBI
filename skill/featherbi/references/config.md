@@ -27,14 +27,16 @@ tiles:
 | `name` | Output file name; letters and digits, kebab-cased. Defaults to `title`. |
 | `engine` | `haybarn` (default) or `duckdb-wasm` (upstream). `--offline` needs `haybarn`. |
 | `sources` | Required. Name → one of `read` (a DuckDB table expression) or `attach` + `table`/`sql`. The name must be a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`) and becomes the table name in tile SQL. Remote sources: `sources.md`. |
-| `dims` | Filterable dimensions: `name: { col, cols? }`. `cols` overrides the column per table (`cols: { targets: region_code }`). A table without the column is not filtered by that dimension. `date` is reserved; do not name a dimension `date`. |
+| `dims` | Filterable dimensions: `name: { col, cols? }`. `cols` overrides the column per table (`cols: { targets: region_code }`). A table without the column is not filtered by that dimension. `date` and `tab` are reserved (the URL hash uses them); do not name a dimension `date` or `tab`. |
 | `date` | `{ col, cols?, default }`. `default`: `last_12_months` (the 12 months ending at the latest date in the data), `all`, or `{ from: 2025-01-01, to: 2025-03-31 }`. A table without a date column is not date-filtered. With `date` the header shows a line under the title: `Data as of <last date> · Period <first date> – <last date>`, the first and last date of all dated tables in the snapshot (an open-ended `infinity` date is left out), fixed at build time and written in `locale`. |
 | `theme` | Optional. The look: a built-in theme (`default`, `corporate`, `minimal`, `high-contrast`) or a theme file relative to the config file, e.g. `./brand/theme.yaml`. See `themes.md`. |
 | `locale` | Optional. A BCP 47 tag such as `de-DE`: every number and date the page formats uses it (KPI values and Δ %, chart tooltips and value-axis labels, pivot cells, table cells, the table date column, the header line). Default `en-US`. The build rejects a tag its `Intl` does not support. It changes formats only, not the page's own labels. |
 | `subtitle` | Optional. One line of plain text under the title, at most 200 characters. |
 | `source_label` | Optional. Plain text, at most 200 characters, shown in the header line as `Source <label>`. Without it the page names no source; source SQL, paths, hosts and bucket names never reach the page. |
 | `explore` | `true` (default), `false`, or `{ table: <source> }`. Opens a Perspective viewer on that table (default: the first source) with the filters active at that moment. |
-| `tiles` | Required, at least one. Optional `id` (letters, digits, `_`, `-`) names the tile in error messages. |
+| `tiles` | The tiles, at least one; a config has either `tiles` or `sections`. Optional `id` (letters, digits, `_`, `-`) names the tile in error messages. |
+| `sections` | In place of `tiles`: a list of `{ title, tiles }`. `title` is required and unique; every section has at least one tile; tile ids are unique across all sections. Filters, chips, Reset, clicks and the URL hash work across all sections. Errors name the section and the tile: `section "<title>", tile "<id or number>": …`. |
+| `layout` | Only with `sections`. `stack` (default): each section is a titled group in config order, its KPIs in their own row at its top. `tabs`: one tab per section, the first open on load. Tiles in a closed tab do not query; opening a tab queries them for the current filters. The open tab is in the URL hash as `tab=<n>` (1-based) when it is not the first. |
 
 ## Filters in tile SQL
 

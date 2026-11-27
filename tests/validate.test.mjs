@@ -81,7 +81,7 @@ const cases = [
   ["a tile id used in two sections", sections({ title: "A", tiles: [kpiTile("rev")] }, { title: "B", tiles: [kpiTile("rev")] }), [], /section "B", tile "rev".*id.*more than one/is],
   ["a dimension named tab", c => (c.dims.tab = { col: "channel" }), [], /dims.*`tab`.*reserved/is],
   ["a tile error in a section", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "Detail", tiles: [kpiTile("t1", { type: "echarts", preset: "spiral" })] }), [], /section "Detail", tile "t1".*preset.*spiral/is],
-  ["a SQL error in a section tile without an id", sections({ title: "Detail", tiles: [kpiTile("a"), { type: "kpi", sql: "SELECT SUM(nope) AS value FROM sales" }] }), [], /section "Detail", tile "tile 2".*nope/is],
+  ["a SQL error in a section tile without an id", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "Detail", tiles: [kpiTile("b"), { type: "kpi", sql: "SELECT SUM(nope) AS value FROM sales" }] }), [], /section "Detail", tile "tile 2".*nope/is], // numbered within its section
   ["a schema error in a section tile", sections({ title: "Detail", tiles: [kpiTile("t1", { format: { style: "money" } })] }), [], /section "Detail", tile "t1".*format.*style/is],
   ["--offline with --split", () => {}, ["--offline", "--split"], /--offline.*--split|--split.*--offline/is],
   ["--offline with engine duckdb-wasm", c => (c.engine = "duckdb-wasm"), ["--offline"], /--offline.*duckdb-wasm/is],

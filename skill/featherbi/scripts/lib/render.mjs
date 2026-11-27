@@ -4,6 +4,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { offlineAssets } from "./assets.mjs";
+import { tilesOf } from "./config.mjs";
 
 const read = file => fs.readFileSync(new URL(`../../${file}`, import.meta.url), "utf8");
 const escapeHtml = s => s.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
@@ -19,6 +20,7 @@ export async function render(config, snapshots, filters, mode = "default", { rem
   const inlined = url => ({ url, integrity: "" });
   // Explore: on unless `explore: false`; the table defaults to the first source.
   const explore = config.explore === false ? null : { table: config.explore?.table ?? Object.keys(config.sources)[0], perspective: psp, charts: read("assets/perspective-charts.patched.js") };
+  const tiles = tilesOf(config);
   const theme = config.loadedTheme; // checked and loaded with the config (config.mjs); null without `theme`
   // Header line (spec 0005 §4): the snapshot's first and last date and the author's label, as attributes the renderer
   // writes out in the page's `locale`; `subtitle` is its own line before it. Nothing of a source's SQL or path is in either.
@@ -51,8 +53,11 @@ export async function render(config, snapshots, filters, mode = "default", { rem
       charts: lock.echarts,
       grid: off?.grid ? inlined(off.grid) : lock["ag-grid"],
       // Only the presets this dashboard uses.
-      presets: Object.fromEntries(config.tiles.filter(t => t.type === "echarts").map(t => [t.preset, JSON.parse(read(`assets/presets/${t.preset}.json`))])),
-      tiles: config.tiles,
+      presets: Object.fromEntries(tiles.filter(t => t.type === "echarts").map(t => [t.preset, JSON.parse(read(`assets/presets/${t.preset}.json`))])),
+      tiles,
+      // Sections (spec 0005 §5) are a title and a number of tiles each, over the one list of tiles; absent without `sections`.
+      sections: config.sections?.map(section => ({ title: section.title, tiles: section.tiles.length })),
+      layout: config.sections && (config.layout ?? "stack"),
       filters,
       palette: theme?.palette,
       locale: config.locale, // absent without `locale`: the page then formats as en-US

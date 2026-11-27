@@ -17,6 +17,8 @@
 | **Theme** | The look of a dashboard: a built-in name or a theme file, selected with `theme:` in the dashboard config and embedded in the HTML (spec 0003). |
 | **Theme file** | The author's YAML with colours for light and dark, chart palette, corner radius, font and logo. Built-in themes are theme files in the skill. |
 | **Header line** | The line under the page title: `Data as of <last date> · Period <first date> – <last date>`, plus `· Source <label>` when the config sets `source_label`. The dates are the snapshot's, fixed at build time (spec 0005 §4). |
+| **Section** | A titled group of tiles in the dashboard config (`sections`, in place of `tiles`). Filters apply across all sections (spec 0005 §5). |
+| **Layout** | How sections are shown: `stack` (all, one under the other, the default) or `tabs` (one tab per section; a closed tab does not query). |
 | **Explore** | The on-demand Perspective panel for free pivoting. It is not a tile and is not re-rendered by filters. |
 | **Brainstorming mode** | The skill flow for "make me a dashboard from this data": profile, domain guess, one interview round, three proposals, build the picked one (spec 0004). Skipped when the request is specific. |
 | **Domain playbook** | A per-domain reference in the skill (`references/domains/<domain>.md`) with detection signals, interview questions, figures, tile ideas and traps, read in brainstorming mode. |

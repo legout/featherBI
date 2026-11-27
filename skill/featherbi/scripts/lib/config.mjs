@@ -8,6 +8,9 @@ import { parse } from "./vendor/yaml/index.js";
 const ENGINES = ["haybarn", "duckdb-wasm"];
 const kebab = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
+// Every tile of a checked config, in page order: `tiles`, or the tiles of all `sections` (spec 0005 §5).
+export const tilesOf = config => config.tiles ?? config.sections.flatMap(section => section.tiles);
+
 export function loadConfig(file) {
   const c = parse(fs.readFileSync(file, "utf8"));
   const need = (ok, message) => {
@@ -33,9 +36,8 @@ export function loadConfig(file) {
     need(!attach || typeof spec.table === "string" !== (typeof spec.sql === "string"), `source "${source}": \`attach\` needs \`table\` or \`sql\``);
   }
 
-  need(Array.isArray(c.tiles) && c.tiles.length, "`tiles` needs at least one tile");
   need(c.theme === undefined || (typeof c.theme === "string" && c.theme), "`theme` must be a built-in theme name or the path of a theme file");
-  const config = { title: c.title, name, engine, theme: c.theme, locale: c.locale, subtitle: c.subtitle, source_label: c.source_label, sources: c.sources, dims: c.dims, date: c.date, explore: c.explore, tiles: c.tiles };
+  const config = { title: c.title, name, engine, theme: c.theme, locale: c.locale, subtitle: c.subtitle, source_label: c.source_label, sources: c.sources, dims: c.dims, date: c.date, explore: c.explore, tiles: c.tiles, layout: c.layout, sections: c.sections };
   // The theme is checked here, before any source is read. Not enumerable: the schema check sees `theme` as the author wrote it.
   return Object.defineProperty(config, "loadedTheme", { value: loadTheme(c.theme, path.dirname(path.resolve(file))) });
 }

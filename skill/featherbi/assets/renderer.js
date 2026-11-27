@@ -8,6 +8,11 @@ const el = (tag, className, text) => {
   return node;
 };
 
+// Where a KPI and a card are mounted: the template's two grids, or the grids of the section being mounted (spec 0005 §5).
+const slots = { kpis: document.getElementById("kpis"), tiles: document.getElementById("tiles") };
+// A card title's heading level: under its section's title when the sections are stacked.
+const LEVEL = config.layout === "stack" ? 3 : 2;
+
 // Engine adapter: the only code that knows which browser DuckDB build runs.
 // Haybarn-Wasm and upstream duckdb-wasm share one API; the bundle (module, worker, wasm)
 // is assembled by hand from vendor.lock.json because Haybarn has no bundle selector.
@@ -144,7 +149,7 @@ function mountKpi(tile, index) {
   if (tile.note) box.append(el("div", "text-xs text-base-content/80", tile.note)); // plain text (spec 0005 §3)
   const line = svg("polyline", { fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" });
   if (tile.spark) box.append(svg("svg", { class: "mt-1 h-8 w-full text-primary", viewBox: "0 0 100 24", preserveAspectRatio: "none", "aria-hidden": "true" }, line));
-  document.getElementById("kpis").append(box);
+  slots.kpis.append(box);
   const format = formatter(tile.format);
   return async (engine, current) => {
     let text = "–";
@@ -177,13 +182,13 @@ function mountKpi(tile, index) {
 function mountCard(tile, index, bodyClass) {
   const box = el("div", "card bg-base-100 shadow-sm");
   const inner = el("div", "card-body gap-3 p-4");
-  const title = el("h2", "card-title text-sm font-medium text-base-content/80", tile.title);
+  const title = el(`h${LEVEL}`, "card-title text-sm font-medium text-base-content/80", tile.title);
   const body = el("div", bodyClass);
   labelled(box, title, index);
   inner.append(title, body);
   box.append(inner);
-  document.getElementById("tiles").append(box);
-  return { box, body };
+  slots.tiles.append(box);
+  return { box, body, title };
 }
 
 // Chart colours come from the active DaisyUI theme. ECharts cannot blend oklch(), so a canvas resolves every colour to RGB.
@@ -469,7 +474,7 @@ function loadGrid({ url, integrity }) {
 // AG Grid owns scrolling and sorting; every block is a filtered SQL page with __row as its stable tie-breaker.
 function mountTable(tile, index) {
   if (tile.sql) return mountSqlTable(tile, index);
-  const { box, body } = mountCard(tile, index, "h-80 w-full");
+  const { box, body, title } = mountCard(tile, index, "h-80 w-full");
   gridBodies.push(body);
   gridTheme(body);
   box.setAttribute("aria-busy", "true");
@@ -505,7 +510,7 @@ function mountTable(tile, index) {
       const [row] = await run(engine, tile, countSql);
       if (!current()) return;
       const count = Number(row.n);
-      box.querySelector("h2").textContent = `${tile.title} · ${count} rows (filtered)`;
+      title.textContent = `${tile.title} · ${count} rows (filtered)`;
       const dateColumn = filters.date && (filters.date.cols?.[tile.source] ?? filters.date.col);
       const options = {
         theme: "legacy",
@@ -532,7 +537,7 @@ function mountTable(tile, index) {
 
 // A `sql` table (spec 0005 §1): the result's columns in SQL order, at most 1 000 rows, sorted by the grid in the browser.
 function mountSqlTable(tile, index) {
-  const { box, body } = mountCard(tile, index, "h-80 w-full");
+  const { box, body, title } = mountCard(tile, index, "h-80 w-full");
   gridBodies.push(body);
   gridTheme(body);
   box.setAttribute("aria-busy", "true");
@@ -544,7 +549,7 @@ function mountSqlTable(tile, index) {
       // pi-lens-ignore: no-sql-in-code-js
       const rows = await engine.query(`SELECT * FROM (${x.sql}) LIMIT 1001`, x.params, true);
       if (!current()) return;
-      box.querySelector("h2").textContent = `${tile.title} · ${rows.length > 1000 ? "first 1 000" : rows.length} rows`;
+      title.textContent = `${tile.title} · ${rows.length > 1000 ? "first 1 000" : rows.length} rows`;
       const rowData = rows.slice(0, 1000);
       if (api) return api.setGridOption("rowData", rowData);
       // A row sets the dimension to its value in the first column; the same value again clears it.
@@ -599,7 +604,7 @@ function mountText(tile, index) {
   const flat = s => s.trim().replace(/\s*\n\s*/g, " ");
   for (const block of String(tile.markdown ?? "").trim().split(/\n\s*\n/)) {
     const heading = block.match(/^(#{1,3}) +(.*)$/s);
-    if (heading) inline(body.appendChild(el(`h${heading[1].length + 2}`, "text-base font-semibold text-base-content")), flat(heading[2]));
+    if (heading) inline(body.appendChild(el(`h${heading[1].length + LEVEL}`, "text-base font-semibold text-base-content")), flat(heading[2]));
     else if (block.startsWith("- ")) {
       const list = body.appendChild(el("ul", "list-disc space-y-1 pl-5"));
       for (const item of block.split(/^- /m).slice(1)) inline(list.appendChild(el("li", "")), flat(item));
@@ -658,8 +663,10 @@ async function download(remote) {
 
 // Filter state: one value per dimension plus the date range; the default range is anchored on the snapshot.
 const filters = config.filters;
-const state = { dims: {}, ...filters.range };
+// `tab` is the open tab of a page with tabs, 1-based (spec 0005 §5).
+const state = { dims: {}, ...filters.range, tab: 1 };
 Object.assign(state, parseHash(location.hash, filters)); // untrusted: only the valid parts apply
+let refresh = () => {}; // set once the engine is up; until then a filter or tab change only changes the state
 
 function mountFilters(refresh) {
   const bar = document.getElementById("filters");
@@ -727,7 +734,70 @@ if (headline) {
 }
 // Tiles first, so the layout stands while the engine loads.
 const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, table: mountTable, text: mountText };
-const paint = config.tiles.map((tile, i) => MOUNT[tile.type]?.(tile, i) ?? (async () => {}));
+const mount = (tiles, from = 0) => tiles.map((tile, i) => [tile, MOUNT[tile.type]?.(tile, from + i) ?? (async () => {})]);
+// Sections (spec 0005 §5): each is a titled group with its own KPI row and tile grid, stacked or one tab each. The
+// tiles of a group query together; without sections the page is one group in the template's two grids.
+const tabbed = config.layout === "tabs";
+const groups = [];
+const showTab = () => {
+  for (const [s, { panel, tab }] of groups.entries()) {
+    const open = !tabbed || s === state.tab - 1;
+    panel.hidden = !open;
+    if (!tab) continue;
+    tab.setAttribute("aria-selected", open);
+    tab.tabIndex = open ? 0 : -1; // roving focus: the tab list is one stop in the page's Tab order
+    tab.className = `btn btn-sm btn-ghost${open ? " bg-base-100 shadow-sm" : " text-base-content/80"}`;
+  }
+};
+// Opens tab `n` and queries its tiles for the current state; a closed tab does not query.
+const openTab = n => {
+  state.tab = n;
+  showTab();
+  groups[n - 1].tab.focus();
+  refresh();
+};
+if (config.sections) {
+  const classes = { kpis: slots.kpis.className, tiles: slots.tiles.className };
+  slots.kpis.remove();
+  slots.tiles.remove();
+  const tablist = el("div", "flex flex-wrap gap-1");
+  tablist.setAttribute("role", "tablist");
+  tablist.setAttribute("aria-label", "Sections");
+  // Arrow keys move to the neighbouring tab (around the ends), Home and End to the first and last; the tab opens with the focus.
+  tablist.onkeydown = event => {
+    const to = { ArrowLeft: state.tab - 1 || groups.length, ArrowRight: (state.tab % groups.length) + 1, Home: 1, End: groups.length }[event.key];
+    if (!to) return;
+    event.preventDefault();
+    openTab(to);
+  };
+  if (tabbed) document.querySelector("main").append(tablist);
+  let from = 0;
+  for (const [s, section] of config.sections.entries()) {
+    const tiles = config.tiles.slice(from, from + section.tiles);
+    const panel = el("section", "space-y-4");
+    const label = tabbed ? el("button", "", section.title) : el("h2", "text-base font-semibold tracking-tight", section.title);
+    label.id = `section-${s}-title`;
+    panel.setAttribute("aria-labelledby", label.id);
+    if (tabbed) {
+      panel.id = `section-${s}`;
+      panel.setAttribute("role", "tabpanel");
+      label.type = "button";
+      label.setAttribute("role", "tab");
+      label.setAttribute("aria-controls", panel.id);
+      label.onclick = () => openTab(s + 1);
+      tablist.append(label);
+    } else {
+      if (s) panel.style.marginTop = "2rem"; // more room above a section title than under it
+      panel.append(label);
+    }
+    // A section's KPIs sit in their own row at its top, as on a page without sections.
+    for (const kind of ["kpis", "tiles"]) if (tiles.some(tile => (tile.type === "kpi") === (kind === "kpis"))) slots[kind] = panel.appendChild(el("div", classes[kind]));
+    document.querySelector("main").append(panel);
+    groups.push({ panel, tab: tabbed ? label : null, tiles: mount(tiles, from) });
+    from += section.tiles;
+  }
+  showTab();
+} else groups.push({ panel: slots.tiles, tiles: mount(config.tiles) });
 const library = config.tiles.some(t => t.type === "echarts") ? import(config.charts.url) : null; // integrity: the page's import map
 const gridLibrary = config.tiles.some(t => t.type === "table") ? loadGrid(config.grid) : null;
 library?.catch(() => {}); // reported below, once the engine has had its turn
@@ -777,16 +847,18 @@ document.getElementById("theme").addEventListener("change", () => {
   for (const body of gridBodies) gridTheme(body);
 });
 // Latest state wins: every change is a new pass; passes paint only while they are the newest, and changes during a pass coalesce.
-const pass = latestWins(current => Promise.all(paint.map((fill, i) => fill(engine, current).catch(error => fail(`Tile “${config.tiles[i].title}” could not be computed: ${error.message}`, error)))));
-const refresh = () => {
+// Each group has its own passes, so with tabs the rule holds per tab; only the open tab's tiles run.
+const passes = groups.map(({ tiles }) => latestWins(current => Promise.all(tiles.map(([tile, fill]) => fill(engine, current).catch(error => fail(`Tile “${tile.title}” could not be computed: ${error.message}`, error))))));
+refresh = () => {
   history.replaceState(null, "", serializeHash(state, filters) || location.pathname + location.search); // no history entry per change
-  return pass.change();
+  return Promise.all(passes.filter((_, s) => !tabbed || s === state.tab - 1).map(pass => pass.change()));
 };
 const drawFilters = mountFilters(refresh);
 addEventListener("hashchange", () => {
   state.dims = {};
-  Object.assign(state, filters.range, parseHash(location.hash, filters));
+  Object.assign(state, filters.range, { tab: 1 }, parseHash(location.hash, filters));
   drawFilters();
+  showTab();
   refresh();
 });
 await refresh();

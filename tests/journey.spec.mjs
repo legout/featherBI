@@ -202,7 +202,7 @@ test("acceptance 1 and 3: every tile renders; EU click, channel Online and Reset
   expect(errors).toEqual([]);
 });
 
-// Spec 0005 acceptance 2 on fixtures/hand/acceptance.yaml. Values: fixtures/hand/README.md (cell numbers are raw until plan 0005 C2).
+// Spec 0005 acceptance 2 on fixtures/hand/acceptance.yaml. Values: fixtures/hand/README.md (cells: the column's DECIMAL(…,2) scale, spec 0005 §2).
 test("SQL table: region totals in SQL order, channel Online narrows them, a click on the EU row filters region and a second click clears it", async ({ page }) => {
   build("fixtures/hand/acceptance.yaml");
   const errors = await open(page, "fixtures/hand/dist/hand-acceptance.html");
@@ -215,19 +215,19 @@ test("SQL table: region totals in SQL order, channel Online narrows them, a clic
   };
 
   await expect(table.getByRole("columnheader")).toHaveText(["region", "revenue"]); // the result's columns, in SQL order
-  await shows(["EU", "850"], ["US", "1410.5"]);
+  await shows(["EU", "850.00"], ["US", "1,410.50"]);
   await page.getByRole("combobox", { name: /^channel/ }).selectOption("Online");
-  await shows(["EU", "360"], ["US", "660"]);
+  await shows(["EU", "360.00"], ["US", "660.00"]);
   await page.getByRole("combobox", { name: /^channel/ }).selectOption("");
-  await shows(["EU", "850"], ["US", "1410.5"]);
+  await shows(["EU", "850.00"], ["US", "1,410.50"]);
 
   await cells(1).first().click();
   await kpi("$850.00");
   await expect(page.getByLabel("Active filters")).toContainText("region: EU");
-  await shows(["EU", "850"]);
+  await shows(["EU", "850.00"]);
   await cells(1).first().click(); // the same value again clears it
   await kpi("$2,260.50");
-  await shows(["EU", "850"], ["US", "1410.5"]);
+  await shows(["EU", "850.00"], ["US", "1,410.50"]);
   expect(errors).toEqual([]);
 });
 
@@ -252,7 +252,7 @@ const firstRow = table => table.locator('[role="row"][aria-rowindex="2"]').getBy
 
 // Spec 0005 acceptance 3: `n` descends so the kept rows show the SQL's own order.
 for (const [size, title, first] of [
-  [1001, "Numbers · first 1 000 rows", "1000"],
+  [1001, "Numbers · first 1 000 rows", "1,000"],
   [1000, "Numbers · 1000 rows", "999"],
 ]) {
   test(`SQL table row cap: a ${size}-row result shows 1 000 rows ${size > 1000 ? "and the note" : "without a note"}`, async ({ page }) => {
@@ -288,7 +288,7 @@ test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers
     const days = page.getByRole("group", { name: "Days" });
     const second = days.locator('[role="row"][aria-rowindex="3"]').getByRole("gridcell");
     await kpi("$2,260.50");
-    await expect(second).toHaveText(["2025-01-15", "150"]); // README: the one order of that day
+    await expect(second).toHaveText(["2025-01-15", "150.00"]); // README: the one order of that day
     await second.first().click();
     await kpi("$150.00");
     expect(page.url()).toMatch(/#day=2025-01-15$/);
@@ -300,7 +300,7 @@ test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers
     await kpi("$2,260.50");
 
     const orders = page.getByRole("group", { name: "Orders" }).getByRole("gridcell");
-    await expect(orders).toHaveText(["9007199254740992", "10", "9007199254740993", "20", "9007199254740995", "100", "9007199254740996", "200", "1152921504606846976", "40"]);
+    await expect(orders).toHaveText(["9,007,199,254,740,992", "10", "9,007,199,254,740,993", "20", "9,007,199,254,740,995", "100", "9,007,199,254,740,996", "200", "1,152,921,504,606,846,976", "40"]);
     // The second id is a filter value of its own: the select lists both, a click on its row leaves its amount (20, not 10
     // or the total 370), and the copied URL opens the same selection.
     const amount = (p, text) => expect(tile(p, "Amount").getByText(text, { exact: true })).toBeVisible();

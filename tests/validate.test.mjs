@@ -52,6 +52,14 @@ const cases = [
     /tile "?t1"?.*ambiguous/is,
   ],
   ["placeholder for an unknown table", tile({ type: "kpi", sql: "SELECT 1 AS value WHERE {{filters:ghost}}" }), [], /tile "?t1"?.*ghost/is],
+  // Spec 0005 §2: `locale` and the `format` object.
+  ["a locale Intl does not support", c => (c.locale = "xx-XX"), [], /locale.*xx-XX/is],
+  ["a malformed locale tag", c => (c.locale = "de_DE"), [], /locale.*de_DE/is],
+  ["an unknown format style", tile({ type: "kpi", sql: "SELECT 1 AS value", format: { style: "money" } }), [], /format.*style/is],
+  ["an unknown format name", tile({ type: "kpi", sql: "SELECT 1 AS value", format: "money" }), [], /tile "?t1"?.*format.*money/is],
+  ["format decimals above 6", tile({ type: "kpi", sql: "SELECT 1 AS value", format: { decimals: 7 } }), [], /tile "?t1"?.*decimals/is],
+  ["format decimals below 0", tile({ type: "pivot", sql: "SELECT 1 AS r, 1 AS c, 1 AS v", format: { decimals: -1 } }), [], /tile "?t1"?.*decimals/is],
+  ["a currency code that is not three letters", tile({ type: "kpi", sql: "SELECT 1 AS value", format: { style: "currency", currency: "EURO" } }), [], /format.*currency/is],
   ["a dimension named date", c => (c.dims.date = { col: "order_date" }), [], /dims.*date|date.*dimension/is],
   ["--offline with --split", () => {}, ["--offline", "--split"], /--offline.*--split|--split.*--offline/is],
   ["--offline with engine duckdb-wasm", c => (c.engine = "duckdb-wasm"), ["--offline"], /--offline.*duckdb-wasm/is],
@@ -88,7 +96,10 @@ test("a valid config with filters, an alias and a join builds", () => {
     fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), path.join(tmp, "sales.parquet"));
     execFileSync("duckdb", ["-no-agent", "-c", "COPY (SELECT 'EU' AS region, 'EU' AS region_code, 100 AS target) TO 'targets.parquet'"], { cwd: tmp });
     const config = base();
+    config.locale = "de-DE";
+    config.tiles[0].format = { style: "currency", currency: "EUR", decimals: 6, unit: "net" };
     config.tiles.push(
+      { id: "share", type: "kpi", title: "Share", format: "percent", sql: "SELECT 0.25 AS value" },
       {
         id: "bar",
         type: "echarts",

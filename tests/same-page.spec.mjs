@@ -2,26 +2,25 @@
 import { test } from "@playwright/test";
 import { samePage } from "./same-page.mjs";
 
-const BASE = "3559548655cc445df11acca3a4db90eeb2e6c9ad"; // plan 0005 C1; each later task of the plan moves it to its own base
+const BASE = "d8110de212c9643c9726d5232161c2725e453027"; // plan 0005 C2; each later task of the plan moves it to its own base
 
 test.skip(({ browserName }) => browserName !== "chromium", "acceptance 1 compares the accessibility tree in Chromium");
 
-// BASE predates #108's default-colour contrast change (spec 0003 r3, owner decision 2026-11-27): that one colour value may
-// differ, nothing else. A task that moves BASE past #108 removes this.
-const colours = [["--color-primary-content:oklch(91.372% .051 257.57)", "--color-primary-content:oklch(100% 0 0)"]];
+// Deliberate difference of C2 (spec 0005 §2 r2): numeric table cells follow the column's scale (`100` → `100.00`), so the
+// table grids are left out; their titles and row counts are still compared.
+const exclude = page => [page.locator(".ag-root")];
 
-// Deliberate differences of C1: none. The SQL table tile is new in acceptance.yaml, so it is left out there.
-const configs = {
-  "fixtures/hand/dashboard.yaml": {},
-  "fixtures/hand/acceptance.yaml": { withoutTiles: ["Revenue by region (SQL)"] },
-  "fixtures/hand/pivot-table.yaml": {},
-  "fixtures/hand/presets.yaml": {},
-  "fixtures/hand/upstream.yaml": {},
-  "fixtures/formats/dashboard.yaml": {},
-};
+const configs = [
+  "fixtures/hand/dashboard.yaml",
+  "fixtures/hand/acceptance.yaml",
+  "fixtures/hand/pivot-table.yaml",
+  "fixtures/hand/presets.yaml",
+  "fixtures/hand/upstream.yaml",
+  "fixtures/formats/dashboard.yaml",
+];
 
-for (const [config, differences] of Object.entries(configs)) {
+for (const config of configs) {
   test(`${config} renders the same page as the base commit`, async ({ page }) => {
-    await samePage(page, BASE, config, { ...differences, colours });
+    await samePage(page, BASE, config, { exclude });
   });
 }

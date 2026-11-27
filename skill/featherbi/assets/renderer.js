@@ -81,6 +81,7 @@ const number = options => new Intl.NumberFormat(config.locale ?? "en-US", option
 const fixed = digits => ({ minimumFractionDigits: digits, maximumFractionDigits: digits });
 const PLAIN = number({ maximumFractionDigits: 2 });
 const AXIS = number({ maximumFractionDigits: 20 }); // a tick as the chart library computed it
+const PERCENT = number({ style: "percent", maximumFractionDigits: 2 });
 const CHANGE = number({ style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
 const DAY = new Intl.DateTimeFormat(config.locale, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 // A tile's `format`: `number`, `currency`, `percent`, or { style, decimals, currency, unit }; `unit` follows a non-breaking space.
@@ -96,7 +97,7 @@ const SCALED = {};
 function cellText(rows, field, value, isDate = rows.dates.includes(field)) {
   if (value == null) return "";
   if (isDate) return config.locale ? DAY.format(new Date(value)) : new Date(value).toISOString().slice(0, 10);
-  if (!(field in rows.numbers)) return value;
+  if (!Object.hasOwn(rows.numbers, field)) return value; // own keys only: a text column may be named `constructor`
   const scale = rows.numbers[field];
   return (scale == null ? PLAIN : (SCALED[scale] ??= number(fixed(scale)))).format(value);
 }
@@ -270,16 +271,17 @@ const BIND = {
     return { type: "rect", shape: { x, y: y - height / 2, width: api.coord([api.value("end"), api.value("name")])[0] - x, height }, style: api.style() };
   },
   // Tooltips of the two as text nodes, so data is never read as HTML: "150 – 200: 3" (or "Online · 150 – 200: 3") and "M1 · run: 2025-01-06 08:00 – 2025-01-06 12:00" (UTC, like the axis).
-  bin: () => p => el("span", "", `${p.data.series == null ? "" : `${p.data.series} · `}${PLAIN.format(p.data.lo)} – ${PLAIN.format(p.data.hi)}: ${PLAIN.format(p.data.count)}`),
+  // The bin edges are values, so they take the tile's `format`; the count stays a plain number.
+  bin: (_rows, _column, format) => p => el("span", "", `${p.data.series == null ? "" : `${p.data.series} · `}${format.format(p.data.lo)} – ${format.format(p.data.hi)}: ${PLAIN.format(p.data.count)}`),
   span: () => p => {
     const time = v => new Date(v).toISOString().slice(0, 16).replace("T", " ");
     return el("span", "", `${[p.data.name, p.data.state].filter(v => v != null).join(" · ")}: ${time(p.data.start)} – ${time(p.data.end)}`);
   },
 };
-const bind = (node, rows) => {
-  if (typeof node === "string" && node[0] === "@") return BIND[node.slice(1).split(":")[0]](rows, node.split(":")[1]);
-  if (Array.isArray(node)) return node.map(n => bind(n, rows));
-  if (node && typeof node === "object") return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, bind(v, rows)]));
+const bind = (node, rows, format) => {
+  if (typeof node === "string" && node[0] === "@") return BIND[node.slice(1).split(":")[0]](rows, node.split(":")[1], format);
+  if (Array.isArray(node)) return node.map(n => bind(n, rows, format));
+  if (node && typeof node === "object") return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, bind(v, rows, format)]));
   return node;
 };
 // A tile `option` restyles the preset: objects merge key by key, arrays item by item. Keys that bind data are ignored, so data comes from the preset only.
@@ -296,10 +298,18 @@ function chartOption(tile, preset, rows) {
   const format = formatter(tile.format);
   // A preset's `with.<column>` part joins its option only when the rows have that optional column (candlestick volume).
   const template = Object.entries(preset.with ?? {}).reduce((o, [column, part]) => (rows[0][column] === undefined ? o : restyle(o, part, [])), preset.option);
-  const option = restyle({ aria: { enabled: true }, animation: !matchMedia("(prefers-reduced-motion: reduce)").matches, ...bind(template, rows) }, tile.option);
+  const bound = bind(template, rows, format);
+  // With a `locale`, the preset's value-axis labels take its form (the chart library writes en-US separators, the Pareto
+  // preset a fixed "{value} %" over 0–100). Before the tile's `option`, so an author's own label format replaces it.
+  if (config.locale) {
+    for (const axis of [bound.xAxis, bound.yAxis].flat()) {
+      if (axis?.type !== "value") continue;
+      if (!axis.axisLabel?.formatter) axis.axisLabel = { ...axis.axisLabel, formatter: v => AXIS.format(v) };
+      else if (axis.axisLabel.formatter === "{value} %") axis.axisLabel.formatter = v => PERCENT.format(v / 100);
+    }
+  }
+  const option = restyle({ aria: { enabled: true }, animation: !matchMedia("(prefers-reduced-motion: reduce)").matches, ...bound }, tile.option);
   if (option.tooltip) option.tooltip = { confine: true, valueFormatter: v => (typeof v === "number" ? format.format(v) : v), ...option.tooltip };
-  // With a `locale`, value-axis labels take its separators (the chart library writes en-US ones); a preset's own label format stays.
-  if (config.locale) for (const axis of [option.xAxis, option.yAxis].flat()) if (axis?.type === "value" && !axis.axisLabel?.formatter) axis.axisLabel = { ...axis.axisLabel, formatter: v => AXIS.format(v) };
   // A `series` column (timeline: `state`) splits the preset's one series into one per value, each over its own rows.
   const by = preset.split ?? "series";
   if (rows[0][by] !== undefined && [...preset.columns, ...preset.optional].includes(by)) {

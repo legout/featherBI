@@ -70,7 +70,9 @@ export function validate(config, snapshots) {
     }
   };
   if (typeof config.locale === "string" && !supported(config.locale)) errors.push(`locale: "${config.locale}" is not a locale this build's Intl supports (a BCP 47 tag such as de-DE)`);
-  if (errors.length) throw new Error(`invalid config: ${errors.join("; ")}`);
+  // A tile is named as the tile checks below name it: its `id`, otherwise its 1-based number.
+  const named = e => e.replace(/^config\.tiles\[(\d+)\]\.?/, (_, i) => `tile "${typeof config.tiles[i]?.id === "string" ? config.tiles[i].id : `tile ${Number(i) + 1}`}": `);
+  if (errors.length) throw new Error(`invalid config: ${errors.map(named).join("; ")}`);
 
   const presets = Object.fromEntries(
     fs.readdirSync(asset("assets/presets")).map(f => [path.basename(f, ".json"), JSON.parse(fs.readFileSync(asset(`assets/presets/${f}`), "utf8"))]),

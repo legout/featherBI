@@ -31,6 +31,18 @@ const tile = (page, title) => page.getByRole("group", { name: new RegExp(`^${tit
 // The exact characters, non-breaking spaces included (toHaveText would normalize them).
 const exactly = (locator, text) => expect.poll(() => locator.textContent()).toBe(text);
 const kpi = (page, title, text) => exactly(tile(page, title).locator(".stat-value"), text);
+// Drawn on canvas, so read from the chart itself: the tooltip the library shows for the first item, and an axis's label format.
+const chartOf = (page, title, read) =>
+  tile(page, title).getByRole("img").evaluate(async (node, read) => {
+    const { charts } = JSON.parse(document.getElementById("dashboard").textContent);
+    const instance = (await import(charts.url)).getInstanceByDom(node);
+    if (read === "tip") return instance.dispatchAction({ type: "showTip", seriesIndex: 0, dataIndex: 0 });
+    const { formatter } = instance.getOption().yAxis[read].axisLabel;
+    return typeof formatter === "function" ? formatter(100) : formatter;
+  }, read);
+const drawn = (page, title) => expect(tile(page, title)).not.toHaveAttribute("aria-busy", "true");
+const BINS = "SELECT floor(revenue / 50) * 50 AS lo, floor(revenue / 50) * 50 + 50 AS hi, COUNT(*) AS count FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1";
+const PARETO = "SELECT region || ' ' || channel AS x, SUM(revenue) AS y FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1";
 const firstRow = table => table.locator('[role="row"][aria-rowindex="2"]').getByRole("gridcell");
 
 test("locale de-DE: currency, decimals with a unit, percent, pivot cells, a chart tooltip, table numbers and dates", async ({ page }) => {
@@ -43,6 +55,9 @@ test("locale de-DE: currency, decimals with a unit, percent, pivot cells, a char
     { type: "echarts", preset: "bar", title: "By region", format: euro, sql: "SELECT region AS x, SUM(revenue) AS y FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1" },
     { type: "pivot", title: "Region × channel", format: euro, sql: "SELECT region AS r, channel AS c, SUM(revenue) AS v FROM sales WHERE {{filters:sales}} GROUP BY 1, 2 ORDER BY 1, 2" },
     { type: "table", title: "Rows", source: "sales", columns: ["order_date", "region", "revenue"] },
+    { type: "echarts", preset: "histogram", title: "Order values", format: { decimals: 3 }, sql: BINS },
+    { type: "echarts", preset: "pareto", title: "Pareto", sql: PARETO },
+    { type: "echarts", preset: "pareto", title: "Own-axis Pareto", option: { yAxis: [{}, { axisLabel: { formatter: "{value} pct" } }] }, sql: PARETO },
     { type: "table", title: "Days", sql: "SELECT order_date, SUM(revenue) AS revenue, COUNT(*) * 1000 AS n, AVG(revenue)::DOUBLE / 3 AS third FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1" },
   ];
   await generated(page, { locale: "de-DE", tiles }, async () => {
@@ -64,6 +79,14 @@ test("locale de-DE: currency, decimals with a unit, percent, pivot cells, a char
       return instance.getOption().yAxis[0].axisLabel.formatter(1500); // the value axis writes its ticks with this
     });
     expect(axisLabel).toBe("1.500");
+    // README: the first bin is 100..150 with 3 orders; the edges take the tile's `format`, the count is a count.
+    await drawn(page, "Order values");
+    await chartOf(page, "Order values", "tip");
+    await expect.poll(() => tile(page, "Order values").textContent()).toContain("100,000 – 150,000: 3");
+    // The Pareto preset's own percentage axis (0–100) follows the locale; an author's axis label format stays as written.
+    await drawn(page, "Own-axis Pareto");
+    expect(await chartOf(page, "Pareto", 1)).toBe("100\u00a0%");
+    expect(await chartOf(page, "Own-axis Pareto", 1)).toBe("{value} pct");
     await expect.poll(() => chart.textContent()).toContain("850,00\u00a0€");
   });
 });
@@ -83,9 +106,19 @@ test("without a locale a `format` object still applies: currency other than doll
   const tiles = [
     { type: "kpi", title: "Revenue", format: { style: "currency", currency: "EUR" }, sql: revenue },
     { type: "kpi", title: "Intensity", format: { decimals: 2, unit: "m³/t" }, sql: "SELECT 88.656 AS value" },
+    { type: "echarts", preset: "histogram", title: "Order values", sql: BINS },
+    { type: "echarts", preset: "pareto", title: "Pareto", sql: PARETO },
+    // A text column whose name every object inherits is not a number column.
+    { type: "table", title: "Regions", sql: 'SELECT region AS "constructor", SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1' },
   ];
   await generated(page, { tiles }, async () => {
     await kpi(page, "Revenue", "€2,260.50");
     await kpi(page, "Intensity", "88.66\u00a0m³/t"); // the spec's own example
+    await expect(firstRow(tile(page, "Regions")).nth(1)).toHaveText("850.00"); // README: the EU total; the row renders
+    // Without `format` and `locale` the histogram tooltip and the Pareto percentage axis are as before.
+    await drawn(page, "Pareto");
+    await chartOf(page, "Order values", "tip");
+    await expect.poll(() => tile(page, "Order values").textContent()).toContain("100 – 150: 3");
+    expect(await chartOf(page, "Pareto", 1)).toBe("{value} %");
   });
 });

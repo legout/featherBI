@@ -1,0 +1,33 @@
+title: Sensor time series
+name: sensor-time-series
+sources:
+  readings:
+    read: "read_parquet('readings.parquet')"
+dims:
+  sensor: {col: sensor}
+date: {col: ts, default: all}
+tiles:
+  - type: kpi
+    title: Readings
+    sql: "SELECT COUNT(*) AS value FROM readings WHERE {{filters:readings}}"
+  - type: kpi
+    title: Average °C
+    sql: "SELECT AVG(temp_c) AS value FROM readings WHERE {{filters:readings}}"
+  - type: kpi
+    title: Maximum °C
+    sql: "SELECT MAX(temp_c) AS value FROM readings WHERE {{filters:readings}}"
+  - type: kpi
+    title: Minimum °C
+    sql: "SELECT MIN(temp_c) AS value FROM readings WHERE {{filters:readings}}"
+  - type: echarts
+    preset: line
+    title: Hourly average by sensor
+    sql: >
+      SELECT strftime(ts, '%Y-%m-%d %H:00') AS x, ROUND(AVG(temp_c), 2) AS y, sensor AS series
+      FROM readings WHERE {{filters:readings}} GROUP BY 1, 3 ORDER BY 3, 1
+  - type: echarts
+    preset: histogram
+    title: Temperature distribution
+    sql: >
+      SELECT floor(temp_c) AS lo, floor(temp_c) + 1 AS hi, COUNT(*) AS count
+      FROM readings WHERE {{filters:readings}} GROUP BY 1 ORDER BY 1

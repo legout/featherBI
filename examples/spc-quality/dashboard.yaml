@@ -1,0 +1,57 @@
+title: SPC quality
+name: spc-quality
+sources:
+  samples:
+    read: "read_parquet('samples.parquet')"
+date: {col: sampled_at, default: all}
+tiles:
+  - type: kpi
+    title: Measurements
+    sql: "SELECT COUNT(*) AS value FROM samples WHERE {{filters:samples}}"
+  - type: kpi
+    title: Subgroups
+    sql: "SELECT COUNT(DISTINCT subgroup) AS value FROM samples WHERE {{filters:samples}}"
+  - type: kpi
+    title: Average range mm
+    sql: >
+      SELECT AVG(r) AS value FROM (
+        SELECT MAX(diameter_mm) - MIN(diameter_mm) AS r
+        FROM samples WHERE {{filters:samples}} GROUP BY subgroup)
+  - type: kpi
+    title: Highest subgroup mean mm
+    sql: >
+      SELECT MAX(m) AS value FROM (
+        SELECT AVG(diameter_mm) AS m FROM samples WHERE {{filters:samples}} GROUP BY subgroup)
+  - type: kpi
+    title: Subgroups outside the limits
+    sql: >
+      WITH g AS (
+        SELECT AVG(diameter_mm) AS m, MAX(diameter_mm) - MIN(diameter_mm) AS r
+        FROM samples WHERE {{filters:samples}} GROUP BY subgroup),
+      lim AS (SELECT AVG(m) AS centre, 0.577 * AVG(r) AS width FROM g)
+      SELECT COUNT(*) AS value FROM g, lim WHERE abs(g.m - lim.centre) > lim.width
+  - type: echarts
+    preset: line
+    title: X-bar chart
+    sql: >
+      WITH g AS (
+        SELECT subgroup, AVG(diameter_mm) AS m, MAX(diameter_mm) - MIN(diameter_mm) AS r
+        FROM samples WHERE {{filters:samples}} GROUP BY subgroup),
+      lim AS (SELECT AVG(m) AS centre, 0.577 * AVG(r) AS width FROM g)
+      SELECT subgroup AS x, ROUND(m, 4) AS y, 'mean' AS series FROM g
+      UNION ALL SELECT subgroup, ROUND(centre, 4), 'centre' FROM g, lim
+      UNION ALL SELECT subgroup, ROUND(centre + width, 4), 'UCL' FROM g, lim
+      UNION ALL SELECT subgroup, ROUND(centre - width, 4), 'LCL' FROM g, lim
+      ORDER BY 3, 1
+  - type: echarts
+    preset: line
+    title: Range chart
+    sql: >
+      SELECT subgroup AS x, MAX(diameter_mm) - MIN(diameter_mm) AS y
+      FROM samples WHERE {{filters:samples}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: histogram
+    title: Diameter distribution (mm)
+    sql: >
+      SELECT floor(diameter_mm / 0.02) * 0.02 AS lo, floor(diameter_mm / 0.02) * 0.02 + 0.02 AS hi, COUNT(*) AS count
+      FROM samples WHERE {{filters:samples}} GROUP BY 1 ORDER BY 1

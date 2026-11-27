@@ -3,3 +3,4 @@ fixtures/**/dist/
 test-results/
 playwright-report/
 fixtures/volume/*.parquet
+examples/*/*.parquet

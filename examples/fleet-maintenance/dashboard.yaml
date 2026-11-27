@@ -1,0 +1,57 @@
+title: Fleet and maintenance
+name: fleet-maintenance
+sources:
+  work_orders:
+    read: "read_parquet('work_orders.parquet')"
+dims:
+  vehicle: {col: vehicle}
+  job: {col: job}
+date: {col: opened, default: all}
+tiles:
+  - type: kpi
+    title: Work orders
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM work_orders WHERE {{filters:work_orders}}
+  - type: kpi
+    title: Maintenance cost
+    sql: >
+      SELECT SUM(cost) AS value
+      FROM work_orders WHERE {{filters:work_orders}}
+  - type: kpi
+    title: Average cost per order
+    sql: >
+      SELECT AVG(cost) AS value
+      FROM work_orders WHERE {{filters:work_orders}}
+  - type: kpi
+    title: Downtime days
+    sql: >
+      SELECT SUM(downtime_days) AS value
+      FROM work_orders WHERE {{filters:work_orders}}
+  - type: kpi
+    title: Preventive share %
+    sql: >
+      SELECT 100.0 * SUM(preventive) / COUNT(*) AS value
+      FROM work_orders WHERE {{filters:work_orders}}
+  - type: echarts
+    preset: pareto
+    title: Cost by job
+    click: job
+    exclude: [job]
+    sql: >
+      SELECT job AS x, SUM(cost) AS y
+      FROM work_orders WHERE {{filters:work_orders}} GROUP BY 1
+  - type: echarts
+    preset: bar
+    title: Downtime days by vehicle
+    click: vehicle
+    exclude: [vehicle]
+    sql: >
+      SELECT vehicle AS x, SUM(downtime_days) AS y
+      FROM work_orders WHERE {{filters:work_orders}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: line
+    title: Cost by opening day
+    sql: >
+      SELECT strftime(opened, '%Y-%m-%d') AS x, SUM(cost) AS y
+      FROM work_orders WHERE {{filters:work_orders}} GROUP BY 1 ORDER BY 1

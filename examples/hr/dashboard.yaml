@@ -1,0 +1,58 @@
+# SYNTHETIC ONLY: one row per employee, salary included.
+# Explore reads every column. Real HR data: aggregate in the
+# source SQL before snapshotting (see the playbook).
+title: HR
+name: hr
+sources:
+  employees:
+    read: "read_parquet('employees.parquet')"
+dims:
+  department: {col: department}
+date: {col: hire_date, default: all}
+tiles:
+  - type: kpi
+    title: Employees
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM employees WHERE {{filters:employees}}
+  - type: kpi
+    title: Leavers
+    sql: >
+      SELECT SUM(left_company) AS value
+      FROM employees WHERE {{filters:employees}}
+  - type: kpi
+    title: Leaver share of hire cohort %
+    sql: >
+      SELECT 100.0 * SUM(left_company) / COUNT(*) AS value
+      FROM employees WHERE {{filters:employees}}
+  - type: kpi
+    title: Average salary
+    sql: >
+      SELECT AVG(salary) AS value
+      FROM employees WHERE {{filters:employees}}
+  - type: kpi
+    title: Average tenure years
+    sql: >
+      SELECT AVG(tenure_years) AS value
+      FROM employees WHERE {{filters:employees}}
+  - type: echarts
+    preset: bar
+    title: Employees by department
+    click: department
+    exclude: [department]
+    sql: >
+      SELECT department AS x, COUNT(*) AS y
+      FROM employees WHERE {{filters:employees}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: histogram
+    title: Salary distribution
+    sql: >
+      SELECT floor(salary / 5000) * 5000 AS lo,
+        floor(salary / 5000) * 5000 + 5000 AS hi, COUNT(*) AS count
+      FROM employees WHERE {{filters:employees}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: line
+    title: Hires per year
+    sql: >
+      SELECT strftime(hire_date, '%Y') AS x, COUNT(*) AS y
+      FROM employees WHERE {{filters:employees}} GROUP BY 1 ORDER BY 1

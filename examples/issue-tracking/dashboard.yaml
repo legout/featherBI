@@ -1,0 +1,57 @@
+title: Issue tracking
+name: issue-tracking
+sources:
+  issues:
+    read: "read_parquet('issues.parquet')"
+dims:
+  type: {col: type}
+  status: {col: status}
+date: {col: opened, default: all}
+tiles:
+  - type: kpi
+    title: Issues
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM issues WHERE {{filters:issues}}
+  - type: kpi
+    title: Not done
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM issues WHERE status NOT IN ('Done', 'Closed') AND {{filters:issues}}
+  - type: kpi
+    title: Done
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM issues WHERE status IN ('Done', 'Closed') AND {{filters:issues}}
+  - type: kpi
+    title: Bugs
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM issues WHERE type = 'Bug' AND {{filters:issues}}
+  - type: kpi
+    title: Average points
+    sql: >
+      SELECT AVG(points) AS value
+      FROM issues WHERE {{filters:issues}}
+  - type: echarts
+    preset: line
+    title: Issues opened per day
+    sql: >
+      SELECT strftime(opened, '%Y-%m-%d') AS x, COUNT(*) AS y
+      FROM issues WHERE {{filters:issues}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: Issues by type
+    click: type
+    exclude: [type]
+    sql: >
+      SELECT type AS x, COUNT(*) AS y
+      FROM issues WHERE {{filters:issues}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: funnel
+    title: Issues by status
+    click: status
+    exclude: [status]
+    sql: >
+      SELECT status AS name, COUNT(*) AS value
+      FROM issues WHERE {{filters:issues}} GROUP BY 1

@@ -1,0 +1,52 @@
+title: Support tickets
+name: support-tickets
+sources:
+  tickets:
+    read: "read_parquet('tickets.parquet')"
+dims:
+  channel: {col: channel}
+  priority: {col: priority}
+date: {col: opened, default: all}
+tiles:
+  - type: kpi
+    title: Tickets
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM tickets WHERE {{filters:tickets}}
+  - type: kpi
+    title: Open tickets
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM tickets WHERE status NOT IN ('Resolved', 'Closed') AND {{filters:tickets}}
+  - type: kpi
+    title: Average first response min
+    sql: >
+      SELECT AVG(first_response_min) AS value
+      FROM tickets WHERE {{filters:tickets}}
+  - type: kpi
+    title: Average CSAT
+    sql: >
+      SELECT AVG(csat) AS value
+      FROM tickets WHERE {{filters:tickets}}
+  - type: echarts
+    preset: line
+    title: Tickets opened per day
+    sql: >
+      SELECT strftime(opened, '%Y-%m-%d') AS x, COUNT(*) AS y
+      FROM tickets WHERE {{filters:tickets}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: Tickets by priority
+    click: priority
+    exclude: [priority]
+    sql: >
+      SELECT priority AS x, COUNT(*) AS y
+      FROM tickets WHERE {{filters:tickets}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: donut
+    title: Tickets by channel
+    click: channel
+    exclude: [channel]
+    sql: >
+      SELECT channel AS name, COUNT(*) AS value
+      FROM tickets WHERE {{filters:tickets}} GROUP BY 1

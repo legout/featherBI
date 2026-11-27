@@ -1,0 +1,57 @@
+title: Sports tournament results
+name: sports-tournament-results
+sources:
+  results:
+    read: "read_parquet('results.parquet')"
+dims:
+  team: {col: team}
+  result: {col: result}
+date: {col: game_date, default: all}
+tiles:
+  - type: kpi
+    title: Team-games
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM results WHERE {{filters:results}}
+  - type: kpi
+    title: Wins
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM results WHERE result = 'Win' AND {{filters:results}}
+  - type: kpi
+    title: Points
+    sql: >
+      SELECT SUM(points) AS value
+      FROM results WHERE {{filters:results}}
+  - type: kpi
+    title: Goals for
+    sql: >
+      SELECT SUM(goals_for) AS value
+      FROM results WHERE {{filters:results}}
+  - type: kpi
+    title: Goals against
+    sql: >
+      SELECT SUM(goals_against) AS value
+      FROM results WHERE {{filters:results}}
+  - type: echarts
+    preset: hbar
+    title: Points by team
+    click: team
+    exclude: [team]
+    sql: >
+      SELECT team AS x, SUM(points) AS y
+      FROM results WHERE {{filters:results}} GROUP BY 1 ORDER BY 2 DESC, 1
+  - type: echarts
+    preset: donut
+    title: Results
+    click: result
+    exclude: [result]
+    sql: >
+      SELECT result AS name, COUNT(*) AS value
+      FROM results WHERE {{filters:results}} GROUP BY 1
+  - type: echarts
+    preset: line
+    title: Goals per day
+    sql: >
+      SELECT strftime(game_date, '%Y-%m-%d') AS x, SUM(goals_for) AS y
+      FROM results WHERE {{filters:results}} GROUP BY 1 ORDER BY 1

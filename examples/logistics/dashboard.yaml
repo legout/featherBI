@@ -1,0 +1,61 @@
+title: Logistics
+name: logistics
+sources:
+  shipments:
+    read: "read_parquet('shipments.parquet')"
+dims:
+  carrier: {col: carrier}
+  region: {col: region}
+date: {col: ship_date, default: all}
+tiles:
+  - type: kpi
+    title: Shipments
+    sql: "SELECT COUNT(*) AS value FROM shipments WHERE {{filters:shipments}}"
+  - type: kpi
+    title: On-time %
+    sql: >
+      SELECT 100.0 * SUM(on_time) / NULLIF(COUNT(on_time), 0) AS value
+      FROM shipments WHERE {{filters:shipments}}
+  - type: kpi
+    title: Late shipments
+    sql: >
+      SELECT COUNT(*) FILTER (WHERE on_time = 0) AS value
+      FROM shipments WHERE {{filters:shipments}}
+  - type: kpi
+    title: Average transit days
+    sql: >
+      SELECT AVG(transit_days) AS value
+      FROM shipments WHERE {{filters:shipments}}
+  - type: kpi
+    title: Weight kg
+    sql: >
+      SELECT SUM(weight_kg) AS value
+      FROM shipments WHERE {{filters:shipments}}
+  - type: echarts
+    preset: line
+    title: Daily shipments
+    sql: >
+      SELECT strftime(ship_date, '%Y-%m-%d') AS x, COUNT(*) AS y
+      FROM shipments WHERE {{filters:shipments}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: On-time % by carrier
+    click: carrier
+    exclude: [carrier]
+    sql: >
+      SELECT carrier AS x, 100.0 * SUM(on_time) / NULLIF(COUNT(on_time), 0) AS y
+      FROM shipments WHERE {{filters:shipments}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: hbar
+    title: Shipments by region
+    click: region
+    exclude: [region]
+    sql: >
+      SELECT region AS x, COUNT(*) AS y
+      FROM shipments WHERE {{filters:shipments}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: histogram
+    title: Transit days
+    sql: >
+      SELECT transit_days AS lo, transit_days + 1 AS hi, COUNT(*) AS count
+      FROM shipments WHERE {{filters:shipments}} GROUP BY 1 ORDER BY 1

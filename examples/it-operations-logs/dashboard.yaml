@@ -1,0 +1,57 @@
+title: IT operations and logs
+name: it-operations-logs
+sources:
+  logs:
+    read: "read_parquet('logs.parquet')"
+dims:
+  service: {col: service}
+  level: {col: level}
+date: {col: ts, default: all}
+tiles:
+  - type: kpi
+    title: Log events
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM logs WHERE {{filters:logs}}
+  - type: kpi
+    title: Errors
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM logs WHERE level = 'ERROR' AND {{filters:logs}}
+  - type: kpi
+    title: Warnings
+    sql: >
+      SELECT COUNT(*) AS value
+      FROM logs WHERE level = 'WARN' AND {{filters:logs}}
+  - type: kpi
+    title: Error rate %
+    sql: >
+      SELECT 100.0 * COUNT(*) FILTER (WHERE level = 'ERROR') / NULLIF(COUNT(*), 0) AS value
+      FROM logs WHERE {{filters:logs}}
+  - type: kpi
+    title: Average latency ms
+    sql: >
+      SELECT AVG(latency_ms) AS value
+      FROM logs WHERE {{filters:logs}}
+  - type: echarts
+    preset: line
+    title: Events per hour
+    sql: >
+      SELECT strftime(ts, '%Y-%m-%d %H:00') AS x, COUNT(*) AS y
+      FROM logs WHERE {{filters:logs}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: Events by service
+    click: service
+    exclude: [service]
+    sql: >
+      SELECT service AS x, COUNT(*) AS y
+      FROM logs WHERE {{filters:logs}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: donut
+    title: Events by level
+    click: level
+    exclude: [level]
+    sql: >
+      SELECT level AS name, COUNT(*) AS value
+      FROM logs WHERE {{filters:logs}} GROUP BY 1

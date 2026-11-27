@@ -57,7 +57,10 @@ export function buildModel(config, tableColumns, query) {
     const [row] = query(`SELECT min(CAST(${ident(c)} AS DATE))::VARCHAR AS min, max(CAST(${ident(c)} AS DATE))::VARCHAR AS max FROM ${ident(t)}`);
     if (row.min) bounds.push(row);
   }
-  return { dims: config.dims ?? {}, date: config.date ?? null, tableColumns, options, range: defaultRange(config.date, bounds) };
+  const model = { dims: config.dims ?? {}, date: config.date ?? null, tableColumns, options, range: defaultRange(config.date, bounds) };
+  // The first and last date of all dated tables, for the header line (spec 0005 §4). Not enumerable: the model is embedded
+  // in the page as written, and the header line gets its dates from the template.
+  return Object.defineProperty(model, "period", { value: bounds.length ? { min: bounds.map(b => b.min).sort()[0], max: bounds.map(b => b.max).sort().at(-1) } : null });
 }
 
 // URL hash (spec 0001 §Filters): `#<dim>=<value>&…&date=<from>..<to>`, dims in config order, date only when it differs from the default.

@@ -83,7 +83,7 @@ const PLAIN = number({ maximumFractionDigits: 2 });
 const AXIS = number({ maximumFractionDigits: 20 }); // a tick as the chart library computed it
 const PERCENT = number({ style: "percent", maximumFractionDigits: 2 });
 const CHANGE = number({ style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" });
-const DAY = new Intl.DateTimeFormat(config.locale, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+const DAY = new Intl.DateTimeFormat(config.locale ?? "en-US", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
 // A tile's `format`: `number`, `currency`, `percent`, or { style, decimals, currency, unit }; `unit` follows a non-breaking space.
 function formatter(format) {
   const { style = "number", decimals, currency = "USD", unit } = typeof format === "string" ? { style: format } : (format ?? {});
@@ -141,6 +141,7 @@ function mountKpi(tile, index) {
   labelled(box, title, index);
   box.setAttribute("aria-busy", "true");
   box.append(title, value, delta);
+  if (tile.note) box.append(el("div", "text-xs text-base-content/80", tile.note)); // plain text (spec 0005 §3)
   const line = svg("polyline", { fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" });
   if (tile.spark) box.append(svg("svg", { class: "mt-1 h-8 w-full text-primary", viewBox: "0 0 100 24", preserveAspectRatio: "none", "aria-hidden": "true" }, line));
   document.getElementById("kpis").append(box);
@@ -717,6 +718,13 @@ function mountFilters(refresh) {
   return draw;
 }
 
+// Header line (spec 0005 §4): the build wrote the snapshot's first and last date and the source label into the slot.
+const headline = document.getElementById("headline");
+if (headline) {
+  const { min, max, source } = headline.dataset;
+  const day = iso => DAY.format(new Date(iso));
+  headline.textContent = [...(max ? [`Data as of ${day(max)}`, `Period ${day(min)} – ${day(max)}`] : []), ...(source ? [`Source ${source}`] : [])].join(" · ");
+}
 // Tiles first, so the layout stands while the engine loads.
 const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, table: mountTable, text: mountText };
 const paint = config.tiles.map((tile, i) => MOUNT[tile.type]?.(tile, i) ?? (async () => {}));

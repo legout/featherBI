@@ -18,8 +18,8 @@ An `issue_id`/`key`, an opened date, `type` (bug, feature, task), `status` (open
 
 ```sql
 SELECT COUNT(*) AS issues FROM issues;
-SELECT COUNT(*) AS not_done FROM issues WHERE status <> 'Done';
-SELECT COUNT(*) AS done FROM issues WHERE status = 'Done';
+SELECT COUNT(*) AS not_done FROM issues WHERE status NOT IN ('Done', 'Closed');
+SELECT COUNT(*) AS done FROM issues WHERE status IN ('Done', 'Closed');
 SELECT COUNT(*) AS bugs FROM issues WHERE type = 'Bug';
 SELECT AVG(points) AS average_points FROM issues;
 SELECT status, COUNT(*) AS issues FROM issues GROUP BY 1 ORDER BY 2 DESC;

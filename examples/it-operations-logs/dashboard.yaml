@@ -26,7 +26,7 @@ tiles:
   - type: kpi
     title: Error rate %
     sql: >
-      SELECT 100.0 * COUNT(*) FILTER (WHERE level = 'ERROR') / COUNT(*) AS value
+      SELECT 100.0 * COUNT(*) FILTER (WHERE level = 'ERROR') / NULLIF(COUNT(*), 0) AS value
       FROM logs WHERE {{filters:logs}}
   - type: kpi
     title: Average latency ms

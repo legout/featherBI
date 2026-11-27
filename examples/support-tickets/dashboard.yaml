@@ -17,7 +17,7 @@ tiles:
     title: Open tickets
     sql: >
       SELECT COUNT(*) AS value
-      FROM tickets WHERE status = 'Open' AND {{filters:tickets}}
+      FROM tickets WHERE status NOT IN ('Resolved', 'Closed') AND {{filters:tickets}}
   - type: kpi
     title: Average first response min
     sql: >

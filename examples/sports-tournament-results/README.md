@@ -7,19 +7,21 @@
     duckdb < make.sql
     node ../../skill/featherbi/scripts/featherbi.mjs build dashboard.yaml
 
-Row `i` (0 … 479): `team = T(i mod 8 + 1)`; `game_date = 2025-03-01 + (i div 16)` days;
-`goals_for = i mod 4`; `goals_against = i mod 3`; `result` Win when for > against, Draw when equal, else Loss;
-`points` 3, 1, 0.
+240 games, each written once as two mirrored rows: game `g = i div 2` (0 … 239), side `i mod 2` (0 home, 1 away).
+Home team `T(g mod 8 + 1)`, away team `T((g mod 8 + 1 + (g div 8) mod 7) mod 8 + 1)` (always a different team);
+`game_date = 2025-03-01 + (g div 8)` days; home goals `h = g mod 4`, away goals `a = g mod 3`; the away row
+swaps them. `result` is Win when `goals_for > goals_against`, Draw when equal, else Loss; `points` 3, 1, 0.
 
-Pairs (for, against) repeat every 12 rows: (0,0) D, (1,1) D, (2,2) D, (3,0) W, (0,1) L, (1,2) L, (2,0) W,
-(3,1) W, (0,2) L, (1,0) W, (2,1) W, (3,2) W: 6 wins, 3 draws, 3 losses; 480 / 12 = 40 cycles.
+Pairs (h, a) repeat every 12 games: (0,0) D, (1,1) D, (2,2) D, (3,0) H, (0,1) A, (1,2) A, (2,0) H, (3,1) H,
+(0,2) A, (1,0) H, (2,1) H, (3,2) H: 6 home wins, 3 draws, 3 away wins; 240 / 12 = 20 cycles. Every game is
+mirrored, so wins equal losses and goals for equal goals against.
 
 ## Figures (worked on paper from the rule, not read from a query)
 
 | Tile | Shown | Derivation |
 |---|---|---|
-| Team-games | `480` | rows 0 … 479 |
-| Wins | `240` | 6 per cycle × 40 |
-| Points | `840` | per cycle 6 · 3 + 3 · 1 = 21, × 40 |
-| Goals for | `720` | per cycle 3 · (0 + 1 + 2 + 3) = 18, × 40 |
-| Goals against | `480` | per cycle 4 · (0 + 1 + 2) = 12, × 40 |
+| Team-games | `480` | 240 games × 2 rows |
+| Wins | `180` | per cycle 6 home wins + 3 away wins = 9, × 20 (losses are 180 too) |
+| Points | `660` | per cycle 9 decisive games × 3 + 3 draws × 2 = 33, × 20 |
+| Goals for | `600` | per cycle h sums to 3 · (0 + 1 + 2 + 3) = 18 and a to 4 · (0 + 1 + 2) = 12, so 30, × 20 |
+| Goals against | `600` | the same games with the sides swapped |

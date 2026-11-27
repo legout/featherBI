@@ -20,7 +20,7 @@ A `vehicle`/`device` id, a trip or ping timestamp, `distance_km`/`odometer`, `sp
 SELECT COUNT(*) AS trips FROM trips;
 SELECT SUM(distance_km) AS distance_km FROM trips;
 SELECT AVG(distance_km) AS average_trip_km FROM trips;
-SELECT 100.0 * SUM(harsh_brakes) / SUM(distance_km) AS brakes_per_100_km FROM trips;
+SELECT 100.0 * SUM(harsh_brakes) / NULLIF(SUM(distance_km), 0) AS brakes_per_100_km FROM trips;
 SELECT vehicle, SUM(distance_km) AS distance_km, SUM(idle_min) AS idle_min FROM trips GROUP BY 1 ORDER BY 1;
 ```
 
@@ -37,4 +37,4 @@ SELECT vehicle, SUM(distance_km) AS distance_km, SUM(idle_min) AS idle_min FROM 
 - Odometer is cumulative and can reset or be replaced; use differences, not values.
 - Units: km versus miles, km/h versus mph; say which.
 - Time zones: a trip across midnight belongs to its start day; say so.
-- Rates need a denominator: brakes per 100 km, not raw counts across unequal vehicles.
+- Rates need a denominator, and a zero one (an idle-only trip) makes the rate undefined: use `NULLIF(..., 0)`. Brakes per 100 km, not raw counts across unequal vehicles.

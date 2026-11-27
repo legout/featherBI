@@ -189,3 +189,50 @@ test("weather: two wet readings on one date are one wet day", () => {
   const recipe = recipes("weather").find(r => r.includes("wet_days"));
   expect(csv(dir("weather"), `${observations} ${recipe}`)).toEqual(["A,1"]);
 });
+
+// Named scenarios from the PR #138 review, each with the reviewer's hand-worked expectation.
+const one = (d, view, sql) => csv(dir(d), `${view} ${sql}`);
+
+test("support: a Pending ticket is open (the documented default: not resolved or closed)", () => {
+  const tickets = "CREATE VIEW tickets AS SELECT * FROM (VALUES ('Pending'), ('Resolved')) t(status);";
+  const recipe = recipes("support-tickets").find(r => r.includes("open_tickets"));
+  for (const sql of [recipe, tile("support-tickets", "Open tickets")]) expect(one("support-tickets", tickets, sql), sql).toEqual(["1"]);
+});
+
+test("issues: a Closed issue is done and not 'not done' (the documented default: Done and Closed are terminal)", () => {
+  const issues = "CREATE VIEW issues AS SELECT * FROM (VALUES ('Closed')) t(status);";
+  const rs = recipes("issue-tracking");
+  const [notDone, done] = ["not_done", "AS done "].map(k => rs.find(r => r.includes(k)));
+  for (const sql of [notDone, tile("issue-tracking", "Not done")]) expect(one("issue-tracking", issues, sql), sql).toEqual(["0"]);
+  for (const sql of [done, tile("issue-tracking", "Done")]) expect(one("issue-tracking", issues, sql), sql).toEqual(["1"]);
+});
+
+test("logistics: an in-transit shipment (on_time NULL) is neither on time nor late, and is out of the denominators", () => {
+  // One delivered on time, one still in transit: 100 % of known outcomes on time, 0 known late.
+  const shipments = "CREATE VIEW shipments AS SELECT * FROM (VALUES ('Alpha', 1), ('Alpha', NULL::INTEGER)) t(carrier, on_time);";
+  const rs = recipes("logistics");
+  const pct = rs.find(r => r.includes("AS on_time_pct") && !r.includes("carrier"));
+  const late = rs.find(r => r.includes("late_shipments"));
+  const byCarrier = rs.find(r => r.includes("carrier,"));
+  expect(Number(one("logistics", shipments, pct)[0])).toBe(100);
+  expect(Number(one("logistics", shipments, tile("logistics", "On-time %"))[0])).toBe(100);
+  expect(one("logistics", shipments, late)).toEqual(["0"]);
+  expect(one("logistics", shipments, tile("logistics", "Late shipments"))).toEqual(["0"]);
+  expect(Number(one("logistics", shipments, byCarrier)[0].split(",")[1])).toBe(100);
+  expect(Number(one("logistics", shipments, tile("logistics", "On-time % by carrier").replace(/AS x/, "AS carrier"))[0].split(",")[1])).toBe(100);
+});
+
+test("undefined rates are NULL, not NaN: error rate of no events, brakes per 100 km of a zero-distance trip", () => {
+  const logs = "CREATE VIEW logs AS SELECT * FROM (VALUES ('x', 'ERROR', 1)) t(service, level, latency_ms) WHERE FALSE;";
+  const rate = recipes("it-operations-logs").find(r => r.includes("error_rate_pct"));
+  for (const sql of [rate, tile("it-operations-logs", "Error rate %")]) expect(one("it-operations-logs", logs, sql), sql).toEqual(["NULL"]);
+  const trips = "CREATE VIEW trips AS SELECT * FROM (VALUES (0, 0, 5)) t(distance_km, harsh_brakes, idle_min);";
+  const brakes = recipes("vehicle-telematics").find(r => r.includes("brakes_per_100_km"));
+  expect(one("vehicle-telematics", trips, brakes)).toEqual(["NULL"]);
+});
+
+test("tournament: every game is mirrored, so goals for equal goals against and wins equal losses", () => {
+  duckdb(dir("sports-tournament-results"), fs.readFileSync(path.join(dir("sports-tournament-results"), "make.sql"), "utf8"));
+  const sql = "SELECT SUM(goals_for) = SUM(goals_against), COUNT(*) FILTER (WHERE result = 'Win') = COUNT(*) FILTER (WHERE result = 'Loss') FROM read_parquet('results.parquet')";
+  expect(csv(dir("sports-tournament-results"), sql)).toEqual(["true,true"]);
+});

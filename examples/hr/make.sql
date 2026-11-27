@@ -1,4 +1,5 @@
 -- Generates employees.parquet next to this file. Run here: duckdb < make.sql
+-- SYNTHETIC, anonymous rows only: never use this per-employee shape for real payroll data.
 -- Deterministic: every value is a pure function of the row number i (no clock, no random, no network).
 -- 300 employees (i = 0 ... 299):
 --   employee_id = i + 1; department by i mod 6: Engineering, Sales, Operations, Finance, People, Legal

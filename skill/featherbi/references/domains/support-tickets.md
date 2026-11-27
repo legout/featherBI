@@ -18,7 +18,7 @@ A `ticket_id`, an opened date, `status` open/resolved, `priority`, `channel`, `f
 
 ```sql
 SELECT COUNT(*) AS tickets FROM tickets;
-SELECT COUNT(*) AS open_tickets FROM tickets WHERE status = 'Open';
+SELECT COUNT(*) AS open_tickets FROM tickets WHERE status NOT IN ('Resolved', 'Closed');
 SELECT AVG(first_response_min) AS average_first_response_min FROM tickets;
 SELECT AVG(csat) AS average_csat FROM tickets;
 SELECT priority, COUNT(*) AS tickets FROM tickets GROUP BY 1 ORDER BY 1;

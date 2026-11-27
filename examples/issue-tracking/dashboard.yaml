@@ -17,12 +17,12 @@ tiles:
     title: Not done
     sql: >
       SELECT COUNT(*) AS value
-      FROM issues WHERE status <> 'Done' AND {{filters:issues}}
+      FROM issues WHERE status NOT IN ('Done', 'Closed') AND {{filters:issues}}
   - type: kpi
     title: Done
     sql: >
       SELECT COUNT(*) AS value
-      FROM issues WHERE status = 'Done' AND {{filters:issues}}
+      FROM issues WHERE status IN ('Done', 'Closed') AND {{filters:issues}}
   - type: kpi
     title: Bugs
     sql: >

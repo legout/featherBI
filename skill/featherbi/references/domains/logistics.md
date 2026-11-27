@@ -18,11 +18,11 @@ A `shipment_id`, a ship date, `carrier`, `region`/`lane`, `weight_kg`, `transit_
 
 ```sql
 SELECT COUNT(*) AS shipments FROM shipments;
-SELECT 100.0 * SUM(on_time) / COUNT(*) AS on_time_pct FROM shipments;
-SELECT COUNT(*) - SUM(on_time) AS late_shipments FROM shipments;
+SELECT 100.0 * SUM(on_time) / NULLIF(COUNT(on_time), 0) AS on_time_pct FROM shipments;
+SELECT COUNT(*) FILTER (WHERE on_time = 0) AS late_shipments FROM shipments;
 SELECT AVG(transit_days) AS average_transit_days FROM shipments;
 SELECT SUM(weight_kg) AS weight_kg FROM shipments;
-SELECT carrier, 100.0 * SUM(on_time) / COUNT(*) AS on_time_pct FROM shipments GROUP BY 1 ORDER BY 1;
+SELECT carrier, 100.0 * SUM(on_time) / NULLIF(COUNT(on_time), 0) AS on_time_pct FROM shipments GROUP BY 1 ORDER BY 1;
 ```
 
 ## Tile ideas
@@ -34,7 +34,7 @@ SELECT carrier, 100.0 * SUM(on_time) / COUNT(*) AS on_time_pct FROM shipments GR
 
 ## Traps
 
-- Undelivered shipments have no transit time yet: leave them out of averages and say so.
+- In-transit shipments have `on_time` NULL: they are neither on time nor late. Rates divide by known outcomes (`COUNT(on_time)`), late counts `on_time = 0`; transit averages skip them too.
 - A rate of rates: on-time % across carriers divides sums, not an average of percentages.
 - Time zones decide which day a delivery counts for.
 - Weight units (kg, lb) and chargeable versus actual weight differ.

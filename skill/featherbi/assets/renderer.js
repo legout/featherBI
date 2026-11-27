@@ -39,7 +39,8 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
   const names = Object.keys(extensions);
   if (names.length && (await db.prefetchExtensions(names)).length !== names.length) throw new Error("the Parquet extension could not be loaded");
   // Without open()'s cast options BIGINT arrives as BigInt and DECIMAL as an unscaled integer.
-  const plain = (value, type) => (typeof value === "bigint" ? Number(value) : value != null && type.scale != null ? value.valueOf(type.scale) : value);
+  // `exact` (SQL tables) keeps an integer a double cannot hold as a BigInt, so an identifier is shown digit for digit.
+  const plain = (value, type, exact) => (typeof value === "bigint" ? (exact && !Number.isSafeInteger(Number(value)) ? value : Number(value)) : value != null && type.scale != null ? value.valueOf(type.scale) : value);
   return {
     // snapshots: { <table>: Uint8Array of Parquet }
     async open(snapshots) {
@@ -49,11 +50,12 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
         await conn.query(`CREATE TABLE "${table}" AS FROM '${table}.parquet'`);
       }
     },
-    async query(sql, params = []) {
+    async query(sql, params = [], exact = false) {
       const statement = await conn.prepare(sql);
       try {
         const result = await statement.query(...params);
-        const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type)])));
+        const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type, exact)])));
+        rows.columns = result.schema.fields.map(f => f.name); // in SQL order, also when there are no rows
         rows.dates = result.schema.fields.filter(f => String(f.type).startsWith("Date")).map(f => f.name); // DATE columns, for `@days`
         return rows;
       } finally {
@@ -77,6 +79,17 @@ const FORMATS = {
   currency: new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }),
   number: new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }),
   change: new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" }),
+};
+
+// A clicked value in the form of its embedded filter option. An integer beyond a double is embedded as its exact digits
+// (validate.mjs), while a tile's rows carry it as a number, or as a BigInt in a SQL table.
+// shortcut: two such ids that round to the same number pick the option with the number's exact digits, else the first;
+// upgrade when chart and pivot rows keep BigInt.
+const asOption = (dim, value) => {
+  if (typeof value !== "bigint" && !(typeof value === "number" && Number.isInteger(value) && !Number.isSafeInteger(value))) return value;
+  const options = (filters.options[dim] ?? []).filter(o => typeof o === "string");
+  const exact = String(BigInt(value)); // the integer the number holds, not its rounded print
+  return options.find(o => o === exact) ?? (typeof value === "number" ? options.find(o => Number(o) === value) : undefined) ?? value;
 };
 
 // One tile query: the tile's SQL with the active filters expanded and bound.
@@ -295,7 +308,7 @@ function mountChart(tile, index) {
     // A click sets the clicked element's key columns as the tile's click dimensions; the same click again clears them.
     chart.on("click", p => {
       const dims = [].concat(tile.click ?? []).slice(0, preset.click.length);
-      const values = dims.map((_, i) => p.data?.[preset.click[i]]);
+      const values = dims.map((dim, i) => asOption(dim, p.data?.[preset.click[i]]));
       if (!dims.length || values.some(v => v == null)) return;
       const same = dims.every((dim, i) => state.dims[dim] === values[i]);
       dims.forEach((dim, i) => (same ? delete state.dims[dim] : (state.dims[dim] = values[i])));
@@ -372,8 +385,9 @@ function mountPivot(tile, index) {
           const button = el("button", "link cursor-pointer", label);
           button.type = "button";
           button.onclick = () => {
-            if (state.dims[tile.click] === label) delete state.dims[tile.click];
-            else state.dims[tile.click] = label;
+            const value = asOption(tile.click, label);
+            if (state.dims[tile.click] === value) delete state.dims[tile.click];
+            else state.dims[tile.click] = value;
             drawFilters();
             refresh();
           };
@@ -420,6 +434,7 @@ function loadGrid({ url, integrity }) {
 
 // AG Grid owns scrolling and sorting; every block is a filtered SQL page with __row as its stable tie-breaker.
 function mountTable(tile, index) {
+  if (tile.sql) return mountSqlTable(tile, index);
   const { box, body } = mountCard(tile, index, "h-80 w-full");
   gridBodies.push(body);
   gridTheme(body);
@@ -473,6 +488,58 @@ function mountTable(tile, index) {
       };
       if (api) api.setGridOption("datasource", options.datasource);
       else api = agGrid.createGrid(body, options);
+    } finally {
+      if (current()) box.removeAttribute("aria-busy");
+    }
+  };
+}
+
+// A `sql` table (spec 0005 §1): the result's columns in SQL order, at most 1 000 rows, sorted by the grid in the browser.
+function mountSqlTable(tile, index) {
+  const { box, body } = mountCard(tile, index, "h-80 w-full");
+  gridBodies.push(body);
+  gridTheme(body);
+  box.setAttribute("aria-busy", "true");
+  let api;
+  return async (engine, current) => {
+    try {
+      if (!engine || !agGrid) return;
+      const x = expand(tile.sql, state, filters.dims, filters.date, filters.tableColumns, tile.exclude);
+      // pi-lens-ignore: no-sql-in-code-js
+      const rows = await engine.query(`SELECT * FROM (${x.sql}) LIMIT 1001`, x.params, true);
+      if (!current()) return;
+      box.querySelector("h2").textContent = `${tile.title} · ${rows.length > 1000 ? "first 1 000" : rows.length} rows`;
+      const rowData = rows.slice(0, 1000);
+      if (api) return api.setGridOption("rowData", rowData);
+      // A row sets the dimension to its value in the first column; the same value again clears it.
+      const pick = row => {
+        let value = row?.[rows.columns[0]];
+        if (value == null) return;
+        // The form the filter options have: a DATE as the day the cell shows.
+        if (rows.dates.includes(rows.columns[0])) value = new Date(value).toISOString().slice(0, 10);
+        else value = asOption(tile.click, value);
+        if (state.dims[tile.click] === value) delete state.dims[tile.click];
+        else state.dims[tile.click] = value;
+        drawFilters();
+        refresh();
+      };
+      api = agGrid.createGrid(body, {
+        theme: "legacy",
+        columnDefs: rows.columns.map(field => ({
+          field,
+          headerName: field,
+          valueFormatter: rows.dates.includes(field) ? params => (params.value == null ? "" : new Date(params.value).toISOString().slice(0, 10)) : undefined,
+        })),
+        defaultColDef: { sortable: true, resizable: true, flex: 1, minWidth: 100 },
+        suppressFieldDotNotation: true, // a result column may be named `sum(s.revenue)`
+        rowData,
+        animateRows: false,
+        ...(tile.click && {
+          rowClass: "cursor-pointer",
+          onRowClicked: event => pick(event.data),
+          onCellKeyDown: event => event.event.key === "Enter" && pick(event.data),
+        }),
+      });
     } finally {
       if (current()) box.removeAttribute("aria-busy");
     }

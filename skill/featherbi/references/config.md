@@ -44,7 +44,17 @@ tiles:
 | `echarts` | `preset`, `sql`, `click`, `exclude`, `format`, `option` | the preset's columns, see `presets.md` |
 | `pivot` | `sql`, `click`, `format` | rows `r, c, v`; optional booleans `r_total, c_total` mark total rows/columns |
 | `table` | `source`, `columns` | none: the renderer pages the source table; every column must exist in it |
+| `table` | `sql`, `click`, `exclude` | any: the columns are the result's columns, in SQL order |
 | `text` | `markdown` | none |
+
+A `table` takes exactly one of `source` and `sql`. With `sql` it shows a tile-SQL result (anomalies, top or bottom rows, data-quality findings) in the order the SQL returns it; `columns` is not allowed. The result is capped at 1 000 rows: a longer one shows the first 1 000 and the title says `first 1 000 rows`, so put `ORDER BY` in the SQL. Header clicks sort the loaded rows only. `click: <dim>` makes a row set that dimension to its value in the **first** column.
+
+```yaml
+- type: table
+  title: Revenue by region
+  click: region
+  sql: SELECT region, SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+```
 
 Pivot totals come from SQL, for example:
 

@@ -1,5 +1,8 @@
 // Journey harness: build a fixture with the real CLI, open the output over file://, assert what the page shows.
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 
@@ -197,6 +200,144 @@ test("acceptance 1 and 3: every tile renders; EU click, channel Online and Reset
   await expect(pivot.getByRole("row", { name: /^US/ })).toHaveCount(1);
   await expect(rows).toContainText("12 rows (filtered)");
   expect(errors).toEqual([]);
+});
+
+// Spec 0005 acceptance 2 on fixtures/hand/acceptance.yaml. Values: fixtures/hand/README.md (cell numbers are raw until plan 0005 C2).
+test("SQL table: region totals in SQL order, channel Online narrows them, a click on the EU row filters region and a second click clears it", async ({ page }) => {
+  build("fixtures/hand/acceptance.yaml");
+  const errors = await open(page, "fixtures/hand/dist/hand-acceptance.html");
+  const table = page.getByRole("group", { name: "Revenue by region (SQL)" }); // the title also carries the row count
+  const kpi = amount => expect(tile(page, "Revenue").getByText(amount, { exact: true })).toBeVisible();
+  const cells = n => table.locator(`[role="row"][aria-rowindex="${n + 1}"]`).getByRole("gridcell");
+  const shows = async (...rows) => {
+    await expect(table.getByRole("heading")).toHaveText(`Revenue by region (SQL) · ${rows.length} rows`);
+    for (const [i, row] of rows.entries()) await expect(cells(i + 1)).toHaveText(row);
+  };
+
+  await expect(table.getByRole("columnheader")).toHaveText(["region", "revenue"]); // the result's columns, in SQL order
+  await shows(["EU", "850"], ["US", "1410.5"]);
+  await page.getByRole("combobox", { name: /^channel/ }).selectOption("Online");
+  await shows(["EU", "360"], ["US", "660"]);
+  await page.getByRole("combobox", { name: /^channel/ }).selectOption("");
+  await shows(["EU", "850"], ["US", "1410.5"]);
+
+  await cells(1).first().click();
+  await kpi("$850.00");
+  await expect(page.getByLabel("Active filters")).toContainText("region: EU");
+  await shows(["EU", "850"]);
+  await cells(1).first().click(); // the same value again clears it
+  await kpi("$2,260.50");
+  await shows(["EU", "850"], ["US", "1410.5"]);
+  expect(errors).toEqual([]);
+});
+
+// A config generated in the test, built next to a copy of the hand fixture's sales rows; `check` gets the opened page.
+async function generated(page, config, check) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "journey-sql-table-"));
+  try {
+    fs.copyFileSync(root + "fixtures/hand/sales.parquet", path.join(tmp, "sales.parquet"));
+    fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify({ name: "generated", sources: { sales: { read: "read_parquet('sales.parquet')" } }, ...config }));
+    execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" });
+    const errors = [];
+    page.on("console", m => m.type() === "error" && errors.push(m.text()));
+    page.on("pageerror", e => errors.push(String(e)));
+    await page.goto(pathToFileURL(path.join(tmp, "dist/generated.html")).href);
+    await check();
+    expect(errors).toEqual([]);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+const firstRow = table => table.locator('[role="row"][aria-rowindex="2"]').getByRole("gridcell");
+
+// Spec 0005 acceptance 3: `n` descends so the kept rows show the SQL's own order.
+for (const [size, title, first] of [
+  [1001, "Numbers · first 1 000 rows", "1000"],
+  [1000, "Numbers · 1000 rows", "999"],
+]) {
+  test(`SQL table row cap: a ${size}-row result shows 1 000 rows ${size > 1000 ? "and the note" : "without a note"}`, async ({ page }) => {
+    const tiles = [{ type: "table", title: "Numbers", sql: `SELECT range AS n FROM range(${size}) ORDER BY 1 DESC` }];
+    await generated(page, { title: "Cap", tiles }, async () => {
+      const table = page.getByRole("group", { name: "Numbers" });
+      await expect(table.getByRole("heading")).toHaveText(title);
+      await expect(table.locator("[aria-rowcount]")).toHaveAttribute("aria-rowcount", "1001"); // the header row and 1 000 rows
+      await expect(firstRow(table)).toHaveText([first]);
+    });
+  });
+}
+
+// Spec 0005 §1 on column types no hand fixture config combines with a SQL table: a DATE first column and BIGINT identifiers.
+test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers above 2^53 stay exact", async ({ page }) => {
+  const config = {
+    title: "Types",
+    // Two neighbouring order ids above 2^53: a double holds only the first. The third, 2^60, fits a double exactly, but
+    // JavaScript prints that number as 1152921504606847000. ...995 and ...996 both round to ...996, which a double holds.
+    sources: { sales: { read: "read_parquet('sales.parquet')" }, orders: { read: "(VALUES (9007199254740992::BIGINT, 10), (9007199254740993::BIGINT, 20), (9007199254740995::BIGINT, 100), (9007199254740996::BIGINT, 200), (1152921504606846976::BIGINT, 40)) t(order_id, amount)" } },
+    dims: { day: { col: "order_date" }, order: { col: "order_id" } },
+    tiles: [
+      { type: "kpi", title: "Amount", sql: "SELECT SUM(amount) AS value FROM orders WHERE {{filters:orders}}" },
+      { type: "kpi", title: "Revenue", format: "currency", sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}" },
+      { type: "table", title: "Days", click: "day", exclude: ["day"], sql: "SELECT order_date, SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1" },
+      { type: "table", title: "Orders", click: "order", exclude: ["order"], sql: "SELECT order_id, amount FROM orders WHERE {{filters:orders}} ORDER BY 1" },
+      { type: "pivot", title: "By order", click: "order", exclude: ["order"], sql: "SELECT order_id AS r, 'amount' AS c, SUM(amount) AS v FROM orders WHERE {{filters:orders}} GROUP BY 1 ORDER BY 1" },
+      { type: "pivot", title: "Largest", click: "order", exclude: ["order"], sql: "SELECT order_id AS r, 'amount' AS c, SUM(amount) AS v FROM orders WHERE amount = 200 AND {{filters:orders}} GROUP BY 1" },
+    ],
+  };
+  await generated(page, config, async () => {
+    const kpi = amount => expect(tile(page, "Revenue").getByText(amount, { exact: true })).toBeVisible();
+    const days = page.getByRole("group", { name: "Days" });
+    const second = days.locator('[role="row"][aria-rowindex="3"]').getByRole("gridcell");
+    await kpi("$2,260.50");
+    await expect(second).toHaveText(["2025-01-15", "150"]); // README: the one order of that day
+    await second.first().click();
+    await kpi("$150.00");
+    expect(page.url()).toMatch(/#day=2025-01-15$/);
+    await expect(page.getByRole("combobox", { name: /^day/ })).toHaveValue("2025-01-15");
+    const fresh = await page.context().newPage(); // the hash round trip
+    await fresh.goto(page.url());
+    await expect(tile(fresh, "Revenue").getByText("$150.00", { exact: true })).toBeVisible();
+    await second.first().click(); // the same day again clears it
+    await kpi("$2,260.50");
+
+    const orders = page.getByRole("group", { name: "Orders" }).getByRole("gridcell");
+    await expect(orders).toHaveText(["9007199254740992", "10", "9007199254740993", "20", "9007199254740995", "100", "9007199254740996", "200", "1152921504606846976", "40"]);
+    // The second id is a filter value of its own: the select lists both, a click on its row leaves its amount (20, not 10
+    // or the total 370), and the copied URL opens the same selection.
+    const amount = (p, text) => expect(tile(p, "Amount").getByText(text, { exact: true })).toBeVisible();
+    const select = p => p.getByRole("combobox", { name: /^order/ });
+    await expect(select(page).getByRole("option")).toHaveText(["All", "9007199254740992", "9007199254740993", "9007199254740995", "9007199254740996", "1152921504606846976"]);
+    await amount(page, "370");
+    await orders.nth(2).click();
+    await amount(page, "20");
+    expect(page.url()).toMatch(/#order=9007199254740993$/);
+    await expect(select(page)).toHaveValue("9007199254740993");
+    const copied = await page.context().newPage();
+    await copied.goto(page.url());
+    await amount(copied, "20");
+    await expect(select(copied)).toHaveValue("9007199254740993");
+    await expect(copied.getByLabel("Active filters")).toContainText("order: 9007199254740993");
+
+    // A pivot click on the 2^60 order (its last row) sets the same exact value as the option, so its link restores it too.
+    await tile(page, "By order").getByRole("button").last().click();
+    await amount(page, "40");
+    expect(page.url()).toMatch(/#order=1152921504606846976$/);
+    await expect(select(page)).toHaveValue("1152921504606846976");
+    const pivoted = await page.context().newPage();
+    await pivoted.goto(page.url());
+    await amount(pivoted, "40");
+    await expect(select(pivoted)).toHaveValue("1152921504606846976");
+
+    // A pivot whose only row is ...996, an id a double holds exactly: its click selects that order (200), not ...995 (100),
+    // the earlier option that rounds to the same number.
+    await tile(page, "Largest").getByRole("button").last().click();
+    await amount(page, "200");
+    expect(page.url()).toMatch(/#order=9007199254740996$/);
+    await expect(select(page)).toHaveValue("9007199254740996");
+    const largest = await page.context().newPage();
+    await largest.goto(page.url());
+    await amount(largest, "200");
+    await expect(select(largest)).toHaveValue("9007199254740996");
+  });
 });
 
 // Spec 0001 acceptance 8a on every tile: EU then US while the engine lags; no tile ever paints an EU-only value, all end on US.

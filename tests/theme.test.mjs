@@ -77,6 +77,8 @@ const INVALID = [
   ["unknown colour token", "./t.yaml", { "t.yaml": 'light: { brand: "#ffffff" }\n' }, "./t.yaml", "light.brand"],
   ["a colour that is not hex or oklch()", "./t.yaml", { "t.yaml": "dark: { primary: blue }\n" }, "./t.yaml", "dark.primary"],
   ["an oklch() colour with a malformed number", "./t.yaml", { "t.yaml": 'light: { primary: "oklch(60% .1.2 30)" }\n' }, "./t.yaml", "light.primary"],
+  // CSS numbers need a digit after a decimal point: Chromium's CSS.supports("color", "oklch(100.% 0 0)") is false.
+  ["an oklch() number that ends in its decimal point", "./t.yaml", { "t.yaml": 'light: { primary: "oklch(100.% 0 0)" }\n' }, "./t.yaml", "light.primary"],
   ["an oklch() colour with a channel missing", "./t.yaml", { "t.yaml": 'light: { primary: "oklch(60% .1)" }\n' }, "./t.yaml", "light.primary"],
   ["a hex colour of five digits", "./t.yaml", { "t.yaml": 'light: { primary: "#12345" }\n' }, "./t.yaml", "light.primary"],
   ["a palette colour that is not hex or oklch()", "./t.yaml", { "t.yaml": `${LIGHT}palette: ["#0b5fff", "rgb(1,2,3)"]\n` }, "./t.yaml", "palette[1]"],
@@ -131,6 +133,9 @@ for (const [name, colour] of VALID) {
 // - #0000 (transparent) on white paints white: 1.00.
 // - #00000080 on white: alpha 128/255 leaves c = 127/255 = 0.4980, L = 0.2122, 1.05 / 0.2622 = 4.00.
 // - oklch(0 0 0 / 50%) on white: c = 0.5, L = 0.2140, 1.05 / 0.2640 = 3.98.
+// - oklch(100% 0 none): a missing hue counts as 0 and chroma is 0, so it is white; on white 1.05 / 1.05 = 1.00.
+// - base-100 #fff0 is fully transparent, so the header shows the page's base-200 under it (templates/dashboard.html:
+//   body bg-base-200, header bg-base-100): #000 text on #000 is 0.05 / 0.05 = 1.00.
 // - the default light theme's own primary pair (DaisyUI winter), inherited by a file that sets neither token: Chromium
 //   paints it as rgb(206,228,255) on rgb(0,105,255), 3.62 after 8-bit rounding; unrounded it is within 0.03 of that.
 // [case, light tokens, the warnings: [pair, ratio]]. PRIMARY passes (#ffffff on #0b5fff is 5.13), so it adds no warning.
@@ -140,6 +145,8 @@ const CONTRAST = [
   ["fully transparent text", `base-100: "#ffffff", base-content: "#0000", ${PRIMARY}`, [["base-content on base-100", /1\.00:1/]]],
   ["half-transparent black text", `base-100: "#ffffff", base-content: "#00000080", ${PRIMARY}`, [["base-content on base-100", /4\.00:1/]]],
   ["half-transparent oklch() text", `base-100: "#ffffff", base-content: "oklch(0 0 0 / 50%)", ${PRIMARY}`, [["base-content on base-100", /3\.98:1/]]],
+  ["white text written with a missing hue", `base-100: "#ffffff", base-content: "oklch(100% 0 none)", ${PRIMARY}`, [["base-content on base-100", /1\.00:1/]]],
+  ["black text on a transparent surface over a black page", `base-100: "#fff0", base-200: "#000", base-content: "#000", ${PRIMARY}`, [["base-content on base-100", /1\.00:1/]]],
   ["an inherited pair the file does not set", 'base-100: "#ffffff", base-content: "#1a1a1a"', [["primary-content on primary", /3\.(59|6[0-5]):1/]]],
   ["pairs that pass", `base-100: "#ffffff", base-content: "#1a1a1a", ${PRIMARY}`, []],
 ];

@@ -231,36 +231,73 @@ test("SQL table: region totals in SQL order, channel Online narrows them, a clic
   expect(errors).toEqual([]);
 });
 
-// Spec 0005 acceptance 3: the config is generated here; `n` descends so the kept rows show the SQL's own order.
+// A config generated in the test, built next to a copy of the hand fixture's sales rows; `check` gets the opened page.
+async function generated(page, config, check) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "journey-sql-table-"));
+  try {
+    fs.copyFileSync(root + "fixtures/hand/sales.parquet", path.join(tmp, "sales.parquet"));
+    fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify({ name: "generated", sources: { sales: { read: "read_parquet('sales.parquet')" } }, ...config }));
+    execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" });
+    const errors = [];
+    page.on("console", m => m.type() === "error" && errors.push(m.text()));
+    page.on("pageerror", e => errors.push(String(e)));
+    await page.goto(pathToFileURL(path.join(tmp, "dist/generated.html")).href);
+    await check();
+    expect(errors).toEqual([]);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+const firstRow = table => table.locator('[role="row"][aria-rowindex="2"]').getByRole("gridcell");
+
+// Spec 0005 acceptance 3: `n` descends so the kept rows show the SQL's own order.
 for (const [size, title, first] of [
   [1001, "Numbers · first 1 000 rows", "1000"],
   [1000, "Numbers · 1000 rows", "999"],
 ]) {
   test(`SQL table row cap: a ${size}-row result shows 1 000 rows ${size > 1000 ? "and the note" : "without a note"}`, async ({ page }) => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "journey-cap-"));
-    try {
-      fs.copyFileSync(root + "fixtures/hand/sales.parquet", path.join(tmp, "sales.parquet"));
-      const config = {
-        title: "Cap",
-        name: "cap",
-        sources: { sales: { read: "read_parquet('sales.parquet')" } },
-        tiles: [{ type: "table", title: "Numbers", sql: `SELECT range AS n FROM range(${size}) ORDER BY 1 DESC` }],
-      };
-      fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify(config));
-      execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" });
-      const errors = [];
-      page.on("pageerror", e => errors.push(String(e)));
-      await page.goto(pathToFileURL(path.join(tmp, "dist/cap.html")).href);
+    const tiles = [{ type: "table", title: "Numbers", sql: `SELECT range AS n FROM range(${size}) ORDER BY 1 DESC` }];
+    await generated(page, { title: "Cap", tiles }, async () => {
       const table = page.getByRole("group", { name: "Numbers" });
       await expect(table.getByRole("heading")).toHaveText(title);
       await expect(table.locator("[aria-rowcount]")).toHaveAttribute("aria-rowcount", "1001"); // the header row and 1 000 rows
-      await expect(table.locator('[role="row"][aria-rowindex="2"]').getByRole("gridcell")).toHaveText([first]);
-      expect(errors).toEqual([]);
-    } finally {
-      fs.rmSync(tmp, { recursive: true, force: true });
-    }
+      await expect(firstRow(table)).toHaveText([first]);
+    });
   });
 }
+
+// Spec 0005 §1 on column types no hand fixture config combines with a SQL table: a DATE first column and BIGINT identifiers.
+test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers above 2^53 stay exact", async ({ page }) => {
+  const config = {
+    title: "Types",
+    dims: { day: { col: "order_date" } },
+    tiles: [
+      { type: "kpi", title: "Revenue", format: "currency", sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}" },
+      { type: "table", title: "Days", click: "day", exclude: ["day"], sql: "SELECT order_date, SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1" },
+      // Two neighbours above 2^53: a double holds only the first.
+      { type: "table", title: "Orders", sql: "SELECT * FROM (VALUES (9007199254740992::BIGINT), (9007199254740993::BIGINT)) t(order_id) ORDER BY 1" },
+    ],
+  };
+  await generated(page, config, async () => {
+    const kpi = amount => expect(tile(page, "Revenue").getByText(amount, { exact: true })).toBeVisible();
+    const days = page.getByRole("group", { name: "Days" });
+    const second = days.locator('[role="row"][aria-rowindex="3"]').getByRole("gridcell");
+    await kpi("$2,260.50");
+    await expect(second).toHaveText(["2025-01-15", "150"]); // README: the one order of that day
+    await second.first().click();
+    await kpi("$150.00");
+    expect(page.url()).toMatch(/#day=2025-01-15$/);
+    await expect(page.getByRole("combobox", { name: /^day/ })).toHaveValue("2025-01-15");
+    const fresh = await page.context().newPage(); // the hash round trip
+    await fresh.goto(page.url());
+    await expect(tile(fresh, "Revenue").getByText("$150.00", { exact: true })).toBeVisible();
+    await second.first().click(); // the same day again clears it
+    await kpi("$2,260.50");
+
+    const orders = page.getByRole("group", { name: "Orders" }).getByRole("gridcell");
+    await expect(orders).toHaveText(["9007199254740992", "9007199254740993"]);
+  });
+});
 
 // Spec 0001 acceptance 8a on every tile: EU then US while the engine lags; no tile ever paints an EU-only value, all end on US.
 test("latest state wins on every tile: EU then US before the first result paints only US values in all tiles", async ({ page }) => {

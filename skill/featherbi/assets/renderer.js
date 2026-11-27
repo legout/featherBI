@@ -39,7 +39,8 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
   const names = Object.keys(extensions);
   if (names.length && (await db.prefetchExtensions(names)).length !== names.length) throw new Error("the Parquet extension could not be loaded");
   // Without open()'s cast options BIGINT arrives as BigInt and DECIMAL as an unscaled integer.
-  const plain = (value, type) => (typeof value === "bigint" ? Number(value) : value != null && type.scale != null ? value.valueOf(type.scale) : value);
+  // `exact` (SQL tables) keeps an integer a double cannot hold as a BigInt, so an identifier is shown digit for digit.
+  const plain = (value, type, exact) => (typeof value === "bigint" ? (exact && !Number.isSafeInteger(Number(value)) ? value : Number(value)) : value != null && type.scale != null ? value.valueOf(type.scale) : value);
   return {
     // snapshots: { <table>: Uint8Array of Parquet }
     async open(snapshots) {
@@ -49,11 +50,11 @@ self.fetch = (url, init) => __fbExt[url] ? Promise.resolve(new Response(Uint8Arr
         await conn.query(`CREATE TABLE "${table}" AS FROM '${table}.parquet'`);
       }
     },
-    async query(sql, params = []) {
+    async query(sql, params = [], exact = false) {
       const statement = await conn.prepare(sql);
       try {
         const result = await statement.query(...params);
-        const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type)])));
+        const rows = result.toArray().map(row => Object.fromEntries(result.schema.fields.map(f => [f.name, plain(row[f.name], f.type, exact)])));
         rows.columns = result.schema.fields.map(f => f.name); // in SQL order, also when there are no rows
         rows.dates = result.schema.fields.filter(f => String(f.type).startsWith("Date")).map(f => f.name); // DATE columns, for `@days`
         return rows;
@@ -493,15 +494,18 @@ function mountSqlTable(tile, index) {
       if (!engine || !agGrid) return;
       const x = expand(tile.sql, state, filters.dims, filters.date, filters.tableColumns, tile.exclude);
       // pi-lens-ignore: no-sql-in-code-js
-      const rows = await engine.query(`SELECT * FROM (${x.sql}) LIMIT 1001`, x.params);
+      const rows = await engine.query(`SELECT * FROM (${x.sql}) LIMIT 1001`, x.params, true);
       if (!current()) return;
       box.querySelector("h2").textContent = `${tile.title} · ${rows.length > 1000 ? "first 1 000" : rows.length} rows`;
       const rowData = rows.slice(0, 1000);
       if (api) return api.setGridOption("rowData", rowData);
       // A row sets the dimension to its value in the first column; the same value again clears it.
       const pick = row => {
-        const value = row?.[rows.columns[0]];
+        let value = row?.[rows.columns[0]];
         if (value == null) return;
+        // The form the filter options have: a DATE as the day the cell shows, an integer beyond a double as its digits.
+        if (rows.dates.includes(rows.columns[0])) value = new Date(value).toISOString().slice(0, 10);
+        else if (typeof value === "bigint") value = String(value);
         if (state.dims[tile.click] === value) delete state.dims[tile.click];
         else state.dims[tile.click] = value;
         drawFilters();

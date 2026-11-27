@@ -38,7 +38,8 @@ const cases = [
   ["table with both source and sql", tile({ type: "table", source: "sales", columns: ["region"], sql: "SELECT region FROM sales" }), [], /tile "?t1"?.*`source`.*`sql`.*not both/is],
   ["table with neither source nor sql", tile({ type: "table" }), [], /tile "?t1"?.*needs.*`source` or `sql`/is],
   ["table with columns and sql", tile({ type: "table", sql: "SELECT region FROM sales", columns: ["region"] }), [], /tile "?t1"?.*`columns`.*not allowed.*`sql`/is],
-  ["sql table click on undeclared dim", tile({ type: "table", click: "country", sql: "SELECT region FROM sales" }), [], /tile "?t1"?.*click.*country.*not declared/is],
+  // `constructor` is on every object: only the config's own `dims` keys are declared.
+  ["sql table click on undeclared dim", tile({ type: "table", click: "constructor", sql: "SELECT region FROM sales" }), [], /tile "?t1"?.*click.*constructor.*not declared/is],
   ["sql table outside the snapshot", tile({ type: "table", sql: "SELECT * FROM other_table" }), [], /tile "?t1"?.*other_table/is],
   ["SQL that fails", tile({ type: "kpi", sql: "SELECT SUM(nope) AS value FROM sales" }), [], /tile "?t1"?.*nope/is],
   ["table outside the snapshot", tile({ type: "kpi", sql: "SELECT count(*) AS value FROM other_table" }), [], /tile "?t1"?.*other_table/is],

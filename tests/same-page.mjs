@@ -36,7 +36,7 @@ function build(tree, config, out) {
 }
 
 // Deliberate differences, named by the plan task that makes them:
-//   withoutTiles: tile titles left out of the data comparison and of the page;
+//   withoutTiles: titles of tiles cut out of the embedded data text and removed from the page;
 //   exclude: page => locators removed from both pages before the accessibility trees are compared.
 export async function samePage(page, base, config, { withoutTiles = [], exclude = () => [] } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "featherbi-same-"));
@@ -45,11 +45,17 @@ export async function samePage(page, base, config, { withoutTiles = [], exclude 
     const before = build(reference(base), config, files.before);
     const after = build(root, config, files.after);
 
+    // The raw text of the embedded data, minus only the serialized tiles named in `withoutTiles` (each with one separating
+    // comma); everything else is compared as written, never re-serialized.
     const data = html => {
-      const text = html.match(/<script type="application\/json" id="dashboard">(.*?)<\/script>/s)[1];
-      if (!withoutTiles.length) return text;
-      const parsed = JSON.parse(text);
-      return JSON.stringify({ ...parsed, tiles: parsed.tiles.filter(t => !withoutTiles.includes(t.title)) });
+      let text = html.match(/<script type="application\/json" id="dashboard">(.*?)<\/script>/s)[1];
+      for (const tile of JSON.parse(text).tiles.filter(t => withoutTiles.includes(t.title))) {
+        const written = JSON.stringify(tile).replaceAll("<", "\\u003c"); // as render.mjs writes it
+        const at = [`,${written}`, `${written},`].find(part => text.split(part).length === 2);
+        expect(at, `tile "${tile.title}" is in the data exactly once, as serialized`).toBeTruthy();
+        text = text.replace(at, () => "");
+      }
+      return text;
     };
     const css = html => [...html.matchAll(/<style>(.*?)<\/style>/gs)].map(m => m[1]);
     expect(data(after) === data(before), "the #dashboard data is byte-identical").toBe(true);

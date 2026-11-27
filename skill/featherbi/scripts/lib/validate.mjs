@@ -92,7 +92,7 @@ export function validate(config, snapshots) {
       if (!["kpi", "echarts", "pivot", "table", "text"].includes(tile.type)) fail(`unknown type "${tile.type}"`);
       if (tile.type === "echarts" && !preset) fail(`unknown preset "${tile.preset}"`);
       for (const k of Object.keys(tile.option ?? {})) if (DATA_KEYS.includes(k)) fail(`option key "${k}" binds data; data comes from the preset`);
-      for (const dim of [].concat(tile.click ?? [])) if (!(dim in (config.dims ?? {}))) fail(`click on "${dim}", which is not declared in \`dims\``);
+      for (const dim of [].concat(tile.click ?? [])) if (!Object.hasOwn(config.dims ?? {}, dim)) fail(`click on "${dim}", which is not declared in \`dims\``);
 
       // A table shows either a source (paged by the renderer) or a tile SQL result (spec 0005 §1).
       if (tile.type === "table" && tile.source !== undefined && tile.sql !== undefined) fail("a table takes `source` or `sql`, not both");

@@ -83,11 +83,14 @@ const FORMATS = {
 
 // A clicked value in the form of its embedded filter option. An integer beyond a double is embedded as its exact digits
 // (validate.mjs), while a tile's rows carry it as a number, or as a BigInt in a SQL table.
-// shortcut: two such ids that round to the same number pick the first option, upgrade when chart and pivot rows keep BigInt.
-const asOption = (dim, value) =>
-  (typeof value === "bigint" || (typeof value === "number" && !Number.isSafeInteger(value))
-    ? filters.options[dim]?.find(o => typeof o === "string" && (typeof value === "bigint" ? o === String(value) : Number(o) === value))
-    : undefined) ?? value;
+// shortcut: two such ids that round to the same number pick the option with the number's exact digits, else the first;
+// upgrade when chart and pivot rows keep BigInt.
+const asOption = (dim, value) => {
+  if (typeof value !== "bigint" && !(typeof value === "number" && Number.isInteger(value) && !Number.isSafeInteger(value))) return value;
+  const options = (filters.options[dim] ?? []).filter(o => typeof o === "string");
+  const exact = String(BigInt(value)); // the integer the number holds, not its rounded print
+  return options.find(o => o === exact) ?? (typeof value === "number" ? options.find(o => Number(o) === value) : undefined) ?? value;
+};
 
 // One tile query: the tile's SQL with the active filters expanded and bound.
 function run(engine, tile, sql) {

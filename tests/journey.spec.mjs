@@ -271,8 +271,8 @@ test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers
   const config = {
     title: "Types",
     // Two neighbouring order ids above 2^53: a double holds only the first. The third, 2^60, fits a double exactly, but
-    // JavaScript prints that number as 1152921504606847000.
-    sources: { sales: { read: "read_parquet('sales.parquet')" }, orders: { read: "(VALUES (9007199254740992::BIGINT, 10), (9007199254740993::BIGINT, 20), (1152921504606846976::BIGINT, 40)) t(order_id, amount)" } },
+    // JavaScript prints that number as 1152921504606847000. ...995 and ...996 both round to ...996, which a double holds.
+    sources: { sales: { read: "read_parquet('sales.parquet')" }, orders: { read: "(VALUES (9007199254740992::BIGINT, 10), (9007199254740993::BIGINT, 20), (9007199254740995::BIGINT, 100), (9007199254740996::BIGINT, 200), (1152921504606846976::BIGINT, 40)) t(order_id, amount)" } },
     dims: { day: { col: "order_date" }, order: { col: "order_id" } },
     tiles: [
       { type: "kpi", title: "Amount", sql: "SELECT SUM(amount) AS value FROM orders WHERE {{filters:orders}}" },
@@ -280,6 +280,7 @@ test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers
       { type: "table", title: "Days", click: "day", exclude: ["day"], sql: "SELECT order_date, SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1" },
       { type: "table", title: "Orders", click: "order", exclude: ["order"], sql: "SELECT order_id, amount FROM orders WHERE {{filters:orders}} ORDER BY 1" },
       { type: "pivot", title: "By order", click: "order", exclude: ["order"], sql: "SELECT order_id AS r, 'amount' AS c, SUM(amount) AS v FROM orders WHERE {{filters:orders}} GROUP BY 1 ORDER BY 1" },
+      { type: "pivot", title: "Largest", click: "order", exclude: ["order"], sql: "SELECT order_id AS r, 'amount' AS c, SUM(amount) AS v FROM orders WHERE amount = 200 AND {{filters:orders}} GROUP BY 1" },
     ],
   };
   await generated(page, config, async () => {
@@ -299,13 +300,13 @@ test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers
     await kpi("$2,260.50");
 
     const orders = page.getByRole("group", { name: "Orders" }).getByRole("gridcell");
-    await expect(orders).toHaveText(["9007199254740992", "10", "9007199254740993", "20", "1152921504606846976", "40"]);
+    await expect(orders).toHaveText(["9007199254740992", "10", "9007199254740993", "20", "9007199254740995", "100", "9007199254740996", "200", "1152921504606846976", "40"]);
     // The second id is a filter value of its own: the select lists both, a click on its row leaves its amount (20, not 10
-    // or the total 70), and the copied URL opens the same selection.
+    // or the total 370), and the copied URL opens the same selection.
     const amount = (p, text) => expect(tile(p, "Amount").getByText(text, { exact: true })).toBeVisible();
     const select = p => p.getByRole("combobox", { name: /^order/ });
-    await expect(select(page).getByRole("option")).toHaveText(["All", "9007199254740992", "9007199254740993", "1152921504606846976"]);
-    await amount(page, "70");
+    await expect(select(page).getByRole("option")).toHaveText(["All", "9007199254740992", "9007199254740993", "9007199254740995", "9007199254740996", "1152921504606846976"]);
+    await amount(page, "370");
     await orders.nth(2).click();
     await amount(page, "20");
     expect(page.url()).toMatch(/#order=9007199254740993$/);
@@ -325,6 +326,17 @@ test("SQL table: a click on a DATE row sets the day it shows; BIGINT identifiers
     await pivoted.goto(page.url());
     await amount(pivoted, "40");
     await expect(select(pivoted)).toHaveValue("1152921504606846976");
+
+    // A pivot whose only row is ...996, an id a double holds exactly: its click selects that order (200), not ...995 (100),
+    // the earlier option that rounds to the same number.
+    await tile(page, "Largest").getByRole("button").last().click();
+    await amount(page, "200");
+    expect(page.url()).toMatch(/#order=9007199254740996$/);
+    await expect(select(page)).toHaveValue("9007199254740996");
+    const largest = await page.context().newPage();
+    await largest.goto(page.url());
+    await amount(largest, "200");
+    await expect(select(largest)).toHaveValue("9007199254740996");
   });
 });
 

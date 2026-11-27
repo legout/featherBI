@@ -10,6 +10,7 @@ sources:
 dims:
   region: {col: region}
   channel: {col: channel}
+  day: {col: order_date}
 date: {col: order_date, default: all}
 tiles:
   - type: kpi
@@ -180,15 +181,26 @@ tiles:
       SELECT floor(revenue / 50) * 50 AS lo,
         floor(revenue / 50) * 50 + 50 AS hi, COUNT(*) AS count
       FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
+  # Online is the later series and the higher bar of the shared 200..250 bin.
+  - type: echarts
+    preset: histogram
+    title: Order value distribution by channel
+    sql: >
+      SELECT floor(revenue / 50) * 50 AS lo,
+        floor(revenue / 50) * 50 + 50 AS hi, COUNT(*) AS count,
+        channel AS series
+      FROM sales WHERE {{filters:sales}} GROUP BY 1, 4 ORDER BY 4 DESC, 1
   # Candlestick and timeline have their own hand rows (README.md), inline.
+  # `x` is a DATE, on three of the sales days, so a click sets `day`.
   - type: echarts
     preset: candlestick
     title: Price by day
+    click: day
     sql: >
-      SELECT * FROM (VALUES
-        ('2025-01-06', 100, 115, 95, 110, 1000),
-        ('2025-01-07', 110, 112, 98, 102, 1500),
-        ('2025-01-08', 102, 120, 101, 118, 800)
+      SELECT x::DATE AS x, open, high, low, close, volume FROM (VALUES
+        ('2025-01-05', 100, 115, 95, 110, 1000),
+        ('2025-01-15', 110, 112, 98, 102, 1500),
+        ('2025-01-25', 102, 120, 101, 118, 800)
       ) AS t(x, open, high, low, close, volume)
       ORDER BY x
   - type: echarts

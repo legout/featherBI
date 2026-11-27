@@ -49,7 +49,7 @@ async function clickChart(page, title, point, dx = 0) {
 test("all 21 presets render, the bar tile shows revenue and target per region, KPI and text tiles are filled", async ({ page }) => {
   const errors = await open(page);
   const tiles = await page.evaluate(() => JSON.parse(document.getElementById("dashboard").textContent).tiles.filter(t => t.type === "echarts"));
-  expect(tiles.map(t => t.preset).sort()).toEqual([...PRESETS].sort());
+  expect([...new Set(tiles.map(t => t.preset))].sort()).toEqual([...PRESETS].sort());
   for (const t of tiles) await expect.poll(() => painted(tile(page, t.title)), `preset ${t.preset}`).toBe(true);
 
   // README: EU 850.00 and US 1,410.50 revenue; targets EU 800 and US 1500. The chart describes its data for screen readers.
@@ -151,12 +151,21 @@ test("histogram bars share their edges on a value axis and are as high as their 
   await expect.poll(() => painted(tile(page, title))).toBe(true);
   await expect.poll(async () => (await at(page, title, [225, 3.7])).rgba[3], "the 200..250 bar reaches 4").toBe(255);
   const fill = await colour(page, title, [125, 0.5]);
-  // Just left and right of every shared edge is bar, with no gap between.
-  for (const edge of [150, 200, 250]) for (const x of [edge - 2, edge + 2]) expect(await colour(page, title, [x, 0.5]), `at ${x}`).toBe(fill);
+  // The shared edge itself and both sides of it are bar, with no gap between.
+  for (const edge of [150, 200, 250]) for (const x of [edge - 2, edge, edge + 2]) expect(await colour(page, title, [x, 0.5]), `at ${x}`).toBe(fill);
   expect(await colour(page, title, [225, 3.7])).toBe(fill);
   expect(await colour(page, title, [125, 3.3]), "above the 100..150 bar").not.toBe(fill);
   expect(await colour(page, title, [275, 2.3]), "above the 250..300 bar").not.toBe(fill);
   expect(await colour(page, title, [275, 1.7])).toBe(fill);
+
+  // By channel (README): only 200..250 holds both, Online 3 and Retail 1. Both counts show, though Online is drawn last.
+  const split = "Order value distribution by channel";
+  await expect.poll(async () => (await at(page, split, [225, 2.7])).rgba[3], "the Online 200..250 bar reaches 3").toBe(255);
+  const [online, retail] = [await colour(page, split, [125, 0.5]), await colour(page, split, [175, 0.5])];
+  expect(online).not.toBe(retail);
+  expect(await colour(page, split, [225, 0.5]), "Retail, 1 high").toBe(retail);
+  expect(await colour(page, split, [225, 2]), "Online, 3 high").toBe(online);
+  expect([online, retail]).not.toContain(await colour(page, split, [225, 3.3]));
   expect(errors).toEqual([]);
 });
 
@@ -175,15 +184,22 @@ test("candlestick draws a rising row in the theme's success colour, with the vol
     );
   });
   const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-  // README: 2025-01-06 rises from 100 to 110, 2025-01-07 falls from 110 to 102.
+  // README: 2025-01-05 rises from 100 to 110, 2025-01-15 falls from 110 to 102. `x` is a SQL DATE.
   const body = point => at(page, title, point).then(p => p.rgba);
-  await expect.poll(async () => (await body(["2025-01-06", 105]))[3]).toBe(255);
-  const [rising, falling] = [await body(["2025-01-06", 105]), await body(["2025-01-07", 106])];
+  await expect.poll(async () => (await body(["2025-01-05", 105]))[3]).toBe(255);
+  const [rising, falling] = [await body(["2025-01-05", 105]), await body(["2025-01-15", 106])];
   expect(distance(rising, theme.success)).toBeLessThan(distance(rising, theme.error));
   expect(distance(falling, theme.error)).toBeLessThan(distance(falling, theme.success));
-  // Volume 1500 on 2025-01-07: a bar (series 1) below the candle's low of 98.
-  await expect.poll(async () => (await at(page, title, ["2025-01-07", 750], 1)).rgba[3]).toBe(255);
-  expect((await at(page, title, ["2025-01-07", 750], 1)).y).toBeGreaterThan((await at(page, title, ["2025-01-07", 98])).y);
+  // Volume 1500 on 2025-01-15: a bar (series 1) below the candle's low of 98.
+  await expect.poll(async () => (await at(page, title, ["2025-01-15", 750], 1)).rgba[3]).toBe(255);
+  expect((await at(page, title, ["2025-01-15", 750], 1)).y).toBeGreaterThan((await at(page, title, ["2025-01-15", 98])).y);
+  // A click on the 2025-01-15 candle sets `day`; that day has one order of 150.00. The same click again clears it.
+  await clickChart(page, title, ["2025-01-15", 106]);
+  await revenue(page, "$150.00");
+  await expect(page.getByLabel("Active filters")).toContainText("day: 2025-01-15");
+  await clickChart(page, title, ["2025-01-15", 106]);
+  await revenue(page, "$2,260.50");
+  await expect(page.getByLabel("Active filters")).toBeEmpty();
   expect(errors).toEqual([]);
 });
 

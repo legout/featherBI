@@ -78,13 +78,23 @@ next `lo`:
 | 200 | 250 | 200, 220, 240, 230.50 | 4 |
 | 250 | 300 | 250, 270 | 2 |
 
-**Candlestick**, three made-up days, written inline in the tile SQL:
+The same bins by channel (`series`); the two channels share only the 200..250 bin:
+
+| lo | hi | Online | Retail |
+|---:|---:|---|---|
+| 100 | 150 | 100, 120, 140 = 3 | |
+| 150 | 200 | | 150, 180, 160 = 3 |
+| 200 | 250 | 200, 220, 240 = 3 | 230.50 = 1 |
+| 250 | 300 | | 250, 270 = 2 |
+
+**Candlestick**, three made-up price rows on three of the sales days (`x` is a DATE), written
+inline in the tile SQL. A click on 2025-01-15 leaves that day's one order, 150.00:
 
 | x | open | high | low | close | volume | |
 |---|---:|---:|---:|---:|---:|---|
-| 2025-01-06 | 100 | 115 | 95 | 110 | 1000 | rising (close > open) |
-| 2025-01-07 | 110 | 112 | 98 | 102 | 1500 | falling |
-| 2025-01-08 | 102 | 120 | 101 | 118 | 800 | rising |
+| 2025-01-05 | 100 | 115 | 95 | 110 | 1000 | rising (close > open) |
+| 2025-01-15 | 110 | 112 | 98 | 102 | 1500 | falling |
+| 2025-01-25 | 102 | 120 | 101 | 118 | 800 | rising |
 
 **Timeline**, four made-up machine states on 2025-01-06, written inline in the tile SQL:
 

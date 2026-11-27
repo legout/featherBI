@@ -10,18 +10,19 @@ import { expect, test } from "@playwright/test";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const revenue = "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}";
 
-// A config generated in the test, built next to a copy of the hand fixture's sales rows; `check` gets the opened page.
+// A config generated in the test, built next to a copy of the hand fixture's sales rows; `check` runs on the opened page and gets the built HTML.
 async function generated(page, config, check) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "locale-"));
   try {
     fs.copyFileSync(root + "fixtures/hand/sales.parquet", path.join(tmp, "sales.parquet"));
     fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify({ title: "Locale", name: "generated", sources: { sales: { read: "read_parquet('sales.parquet')" } }, date: { col: "order_date", default: "all" }, ...config }));
     execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" });
+    const html = fs.readFileSync(path.join(tmp, "dist/generated.html"), "utf8");
     const errors = [];
     page.on("console", m => m.type() === "error" && errors.push(m.text()));
     page.on("pageerror", e => errors.push(String(e)));
     await page.goto(pathToFileURL(path.join(tmp, "dist/generated.html")).href);
-    await check();
+    await check(html);
     expect(errors).toEqual([]);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -121,4 +122,73 @@ test("without a locale a `format` object still applies: currency other than doll
     await expect.poll(() => tile(page, "Order values").textContent()).toContain("100 – 150: 3");
     expect(await chartOf(page, "Pareto", 1)).toBe("{value} %");
   });
+});
+
+// Spec 0005 §3, §4 and acceptance 5, 6. The dates are the first and last order date of the hand fixture (README).
+const hand = { sales: { read: `read_parquet('${root}fixtures/hand/sales.parquet')` } }; // the source SQL names the fixture's path
+const headerLine = page => page.locator("header h1 ~ p").last();
+
+test("header line without a locale: data status, period and source label in en-US; a KPI note under the value; no source path in the page", async ({ page }) => {
+  const tiles = [
+    { type: "kpi", title: "Revenue", format: "currency", note: "Sum of revenue, net", sql: revenue },
+    { type: "kpi", title: "Plain", format: "currency", sql: revenue },
+  ];
+  await generated(page, { sources: hand, source_label: "Sales export", tiles }, async html => {
+    await exactly(headerLine(page), "Data as of 03/25/2025 · Period 01/05/2025 – 03/25/2025 · Source Sales export");
+    await expect(page.locator("header p")).toHaveCount(1); // no subtitle, no other line
+    expect(html).not.toContain("fixtures/hand");
+    expect(html).not.toContain("sales.parquet");
+    await kpi(page, "Revenue", "$2,260.50");
+    const note = tile(page, "Revenue").getByText("Sum of revenue, net", { exact: true });
+    await expect(note).toBeVisible();
+    const below = async locator => (await locator.boundingBox()).y;
+    expect(await below(note)).toBeGreaterThan(await below(tile(page, "Revenue").locator(".stat-value")));
+    // Without `note`: the title and the value, nothing else.
+    await kpi(page, "Plain", "$2,260.50");
+    await exactly(tile(page, "Plain"), "Plain$2,260.50");
+  });
+});
+
+test("header line with locale de-DE: the dates in the locale; the subtitle before the line", async ({ page }) => {
+  const tiles = [{ type: "kpi", title: "Revenue", sql: revenue }];
+  await generated(page, { locale: "de-DE", subtitle: "Weekly sales review", source_label: "Sales export", tiles }, async () => {
+    await exactly(headerLine(page), "Data as of 25.03.2025 · Period 05.01.2025 – 25.03.2025 · Source Sales export");
+    await expect(page.locator("header h1 ~ p")).toHaveText(["Weekly sales review", /^Data as of/]);
+  });
+});
+
+// An open-ended contract: DuckDB's DATE 'infinity' as the last date. The header line takes the last real date, and the
+// tiles and filters mount (the hand fixture's rows plus one open-ended row of 0 revenue).
+test("header line over a date column with DATE 'infinity': the last real date; the tiles still mount", async ({ page }) => {
+  const sources = { sales: { read: `(SELECT order_date AS valid_to, revenue FROM read_parquet('sales.parquet') UNION ALL SELECT DATE 'infinity', 0)` } };
+  const tiles = [{ type: "kpi", title: "Revenue", format: "currency", sql: "SELECT SUM(revenue) AS value FROM sales WHERE {{filters:sales}}" }];
+  await generated(page, { sources, date: { col: "valid_to", default: { from: "2025-01-01", to: "2025-03-31" } }, tiles }, async () => {
+    await exactly(headerLine(page), "Data as of 03/25/2025 · Period 01/05/2025 – 03/25/2025");
+    await kpi(page, "Revenue", "$2,260.50");
+    await expect(page.getByLabel("From")).toHaveValue("2025-01-01");
+  });
+});
+
+test("the build rejects a note, subtitle or source label over 200 characters, counted as characters", () => {
+  const long = "x".repeat(201);
+  const tiles = [{ type: "kpi", title: "Revenue", sql: revenue }];
+  // 198 letters and "📈!": 200 characters (201 UTF-16 units) are within the limit.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "locale-"));
+  try {
+    fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify({ title: "Locale", sources: hand, subtitle: "x".repeat(198) + "📈!", tiles }));
+    execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" });
+    expect(fs.existsSync(path.join(tmp, "dist/locale.html"))).toBe(true);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+  for (const [config, named] of [[{ subtitle: long, tiles }, /subtitle/], [{ source_label: long, tiles }, /source_label/], [{ tiles: [{ ...tiles[0], note: long }] }, /note/]]) {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "locale-"));
+    try {
+      fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify({ title: "Locale", sources: hand, ...config }));
+      expect(() => execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" })).toThrow(named);
+      expect(fs.existsSync(path.join(tmp, "dist"))).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
 });

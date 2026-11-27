@@ -54,10 +54,16 @@ export function buildModel(config, tableColumns, query) {
   for (const t of config.date ? Object.keys(tableColumns) : []) {
     const c = colOf(config.date, t);
     if (!tableColumns[t].includes(c)) continue;
-    const [row] = query(`SELECT min(CAST(${ident(c)} AS DATE))::VARCHAR AS min, max(CAST(${ident(c)} AS DATE))::VARCHAR AS max FROM ${ident(t)}`);
+    // `first`/`last` leave out DATE 'infinity' and '-infinity' (an open-ended validity date): they are the header line's dates.
+    const d = `CAST(${ident(c)} AS DATE)`;
+    const [row] = query(`SELECT min(${d})::VARCHAR AS min, max(${d})::VARCHAR AS max, (min(${d}) FILTER (WHERE isfinite(${d})))::VARCHAR AS first, (max(${d}) FILTER (WHERE isfinite(${d})))::VARCHAR AS last FROM ${ident(t)}`);
     if (row.min) bounds.push(row);
   }
-  return { dims: config.dims ?? {}, date: config.date ?? null, tableColumns, options, range: defaultRange(config.date, bounds) };
+  const model = { dims: config.dims ?? {}, date: config.date ?? null, tableColumns, options, range: defaultRange(config.date, bounds) };
+  // The first and last real date of all dated tables, for the header line (spec 0005 §4). Not enumerable: the model is
+  // embedded in the page as written, and the header line gets its dates from the template.
+  const real = bounds.filter(b => b.first);
+  return Object.defineProperty(model, "period", { value: real.length ? { min: real.map(b => b.first).sort()[0], max: real.map(b => b.last).sort().at(-1) } : null });
 }
 
 // URL hash (spec 0001 §Filters): `#<dim>=<value>&…&date=<from>..<to>`, dims in config order, date only when it differs from the default.

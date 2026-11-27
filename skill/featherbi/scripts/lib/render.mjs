@@ -20,8 +20,17 @@ export async function render(config, snapshots, filters, mode = "default", { rem
   // Explore: on unless `explore: false`; the table defaults to the first source.
   const explore = config.explore === false ? null : { table: config.explore?.table ?? Object.keys(config.sources)[0], perspective: psp, charts: read("assets/perspective-charts.patched.js") };
   const theme = config.loadedTheme; // checked and loaded with the config (config.mjs); null without `theme`
+  // Header line (spec 0005 §4): the snapshot's first and last date and the author's label, as attributes the renderer
+  // writes out in the page's `locale`; `subtitle` is its own line before it. Nothing of a source's SQL or path is in either.
+  const period = config.date ? filters.period : null;
+  const line = "w-full text-base-content/80";
+  const headline = [
+    config.subtitle ? `<p class="${line} text-sm">${escapeHtml(config.subtitle)}</p>` : "",
+    period || config.source_label ? `<p id="headline" class="${line} text-xs"${period ? ` data-min="${period.min}" data-max="${period.max}"` : ""}${config.source_label ? ` data-source="${escapeHtml(config.source_label)}"` : ""}></p>` : "",
+  ].filter(Boolean);
   const parts = {
     title: escapeHtml(config.title),
+    headline: headline.map(p => `\n  ${p}`).join(""),
     css: read("assets/app.css"),
     // After the app CSS, so the theme's tokens override the prebuilt ones.
     theme: theme ? `\n<style>${theme.css}</style>` : "",

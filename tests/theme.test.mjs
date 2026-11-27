@@ -67,7 +67,9 @@ test("without `theme` the hand fixture renders the same page as main before them
     const page = await browser.newPage();
     await page.goto(pathToFileURL(out).href);
     await page.getByText("$2,260.50", { exact: true }).waitFor();
-    assert.equal(await page.locator("header").ariaSnapshot(), MAIN.header);
+    // Spec 0005 §4 (owner decision 2026-11-27 on #123): a config with `date` shows the header line, here the first and
+    // last order date of the hand fixture (README). It is the one addition to main's header.
+    assert.equal(await page.locator("header").ariaSnapshot(), `${MAIN.header}\n  - paragraph: Data as of 03/25/2025 · Period 01/05/2025 – 03/25/2025`);
     assert.equal(await page.locator("main").ariaSnapshot(), MAIN.main);
   } finally {
     await browser.close();

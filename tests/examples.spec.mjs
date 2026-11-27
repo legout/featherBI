@@ -182,3 +182,10 @@ test("air quality: the overall count is station-hours, two stations above 35 in 
   const recipe = recipes("air-quality").find(r => r.includes("station_hours_above"));
   for (const sql of [recipe, tile("air-quality", "Station-hours above 35")]) expect(csv(dir("air-quality"), `${readings} ${sql}`), sql).toEqual(["2"]);
 });
+
+test("weather: two wet readings on one date are one wet day", () => {
+  // Hand data: hourly rows, two wet at 01:00 and 02:00 on 03-01, one dry on 03-02: 1 wet day.
+  const observations = "CREATE VIEW observations AS SELECT * FROM (VALUES ('A', TIMESTAMP '2025-03-01 01:00', 1.0), ('A', TIMESTAMP '2025-03-01 02:00', 2.0), ('A', TIMESTAMP '2025-03-02 01:00', 0.0)) t(station, day, precip_mm);";
+  const recipe = recipes("weather").find(r => r.includes("wet_days"));
+  expect(csv(dir("weather"), `${observations} ${recipe}`)).toEqual(["A,1"]);
+});

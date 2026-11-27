@@ -83,18 +83,21 @@ export function profile(exprs, cwd) {
       const approx = total > 100_000;
       const [s] = q(
         `SELECT (count(*) - count(${c}))::DOUBLE / nullif(count(*), 0) AS nulls, ` +
-          `${approx ? `approx_count_distinct(${c})` : `count(DISTINCT ${c})`}::BIGINT AS distinct, min(${c}) AS min, max(${c}) AS max FROM ${base}`,
+          `${approx ? `approx_count_distinct(${c})` : `count(DISTINCT ${c})`}::BIGINT AS distinct, ${/^U?(BIG|HUGE)INT$|^BIGNUM$/.test(type) ? `min(${c})::VARCHAR AS min, max(${c})::VARCHAR AS max` : `min(${c}) AS min, max(${c}) AS max`} FROM ${base}`,
       );
-      const isTime = /^(DATE|TIMESTAMP)/.test(type);
+      const isTz = type === "TIMESTAMP WITH TIME ZONE";
+      const isTime = isTz || /^(DATE|TIMESTAMP(_S|_MS|_NS)?)$/.test(type);
       const col = { nulls: s.nulls ?? 0, distinct: Number(s.distinct) };
       if (approx) col.distinct_approx = true;
-      if (isTime || /^(DECIMAL|[U]?(TINY|SMALL|BIG|HUGE)?INT|DOUBLE|FLOAT|REAL)/.test(type)) Object.assign(col, { min: s.min, max: s.max });
-      if (type === "VARCHAR" && col.distinct <= 50) {
-        col.top = q(`SELECT ${c} AS value, count(*)::BIGINT AS count FROM ${base} WHERE ${c} IS NOT NULL GROUP BY ALL ORDER BY count DESC, value LIMIT 10`);
+      if (isTime || /^(DECIMAL\(\d+,\d+\)|U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|DOUBLE|FLOAT|REAL|BIGNUM)$/.test(type)) Object.assign(col, { min: s.min, max: s.max });
+      if (type === "VARCHAR") {
+        // 51 rows tell exactly whether the column has <= 50 distinct values, even when `distinct` is approximate.
+        const top = q(`SELECT ${c} AS value, count(*)::BIGINT AS count FROM ${base} WHERE ${c} IS NOT NULL GROUP BY ALL ORDER BY count DESC, value LIMIT 51`);
+        if (top.length <= 50) col.top = top.slice(0, 10);
       }
       if (isTime) {
         const [g] = q(
-          `SELECT median(g)::VARCHAR AS step FROM (SELECT d - lag(d) OVER (ORDER BY d) AS g FROM (SELECT DISTINCT ${c}::TIMESTAMP AS d FROM ${base} WHERE ${c} IS NOT NULL))`,
+          `SELECT median(g)::VARCHAR AS step FROM (SELECT d - lag(d) OVER (ORDER BY d) AS g FROM (SELECT DISTINCT ${isTz ? c : `${c}::TIMESTAMP`} AS d FROM ${base} WHERE ${c} IS NOT NULL))`,
         );
         if (g?.step) col.step = g.step;
       }

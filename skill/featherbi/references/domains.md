@@ -12,3 +12,7 @@ Index for brainstorming mode (`references/brainstorm.md`). Match the profile aga
 | Sales / e-commerce | an order id, an order date, `revenue`/`amount`, `units`, `channel`, `category`; one row per order line | [sales-ecommerce](domains/sales-ecommerce.md) |
 | SaaS subscriptions | `customer`/`account`, `plan`, `mrr`/`price`, start date, `status` active/churned or a cancel date | [saas-subscriptions](domains/saas-subscriptions.md) |
 | Web / product analytics | `session_id`/`visitor`, a day, `source`/`referrer`, `pages`/`events`, a `converted` flag | [web-product-analytics](domains/web-product-analytics.md) |
+| Stock OHLCV | `ticker`/`symbol`, a trading day, `open`, `high`, `low`, `close`, often `volume`; one row per ticker per day | [stock-ohlcv](domains/stock-ohlcv.md) |
+| Accounting plan / actual | `plan`/`budget` and `actual` amounts, a `dept`/`cost_center`, an `account`, a `month` | [accounting-plan-actual](domains/accounting-plan-actual.md) |
+| Weather | `station`/`city`, a day, `temp_c`, `precip_mm`, maybe `wind`/`humidity`; one row per station per day | [weather](domains/weather.md) |
+| Air quality | `station`, an hourly timestamp, `pm25`/`pm10`/`no2` in µg/m³ | [air-quality](domains/air-quality.md) |

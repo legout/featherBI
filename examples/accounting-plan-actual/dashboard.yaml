@@ -1,0 +1,48 @@
+title: Accounting plan vs actual
+name: accounting-plan-actual
+sources:
+  ledger:
+    read: "read_parquet('ledger.parquet')"
+dims:
+  dept: {col: dept}
+  account: {col: account}
+date: {col: month, default: all}
+tiles:
+  - type: kpi
+    title: Plan
+    sql: "SELECT SUM(plan) AS value FROM ledger WHERE {{filters:ledger}}"
+  - type: kpi
+    title: Actual
+    sql: "SELECT SUM(actual) AS value FROM ledger WHERE {{filters:ledger}}"
+  - type: kpi
+    title: Variance
+    sql: "SELECT SUM(actual - plan) AS value FROM ledger WHERE {{filters:ledger}}"
+  - type: kpi
+    title: Variance %
+    sql: "SELECT ROUND(100.0 * SUM(actual - plan) / NULLIF(SUM(plan), 0), 2) AS value FROM ledger WHERE {{filters:ledger}}"
+  - type: kpi
+    title: Lines over plan
+    sql: "SELECT COUNT(*) AS value FROM ledger WHERE actual > plan AND {{filters:ledger}}"
+  - type: echarts
+    preset: waterfall
+    title: Variance by account
+    sql: >
+      SELECT account AS x, SUM(actual - plan) AS y
+      FROM ledger WHERE {{filters:ledger}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: bar
+    title: Variance by department
+    click: dept
+    exclude: [dept]
+    sql: >
+      SELECT dept AS x, SUM(actual - plan) AS y
+      FROM ledger WHERE {{filters:ledger}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: line
+    title: Plan and actual by month
+    sql: >
+      SELECT strftime(month, '%Y-%m') AS x, SUM(plan) AS y, 'Plan' AS series
+      FROM ledger WHERE {{filters:ledger}} GROUP BY 1
+      UNION ALL
+      SELECT strftime(month, '%Y-%m'), SUM(actual), 'Actual'
+      FROM ledger WHERE {{filters:ledger}} GROUP BY 1 ORDER BY 3, 1

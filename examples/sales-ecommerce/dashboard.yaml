@@ -1,0 +1,48 @@
+title: Sales and e-commerce
+name: sales-ecommerce
+sources:
+  orders:
+    read: "read_parquet('orders.parquet')"
+dims:
+  channel: {col: channel}
+  category: {col: category}
+date: {col: order_date, default: all}
+tiles:
+  - type: kpi
+    title: Orders
+    sql: "SELECT COUNT(*) AS value FROM orders WHERE {{filters:orders}}"
+  - type: kpi
+    title: Revenue
+    sql: "SELECT SUM(revenue) AS value FROM orders WHERE {{filters:orders}}"
+  - type: kpi
+    title: Average order value
+    sql: >
+      SELECT SUM(revenue) / COUNT(*) AS value
+      FROM orders WHERE {{filters:orders}}
+  - type: kpi
+    title: Return rate %
+    sql: >
+      SELECT 100.0 * SUM(returned) / COUNT(*) AS value
+      FROM orders WHERE {{filters:orders}}
+  - type: echarts
+    preset: line
+    title: Daily revenue
+    sql: >
+      SELECT strftime(order_date, '%Y-%m-%d') AS x, SUM(revenue) AS y
+      FROM orders WHERE {{filters:orders}} GROUP BY 1 ORDER BY 1
+  - type: echarts
+    preset: pareto
+    title: Revenue by category
+    click: category
+    exclude: [category]
+    sql: >
+      SELECT category AS x, SUM(revenue) AS y
+      FROM orders WHERE {{filters:orders}} GROUP BY 1
+  - type: echarts
+    preset: donut
+    title: Revenue by channel
+    click: channel
+    exclude: [channel]
+    sql: >
+      SELECT channel AS name, SUM(revenue) AS value
+      FROM orders WHERE {{filters:orders}} GROUP BY 1

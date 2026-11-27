@@ -6,6 +6,10 @@ const BASE = "3559548655cc445df11acca3a4db90eeb2e6c9ad"; // plan 0005 C1; each l
 
 test.skip(({ browserName }) => browserName !== "chromium", "acceptance 1 compares the accessibility tree in Chromium");
 
+// BASE predates #108's default-colour contrast change (spec 0003 r3, owner decision 2026-11-27): that one colour value may
+// differ, nothing else. A task that moves BASE past #108 removes this.
+const colours = [["--color-primary-content:oklch(91.372% .051 257.57)", "--color-primary-content:oklch(100% 0 0)"]];
+
 // Deliberate differences of C1: none. The SQL table tile is new in acceptance.yaml, so it is left out there.
 const configs = {
   "fixtures/hand/dashboard.yaml": {},
@@ -18,6 +22,6 @@ const configs = {
 
 for (const [config, differences] of Object.entries(configs)) {
   test(`${config} renders the same page as the base commit`, async ({ page }) => {
-    await samePage(page, BASE, config, differences);
+    await samePage(page, BASE, config, { ...differences, colours });
   });
 }

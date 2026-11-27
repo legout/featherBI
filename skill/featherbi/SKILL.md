@@ -15,7 +15,7 @@ Needs on the machine: Node >= 22 and the DuckDB CLI >= 2.0 on `PATH`. No npm ins
    `node scripts/featherbi.mjs profile data/sales.parquet "read_xlsx('data/targets.xlsx')"`
    It prints schema, row counts and sample values as JSON. Remote or credentialed sources: read `references/sources.md` first; never put credentials in the config.
 2. **Pick tiles.** For each question choose a tile type and, for charts, one of the 17 presets in `references/presets.md` (it lists each preset's required result columns).
-3. **Write `dashboard.yaml`** following `references/config.md`. Source paths are relative to the config file.
+3. **Write `dashboard.yaml`** following `references/config.md`. Source paths are relative to the config file. Another look (brand colours, logo, font, high contrast): `theme:`, see `references/themes.md`.
 4. **Build**:
    `node scripts/featherbi.mjs build dashboard.yaml`
    Add `--out <path>`, `--offline` (everything inlined, opens with no network) or `--split` (folder, needs a web server). Details in `references/config.md`. `--remote s3://<bucket>/<prefix>` puts the data in a bucket behind expiring links; it is **unqualified**, read `references/remote.md` before using or recommending it.

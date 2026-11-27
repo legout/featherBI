@@ -1,0 +1,26 @@
+# Theme of the fictitious brand "Acme". How it was derived from a brand guide:
+# skill/featherbi/references/themes.md, "Worked example: Acme".
+name: Acme
+light:
+  primary: "#0b5fff"            # Acme Blue, the brand colour
+  primary-content: "#ffffff"    # 5.13:1 on Acme Blue
+  accent: "#ff7a00"             # Acme Orange
+  accent-content: "#1a1a1a"
+  base-100: "#ffffff"
+  base-200: "#f4f6fa"
+  base-content: "#1a1a1a"
+dark:
+  primary: "#6ea0ff"            # Acme Blue, lightened for dark surfaces
+  primary-content: "#111418"
+  accent: "#ff9a3d"
+  accent-content: "#111418"
+  base-100: "#111418"
+  base-200: "#0b0d10"
+  base-content: "#e8eaed"
+palette: ["#0b5fff", "#ff7a00", "#00a37a"]
+radius: 0.5rem
+font:
+  # Inter Regular, Latin subset: SIL Open Font License 1.1 (Inter-LICENSE.txt)
+  family: "Inter, system-ui, sans-serif"
+  file: ./Inter-Regular.woff2
+logo: ./logo.svg

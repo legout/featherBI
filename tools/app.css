@@ -8,3 +8,18 @@
 ::selection {
   background-color: color-mix(in oklab, var(--color-primary) 30%, transparent);
 }
+
+/* Winter's own primary-content reaches only 3.6:1 on primary; white reaches 4.7:1 (spec 0003 r3). */
+@plugin "daisyui/theme" {
+  name: "winter";
+  default: true;
+  --color-primary-content: oklch(100% 0 0);
+}
+
+/* Winter's own primary-content reaches only 3.6:1 on primary; white reaches 4.7:1 (spec 0003 r3). Keep in step with
+   skill/featherbi/themes/default.yaml. */
+@plugin "daisyui/theme" {
+  name: "winter";
+  default: true;
+  --color-primary-content: oklch(100% 0 0);
+}

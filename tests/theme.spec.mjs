@@ -103,6 +103,40 @@ test("--offline with a theme file: colours in light and dark, palette, logo and 
   }
 });
 
+// The example the repository ships (examples/acme-theme): its own theme file, logo and font file, as they are.
+test("--offline with the shipped Acme example: its font file and logo are embedded, with every non-file: request blocked", async ({ page }) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-acme-"));
+  try {
+    execFileSync(process.execPath, [cli, "build", "examples/acme-theme/dashboard.yaml", "--offline", "--out", path.join(dir, "acme.html")], { cwd: root, stdio: "pipe" });
+    const network = [];
+    const errors = [];
+    await page.route(
+      target => !target.href.startsWith("file:"),
+      route => {
+        network.push(route.request().url());
+        return route.abort();
+      },
+    );
+    page.on("console", m => m.type() === "error" && errors.push(m.text()));
+    page.on("pageerror", e => errors.push(String(e)));
+    await page.goto(pathToFileURL(path.join(dir, "acme.html")).href);
+    await expect(page.getByRole("group", { name: "Revenue", exact: true }).getByText("$2,260.50", { exact: true })).toBeVisible();
+
+    // Body text is set in the theme's family. document.fonts.load() resolves with the @font-face faces it loaded, never
+    // with a font installed on the machine: one face means the embedded file is the font.
+    expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toMatch(/^"?Inter"?,/);
+    await expect.poll(() => page.evaluate(() => document.fonts.load('16px "Inter"', "Acme sales").then(faces => faces.map(face => face.status)))).toEqual(["loaded"]);
+    const logo = page.locator("header img");
+    await expect(logo).toBeVisible();
+    expect(await logo.evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
+
+    expect(network).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a light-only theme hides the toggle and stays light when the viewer prefers dark", async ({ page }) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-light-"));
   try {

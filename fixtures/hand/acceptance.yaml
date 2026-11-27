@@ -1,5 +1,6 @@
 # Fixture 1 of spec 0001 with every tile type its acceptance examples
-# name: KPI, revenue-and-target bar, pivot, table, text. Opened by
+# name: KPI, revenue-and-target bar, pivot, table, text; plus the SQL table of
+# spec 0005 acceptance 2. Opened by
 # tests/journey.spec.mjs and tests/outputs.spec.mjs; values: README.md.
 title: Hand acceptance
 name: hand-acceptance
@@ -56,6 +57,12 @@ tiles:
     title: Sales rows
     source: sales
     columns: [order_date, region, channel, revenue]
+  - type: table
+    title: Revenue by region (SQL)
+    click: region
+    sql: >-
+      SELECT region, SUM(revenue) AS revenue FROM sales
+      WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1
   - type: text
     title: Note
     markdown: "Twelve **rows** of sales."

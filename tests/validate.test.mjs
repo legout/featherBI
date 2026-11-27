@@ -34,6 +34,12 @@ const cases = [
   ["click on undeclared dim", tile({ type: "echarts", preset: "bar", click: "country", sql: "SELECT region AS x, 1 AS y FROM sales" }), [], /tile "?t1"?.*click.*country.*not declared/is],
   ["table column not in source", tile({ type: "table", source: "sales", columns: ["region", "profit"] }), [], /tile "?t1"?.*profit.*not.*sales/is],
   ["table source unknown", tile({ type: "table", source: "nope", columns: ["x"] }), [], /tile "?t1"?.*source.*nope/is],
+  // Spec 0005 §1: a table has exactly one of `source` and `sql`; `columns` belongs to `source`.
+  ["table with both source and sql", tile({ type: "table", source: "sales", columns: ["region"], sql: "SELECT region FROM sales" }), [], /tile "?t1"?.*`source`.*`sql`.*not both/is],
+  ["table with neither source nor sql", tile({ type: "table" }), [], /tile "?t1"?.*needs.*`source` or `sql`/is],
+  ["table with columns and sql", tile({ type: "table", sql: "SELECT region FROM sales", columns: ["region"] }), [], /tile "?t1"?.*`columns`.*not allowed.*`sql`/is],
+  ["sql table click on undeclared dim", tile({ type: "table", click: "country", sql: "SELECT region FROM sales" }), [], /tile "?t1"?.*click.*country.*not declared/is],
+  ["sql table outside the snapshot", tile({ type: "table", sql: "SELECT * FROM other_table" }), [], /tile "?t1"?.*other_table/is],
   ["SQL that fails", tile({ type: "kpi", sql: "SELECT SUM(nope) AS value FROM sales" }), [], /tile "?t1"?.*nope/is],
   ["table outside the snapshot", tile({ type: "kpi", sql: "SELECT count(*) AS value FROM other_table" }), [], /tile "?t1"?.*other_table/is],
   ["file access", tile({ type: "kpi", sql: "SELECT count(*) AS value FROM read_csv('sales.parquet')" }), [], /tile "?t1"?.*(disabled|permission|external)/is],
@@ -91,6 +97,7 @@ test("a valid config with filters, an alias and a join builds", () => {
         sql: "SELECT s.region AS x, SUM(s.revenue) AS y, 'revenue' AS series FROM sales s WHERE {{filters:sales AS s}} GROUP BY 1 UNION ALL SELECT region_code, target, 'target' FROM targets WHERE {{filters:targets}}",
       },
       { id: "tbl", type: "table", title: "Rows", source: "sales", columns: ["order_date", "region", "revenue"] },
+      { id: "sqltbl", type: "table", title: "By region", click: "region", sql: "SELECT region, SUM(revenue) AS revenue FROM sales WHERE {{filters:sales}} GROUP BY 1 ORDER BY 1" },
     );
     fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify(config));
     const r = spawnSync("node", [cli, "build", "dashboard.yaml"], { cwd: tmp, encoding: "utf8" });

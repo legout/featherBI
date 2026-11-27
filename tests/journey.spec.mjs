@@ -1,5 +1,8 @@
 // Journey harness: build a fixture with the real CLI, open the output over file://, assert what the page shows.
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 
@@ -198,6 +201,66 @@ test("acceptance 1 and 3: every tile renders; EU click, channel Online and Reset
   await expect(rows).toContainText("12 rows (filtered)");
   expect(errors).toEqual([]);
 });
+
+// Spec 0005 acceptance 2 on fixtures/hand/acceptance.yaml. Values: fixtures/hand/README.md (cell numbers are raw until plan 0005 C2).
+test("SQL table: region totals in SQL order, channel Online narrows them, a click on the EU row filters region and a second click clears it", async ({ page }) => {
+  build("fixtures/hand/acceptance.yaml");
+  const errors = await open(page, "fixtures/hand/dist/hand-acceptance.html");
+  const table = page.getByRole("group", { name: "Revenue by region (SQL)" }); // the title also carries the row count
+  const kpi = amount => expect(tile(page, "Revenue").getByText(amount, { exact: true })).toBeVisible();
+  const cells = n => table.locator(`[role="row"][aria-rowindex="${n + 1}"]`).getByRole("gridcell");
+  const shows = async (...rows) => {
+    await expect(table.getByRole("heading")).toHaveText(`Revenue by region (SQL) · ${rows.length} rows`);
+    for (const [i, row] of rows.entries()) await expect(cells(i + 1)).toHaveText(row);
+  };
+
+  await expect(table.getByRole("columnheader")).toHaveText(["region", "revenue"]); // the result's columns, in SQL order
+  await shows(["EU", "850"], ["US", "1410.5"]);
+  await page.getByRole("combobox", { name: /^channel/ }).selectOption("Online");
+  await shows(["EU", "360"], ["US", "660"]);
+  await page.getByRole("combobox", { name: /^channel/ }).selectOption("");
+  await shows(["EU", "850"], ["US", "1410.5"]);
+
+  await cells(1).first().click();
+  await kpi("$850.00");
+  await expect(page.getByLabel("Active filters")).toContainText("region: EU");
+  await shows(["EU", "850"]);
+  await cells(1).first().click(); // the same value again clears it
+  await kpi("$2,260.50");
+  await shows(["EU", "850"], ["US", "1410.5"]);
+  expect(errors).toEqual([]);
+});
+
+// Spec 0005 acceptance 3: the config is generated here; `n` descends so the kept rows show the SQL's own order.
+for (const [size, title, first] of [
+  [1001, "Numbers · first 1 000 rows", "1000"],
+  [1000, "Numbers · 1000 rows", "999"],
+]) {
+  test(`SQL table row cap: a ${size}-row result shows 1 000 rows ${size > 1000 ? "and the note" : "without a note"}`, async ({ page }) => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "journey-cap-"));
+    try {
+      fs.copyFileSync(root + "fixtures/hand/sales.parquet", path.join(tmp, "sales.parquet"));
+      const config = {
+        title: "Cap",
+        name: "cap",
+        sources: { sales: { read: "read_parquet('sales.parquet')" } },
+        tiles: [{ type: "table", title: "Numbers", sql: `SELECT range AS n FROM range(${size}) ORDER BY 1 DESC` }],
+      };
+      fs.writeFileSync(path.join(tmp, "dashboard.yaml"), JSON.stringify(config));
+      execFileSync("node", [root + "skill/featherbi/scripts/featherbi.mjs", "build", "dashboard.yaml"], { cwd: tmp, stdio: "pipe" });
+      const errors = [];
+      page.on("pageerror", e => errors.push(String(e)));
+      await page.goto(pathToFileURL(path.join(tmp, "dist/cap.html")).href);
+      const table = page.getByRole("group", { name: "Numbers" });
+      await expect(table.getByRole("heading")).toHaveText(title);
+      await expect(table.locator("[aria-rowcount]")).toHaveAttribute("aria-rowcount", "1001"); // the header row and 1 000 rows
+      await expect(table.locator('[role="row"][aria-rowindex="2"]').getByRole("gridcell")).toHaveText([first]);
+      expect(errors).toEqual([]);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
 
 // Spec 0001 acceptance 8a on every tile: EU then US while the engine lags; no tile ever paints an EU-only value, all end on US.
 test("latest state wins on every tile: EU then US before the first result paints only US values in all tiles", async ({ page }) => {

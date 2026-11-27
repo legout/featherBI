@@ -51,8 +51,17 @@ test("tabs: only the open tab queries; a filter applies in the tab opened next; 
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (...args) {
       const [message] = args;
-      if (typeof message?.type === "string" && Array.isArray(message.data)) window.__sql.push(...message.data.filter(part => typeof part === "string"));
+      const sql = typeof message?.type === "string" && Array.isArray(message.data) ? message.data.filter(part => typeof part === "string") : [];
+      window.__sql.push(...sql);
+      // A slow engine: with `__hold` set to "all" every message waits, with "tiles" every message from the first tile
+      // query on; `__release()` sends them in order.
+      if (window.__hold && (window.__hold === "all" || held.length || sql.some(text => text.includes("FROM sales WHERE")))) return void held.push([this, args]);
       return post.apply(this, args);
+    };
+    const held = [];
+    window.__release = () => {
+      window.__hold = null;
+      for (const [worker, args] of held.splice(0)) post.apply(worker, args);
     };
   });
   const errors = watch(page);
@@ -95,6 +104,47 @@ test("tabs: only the open tab queries; a filter applies in the tab opened next; 
   expect(await queried(fresh)).not.toContain(TAB_1);
   expect(fresh.url()).toMatch(/#region=EU&tab=2$/);
   expect(freshErrors).toEqual([]);
+
+  // While the engine starts the tabs already work: the open tab is in the URL at once, and a fragment navigation applies
+  // and is not overwritten by the first queries.
+  const slow = await context.newPage();
+  const slowErrors = watch(slow);
+  await slow.addInitScript(() => (window.__hold = "all"));
+  await slow.goto(url, { waitUntil: "commit" });
+  const slowTab = name => slow.getByRole("tab", { name, exact: true });
+  await slowTab("Detail").click();
+  await expect(slowTab("Detail")).toHaveAttribute("aria-selected", "true");
+  expect(slow.url()).toMatch(/#tab=2$/);
+  await slow.evaluate(() => (location.hash = "#region=US"));
+  await expect(slowTab("Overview")).toHaveAttribute("aria-selected", "true");
+  expect(await queried(slow)).not.toContain(TAB_1); // the engine has not answered anything yet
+  await slow.evaluate(() => window.__release());
+  await expect(kpi(slow, "Revenue")).toHaveText("$1,410.50"); // README: US
+  await expect(region(slow)).toHaveValue("US");
+  expect(slow.url()).toMatch(/#region=US$/);
+
+  // A tab closed while its queries are still running starts no further query: US → Online queues a second pass of
+  // "Overview", which is closed before the first pass ends. Reopening it queries for the filters of that moment.
+  const passes = async () => (await queried(slow)).split(TAB_1).length - 1;
+  const before = await passes();
+  await slow.evaluate(() => (window.__hold = "tiles"));
+  await region(slow).selectOption("EU");
+  await slow.getByRole("combobox", { name: /^channel/ }).selectOption("Online");
+  await slowTab("Detail").click();
+  expect(await passes()).toBe(before + 1); // the EU pass, held; the Online pass waits behind it
+  await slow.evaluate(() => window.__release());
+  await expect(kpi(slow, "Orders")).toHaveText("3"); // README: EU Online, 3 rows
+  await rows(slow, ["Online", "360.00"]);
+  await slow.waitForTimeout(1000); // the held pass has ended by now; a queued one would have started
+  expect(await passes()).toBe(before + 1);
+  await slowTab("Overview").click();
+  await expect(kpi(slow, "Revenue")).toHaveText("$360.00");
+  expect(await passes()).toBe(before + 2);
+  expect(slow.url()).toMatch(/#region=EU&channel=Online$/);
+  expect(slowErrors).toEqual([]);
+  await slow.close();
+  await fresh.close();
+  await page.bringToFront(); // the keyboard checks below need the first page to have the focus
 
   // Keyboard: the arrow keys move to the neighbour, Home and End to the first and last; focus and selection move together.
   const open = async (key, name, hash) => {

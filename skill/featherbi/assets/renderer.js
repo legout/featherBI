@@ -666,7 +666,10 @@ const filters = config.filters;
 // `tab` is the open tab of a page with tabs, 1-based (spec 0005 §5).
 const state = { dims: {}, ...filters.range, tab: 1 };
 Object.assign(state, parseHash(location.hash, filters)); // untrusted: only the valid parts apply
-let refresh = () => {}; // set once the engine is up; until then a filter or tab change only changes the state
+// A change of the state goes to the URL at once (no history entry per change); until the engine is up that is all `refresh` does.
+const sync = () => history.replaceState(null, "", serializeHash(state, filters) || location.pathname + location.search);
+let refresh = sync;
+let drawFilters = () => {}; // the filter bar is drawn once the engine has had its turn
 
 function mountFilters(refresh) {
   const bar = document.getElementById("filters");
@@ -798,6 +801,14 @@ if (config.sections) {
   }
   showTab();
 } else groups.push({ panel: slots.tiles, tiles: mount(config.tiles) });
+// From here on, so a fragment navigation while the engine starts applies too.
+addEventListener("hashchange", () => {
+  state.dims = {};
+  Object.assign(state, filters.range, { tab: 1 }, parseHash(location.hash, filters));
+  drawFilters();
+  showTab();
+  refresh();
+});
 const library = config.tiles.some(t => t.type === "echarts") ? import(config.charts.url) : null; // integrity: the page's import map
 const gridLibrary = config.tiles.some(t => t.type === "table") ? loadGrid(config.grid) : null;
 library?.catch(() => {}); // reported below, once the engine has had its turn
@@ -847,20 +858,15 @@ document.getElementById("theme").addEventListener("change", () => {
   for (const body of gridBodies) gridTheme(body);
 });
 // Latest state wins: every change is a new pass; passes paint only while they are the newest, and changes during a pass coalesce.
-// Each group has its own passes, so with tabs the rule holds per tab; only the open tab's tiles run.
-const passes = groups.map(({ tiles }) => latestWins(current => Promise.all(tiles.map(([tile, fill]) => fill(engine, current).catch(error => fail(`Tile “${tile.title}” could not be computed: ${error.message}`, error))))));
+// Each group has its own passes, so with tabs the rule holds per tab; only the open tab's tiles run. That is checked when
+// a pass starts, not when it was asked for: a pass queued behind a running one is dropped if its tab has closed since.
+const isOpen = s => !tabbed || s === state.tab - 1;
+const passes = groups.map(({ tiles }, s) => latestWins(async current => isOpen(s) && Promise.all(tiles.map(([tile, fill]) => fill(engine, current).catch(error => fail(`Tile “${tile.title}” could not be computed: ${error.message}`, error))))));
 refresh = () => {
-  history.replaceState(null, "", serializeHash(state, filters) || location.pathname + location.search); // no history entry per change
-  return Promise.all(passes.filter((_, s) => !tabbed || s === state.tab - 1).map(pass => pass.change()));
+  sync();
+  return Promise.all(passes.filter((_, s) => isOpen(s)).map(pass => pass.change()));
 };
-const drawFilters = mountFilters(refresh);
-addEventListener("hashchange", () => {
-  state.dims = {};
-  Object.assign(state, filters.range, { tab: 1 }, parseHash(location.hash, filters));
-  drawFilters();
-  showTab();
-  refresh();
-});
+drawFilters = mountFilters(refresh);
 await refresh();
 
 // Explore (spec 0001 §Explore): a navbar button opens Perspective on one table. Perspective loads on the first open only;

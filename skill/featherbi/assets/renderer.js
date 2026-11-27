@@ -81,6 +81,14 @@ const FORMATS = {
   change: new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1, signDisplay: "exceptZero" }),
 };
 
+// A clicked value in the form of its embedded filter option. An integer beyond a double is embedded as its exact digits
+// (validate.mjs), while a tile's rows carry it as a number, or as a BigInt in a SQL table.
+// shortcut: two such ids that round to the same number pick the first option, upgrade when chart and pivot rows keep BigInt.
+const asOption = (dim, value) =>
+  (typeof value === "bigint" || (typeof value === "number" && !Number.isSafeInteger(value))
+    ? filters.options[dim]?.find(o => typeof o === "string" && (typeof value === "bigint" ? o === String(value) : Number(o) === value))
+    : undefined) ?? value;
+
 // One tile query: the tile's SQL with the active filters expanded and bound.
 function run(engine, tile, sql) {
   const x = expand(sql, state, filters.dims, filters.date, filters.tableColumns, tile.exclude);
@@ -297,7 +305,7 @@ function mountChart(tile, index) {
     // A click sets the clicked element's key columns as the tile's click dimensions; the same click again clears them.
     chart.on("click", p => {
       const dims = [].concat(tile.click ?? []).slice(0, preset.click.length);
-      const values = dims.map((_, i) => p.data?.[preset.click[i]]);
+      const values = dims.map((dim, i) => asOption(dim, p.data?.[preset.click[i]]));
       if (!dims.length || values.some(v => v == null)) return;
       const same = dims.every((dim, i) => state.dims[dim] === values[i]);
       dims.forEach((dim, i) => (same ? delete state.dims[dim] : (state.dims[dim] = values[i])));
@@ -374,8 +382,9 @@ function mountPivot(tile, index) {
           const button = el("button", "link cursor-pointer", label);
           button.type = "button";
           button.onclick = () => {
-            if (state.dims[tile.click] === label) delete state.dims[tile.click];
-            else state.dims[tile.click] = label;
+            const value = asOption(tile.click, label);
+            if (state.dims[tile.click] === value) delete state.dims[tile.click];
+            else state.dims[tile.click] = value;
             drawFilters();
             refresh();
           };
@@ -503,9 +512,9 @@ function mountSqlTable(tile, index) {
       const pick = row => {
         let value = row?.[rows.columns[0]];
         if (value == null) return;
-        // The form the filter options have: a DATE as the day the cell shows, an integer beyond a double as its digits.
+        // The form the filter options have: a DATE as the day the cell shows.
         if (rows.dates.includes(rows.columns[0])) value = new Date(value).toISOString().slice(0, 10);
-        else if (typeof value === "bigint") value = String(value);
+        else value = asOption(tile.click, value);
         if (state.dims[tile.click] === value) delete state.dims[tile.click];
         else state.dims[tile.click] = value;
         drawFilters();

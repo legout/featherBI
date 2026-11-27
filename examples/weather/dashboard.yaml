@@ -20,7 +20,7 @@ tiles:
     title: Minimum °C
     sql: "SELECT MIN(temp_c) AS value FROM observations WHERE {{filters:observations}}"
   - type: kpi
-    title: Precipitation mm
+    title: Precipitation, sum of station totals mm
     sql: "SELECT SUM(precip_mm) AS value FROM observations WHERE {{filters:observations}}"
   - type: echarts
     preset: line

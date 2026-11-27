@@ -17,6 +17,6 @@ Row `i` (0 … 1 007): `station` by i mod 3 (Downtown 30, Suburb 20, Park 10); `
 | Average PM2.5 | `30.25` | base mean 20, day offset mean 6.5, rush-hour mean (3 · 20 + 3 · 10) / 24 = 3.75 |
 | Peak PM2.5 | `63` | Downtown 30 + day 13 + 20 at hour 7–9 |
 | Minimum PM2.5 | `10` | Park 10 + day 0 + 0 |
-| Hours above 35 | `318` | per station, readings with base + day offset + rush > 35 over 14 days: Downtown 144 + 42 + 42 = 228, Suburb 24 + 42 = 66, Park 24 |
+| Station-hours above 35 | `318` | per station, readings with base + day offset + rush > 35 over 14 days: Downtown 144 + 42 + 42 = 228, Suburb 24 + 42 = 66, Park 24 |
 
-Bar check: hours above 35 by station are Downtown 228, Suburb 66, Park 24.
+Station-hours count one per station and hour (228 distinct hours have any station above 35). The 35 is this fixture's illustrative cutoff. Bar check: hours above 35 by station are Downtown 228, Suburb 66, Park 24.

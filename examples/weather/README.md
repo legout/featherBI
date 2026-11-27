@@ -17,6 +17,6 @@ Row `i` (0 … 269): `station` by i mod 3 (Coast, Valley, Peak); `d = i div 3` (
 | Average °C | `13.17` | mean of d mod 10 is 4.5 (9 full cycles); mean of the bases is 26 / 3; 8.667 + 4.5 = 13.167 |
 | Maximum °C | `23` | Valley 14 + 9 |
 | Minimum °C | `2` | Peak 2 + 0 |
-| Precipitation mm | `210` | wet days d = 5, 11, … 89 are 15 per station; 15 · (4 + 2 + 8) |
+| Precipitation, sum of station totals mm | `210` | wet days d = 5, 11, … 89 are 15 per station; 15 · (4 + 2 + 8) |
 
-Bar check: precipitation by station is Coast 60, Valley 30, Peak 120.
+Bar check: precipitation by station is Coast 60, Valley 30, Peak 120 (mean station total 70).

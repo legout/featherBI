@@ -167,3 +167,18 @@ test("web: the funnel's last step is converted sessions that also viewed 3+ page
   expect(steps(recipes("web-product-analytics").find(r => r.includes("Viewed 3+ pages")))).toEqual([2, 1, 0]);
   expect(steps(tile("web-product-analytics", "Session funnel"))).toEqual([2, 1, 0]);
 });
+
+// Named scenarios from the PR #136 review.
+test("accounting: an unbudgeted line has no variance percentage (NULL, not infinity)", () => {
+  // Plan 0, actual 100: the variance is 100, its percentage is undefined.
+  const ledger = "CREATE VIEW ledger AS SELECT * FROM (VALUES (0, 100)) t(plan, actual);";
+  const pct = recipes("accounting-plan-actual").find(r => r.includes("variance_pct"));
+  for (const sql of [pct, tile("accounting-plan-actual", "Variance %")]) expect(csv(dir("accounting-plan-actual"), `${ledger} ${sql}`), sql).toEqual(["NULL"]);
+});
+
+test("air quality: the overall count is station-hours, two stations above 35 in one hour are two", () => {
+  // Hand data: one hour, two stations at 40 and 50: 2 station-hours, 1 distinct hour.
+  const readings = "CREATE VIEW readings AS SELECT * FROM (VALUES ('A', TIMESTAMP '2025-03-03 08:00', 40), ('B', TIMESTAMP '2025-03-03 08:00', 50)) t(station, read_at, pm25);";
+  const recipe = recipes("air-quality").find(r => r.includes("station_hours_above"));
+  for (const sql of [recipe, tile("air-quality", "Station-hours above 35")]) expect(csv(dir("air-quality"), `${readings} ${sql}`), sql).toEqual(["2"]);
+});

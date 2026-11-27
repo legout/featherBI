@@ -19,7 +19,7 @@ Playbook for brainstorming mode. Example: `examples/accounting-plan-actual/`.
 ```sql
 SELECT SUM(plan) AS plan, SUM(actual) AS actual FROM ledger;
 SELECT SUM(actual - plan) AS variance FROM ledger;
-SELECT 100.0 * SUM(actual - plan) / SUM(plan) AS variance_pct FROM ledger;
+SELECT 100.0 * SUM(actual - plan) / NULLIF(SUM(plan), 0) AS variance_pct FROM ledger;
 SELECT COUNT(*) AS lines_over_plan FROM ledger WHERE actual > plan;
 SELECT account, SUM(actual - plan) AS variance FROM ledger GROUP BY 1 ORDER BY 1;
 SELECT strftime(month, '%Y-%m') AS month, SUM(plan) AS plan, SUM(actual) AS actual FROM ledger GROUP BY 1 ORDER BY 1;
@@ -35,7 +35,7 @@ SELECT strftime(month, '%Y-%m') AS month, SUM(plan) AS plan, SUM(actual) AS actu
 ## Traps
 
 - The sign: for costs, actual minus plan above 0 is bad; for revenue it is good. Say which.
-- Variance % divides by plan, never by actual, and by the summed plan, not an average of line percentages.
+- Variance % divides by plan (`NULLIF(SUM(plan), 0)`: an unbudgeted line has no percentage, not infinity), never by actual, and by the summed plan, not an average of line percentages.
 - Averaging per-line percentages weights a small line like a large one.
 - Plan and actual must cover the same lines; a missing actual is not zero spend.
 - Mixed currencies or cumulative (year to date) amounts must not be summed as monthly values.

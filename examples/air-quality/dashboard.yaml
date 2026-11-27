@@ -20,7 +20,7 @@ tiles:
     title: Minimum PM2.5
     sql: "SELECT MIN(pm25) AS value FROM readings WHERE {{filters:readings}}"
   - type: kpi
-    title: Hours above 35
+    title: Station-hours above 35
     sql: "SELECT COUNT(*) AS value FROM readings WHERE pm25 > 35 AND {{filters:readings}}"
   - type: echarts
     preset: line

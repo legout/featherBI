@@ -9,7 +9,7 @@ A `station`, an hourly timestamp (`read_at`), a pollutant column (`pm25`, `pm10`
 ## Interview questions
 
 - Which pollutant? Default: PM2.5.
-- Which threshold applies (WHO, EU, a local one)? Default: 35 µg/m³ as an hourly alert level; ask for the real one.
+- Which threshold applies (WHO, EU, a local one)? No default: ask. Without an answer, label any cutoff as illustrative.
 - Which stations, or all? Default: all.
 - Hourly or daily view? Default: daily average line, hourly pattern heatmap.
 - Is a period given? Default: all data.
@@ -19,14 +19,14 @@ A `station`, an hourly timestamp (`read_at`), a pollutant column (`pm25`, `pm10`
 ```sql
 SELECT COUNT(*) AS readings FROM readings;
 SELECT AVG(pm25) AS avg_pm25, MAX(pm25) AS peak_pm25 FROM readings;
-SELECT COUNT(*) AS hours_above FROM readings WHERE pm25 > 35;
+SELECT COUNT(*) AS station_hours_above FROM readings WHERE pm25 > 35;
 SELECT station, COUNT(*) AS hours_above FROM readings WHERE pm25 > 35 GROUP BY 1 ORDER BY 1;
 SELECT station, hour(read_at) AS hr, AVG(pm25) AS avg_pm25 FROM readings GROUP BY 1, 2 ORDER BY 1, 2;
 ```
 
 ## Tile ideas
 
-- KPIs: average, peak, hours above the threshold. How bad did it get?
+- KPIs: average, peak, station-hours above the threshold (one per station and hour). How bad did it get?
 - `line` of daily average by station. Which station and which days?
 - `heatmap` of station by hour of day. When is it worst (rush hours)?
 - `bar` of hours above the threshold by station (`click: station`). Who exceeds most?

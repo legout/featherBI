@@ -19,7 +19,7 @@ tiles:
     sql: "SELECT SUM(actual - plan) AS value FROM ledger WHERE {{filters:ledger}}"
   - type: kpi
     title: Variance %
-    sql: "SELECT ROUND(100.0 * SUM(actual - plan) / SUM(plan), 2) AS value FROM ledger WHERE {{filters:ledger}}"
+    sql: "SELECT ROUND(100.0 * SUM(actual - plan) / NULLIF(SUM(plan), 0), 2) AS value FROM ledger WHERE {{filters:ledger}}"
   - type: kpi
     title: Lines over plan
     sql: "SELECT COUNT(*) AS value FROM ledger WHERE actual > plan AND {{filters:ledger}}"

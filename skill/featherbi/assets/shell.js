@@ -119,12 +119,13 @@ export function mount(root, page, actions) {
       title.id = `tile-${i}-title`;
       box.setAttribute("role", "group");
       box.setAttribute("aria-labelledby", title.id);
-      let errors = [];
+      let error = null; // one alert per tile, in today's place for a tile failure: the top of the page
       const common = patch => {
         if ("title" in patch) title.textContent = patch.title;
         if ("error" in patch) {
-          if (patch.error == null) errors = (errors.forEach(e => e.remove()), []);
-          else errors.push(notice("error", patch.error)); // today's place for a tile failure: an alert at the top of the page
+          if (patch.error == null) error = (error?.remove(), null);
+          else if (error) error.textContent = patch.error;
+          else error = notice("error", patch.error);
         }
         if (patch.busy === true) box.setAttribute("aria-busy", "true");
       };
@@ -221,8 +222,9 @@ export function mount(root, page, actions) {
         const select = el("select", "select select-sm");
         select.append(new Option("All", ""));
         for (const v of options) select.append(new Option(v, v));
-        select.value = Object.hasOwn(dims, name) ? String(dims[name]) : "";
-        select.onchange = () => actions.dim(name, select.value === "" ? null : options.find(v => String(v) === select.value));
+        // By position, not by DOM string: an option may be "" or print like another value.
+        select.selectedIndex = Object.hasOwn(dims, name) ? options.findIndex(v => Object.is(v, dims[name])) + 1 : 0;
+        select.onchange = () => actions.dim(name, select.selectedIndex === 0 ? null : options[select.selectedIndex - 1]);
         field(name, select);
       }
       if (page.hasDate) {

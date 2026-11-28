@@ -440,6 +440,7 @@ function mountTable(tile, handle) {
         ]);
         if (!current()) return params.failCallback();
         latest = rows;
+        handle.update({ error: null });
         params.successCallback(rows, count);
       } catch (error) {
         params.failCallback();
@@ -561,9 +562,10 @@ function fail(message, error) {
   console.error(error);
   view.alert("error", message);
 }
+// The engine's own message can quote the tile's SQL, so it goes to the console only.
 function tileFailed(tile, handle, error) {
   console.error(error);
-  handle.update({ error: `Tile “${tile.title}” could not be computed: ${error.message}` });
+  handle.update({ error: `Tile “${tile.title}” could not be computed. Details are in the browser console.` });
 }
 
 // Remote snapshot (spec 0002): every table is downloaded whole, in parallel, under one progress bar.
@@ -602,7 +604,6 @@ async function download(remote, until) {
 const filters = config.filters;
 // `tab` is the open tab of a page with tabs, 1-based (spec 0005 §5).
 const state = { dims: {}, ...filters.range, tab: 1 };
-Object.assign(state, parseHash(location.hash, filters)); // untrusted: only the valid parts apply
 // A change of the state goes to the URL at once (no history entry per change); until the engine is up that is all `refresh` does.
 const sync = () => history.replaceState(null, "", serializeHash(state, filters) || location.pathname + location.search);
 let refresh = sync;
@@ -658,7 +659,7 @@ const actions = Object.freeze({
     refresh();
   },
   date(key, value) {
-    if (!filters.date || (key !== "from" && key !== "to") || (value !== null && !/^\d{4}-\d{2}-\d{2}$/.test(value))) return;
+    if (!filters.date || (key !== "from" && key !== "to") || (value !== null && !(typeof value === "string" && isoDate(value)))) return;
     state[key] = value;
     drawFilters();
     refresh();
@@ -691,14 +692,19 @@ try {
   const shell = await import(boot.shell);
   if (shell.manifest?.shell !== 1) throw new Error("it does not export manifest = { shell: 1 }");
   if (typeof shell.mount !== "function") throw new Error("it does not export a mount function");
+  // The hash as it is now, after the import: a navigation while the shell loaded counts.
+  Object.assign(state, parseHash(location.hash, filters)); // untrusted: only the valid parts apply
   view = shell.mount(frame, page, actions);
   const missing = ["filters", "tab", "theme", "explore", "remote", "alert"].filter(name => typeof view?.[name] !== "function");
   if (missing.length) throw new Error(`mount() returned no ${missing.join(", ")} function`);
   if (!Array.isArray(view.tiles) || view.tiles.length !== config.tiles.length) throw new Error(`mount() returned ${Array.isArray(view.tiles) ? view.tiles.length : "no"} tile handles for ${config.tiles.length} tiles`);
-  view.tiles.forEach((handle, i) => {
-    if (typeof handle?.update !== "function" || (config.tiles[i].type !== "kpi" && !(handle.host instanceof HTMLElement))) throw new Error(`the handle of tile ${i + 1} has no update function or no host element`);
-  });
-  if (page.exploreTable != null && !(view.exploreHost instanceof HTMLElement)) throw new Error("mount() returned no exploreHost element");
+  // Every index, so a hole in the array is caught here, not at the first patch.
+  for (const [i, tile] of config.tiles.entries()) {
+    const handle = view.tiles[i];
+    const host = tile.type === "kpi" ? handle?.host === null : handle?.host instanceof HTMLElement;
+    if (typeof handle?.update !== "function" || !host) throw new Error(`tile ${i + 1} (${tile.type}) needs a handle with an update function and ${tile.type === "kpi" ? "host: null" : "a host element"}`);
+  }
+  if (page.exploreTable == null ? view.exploreHost !== null : !(view.exploreHost instanceof HTMLElement)) throw new Error(`mount() must return exploreHost as ${page.exploreTable == null ? "null (Explore is off)" : "an element (Explore is on)"}`);
 } catch (error) {
   frame.replaceChildren(`featherBI: this page's shell does not meet shell contract v1 (${error.message}).`);
   throw error;
@@ -771,7 +777,15 @@ try {
 // Each group has its own passes, so with tabs the rule holds per tab; only the open tab's tiles run. That is checked when
 // a pass starts, not when it was asked for: a pass queued behind a running one is dropped if its tab has closed since.
 const isOpen = s => !tabbed || s === state.tab - 1;
-const passes = groups.map((tiles, s) => latestWins(async current => isOpen(s) && Promise.all(tiles.map(([tile, handle, fill]) => fill(engine, current).catch(error => tileFailed(tile, handle, error))))));
+const passes = groups.map((tiles, s) => latestWins(async current => isOpen(s) && Promise.all(tiles.map(([tile, handle, fill]) =>
+      // Only the current state's outcome sets or clears a tile's error.
+      fill(engine, current).then(
+        () => current() && handle.update({ error: null }),
+        error => current() && tileFailed(tile, handle, error),
+      ),
+    ),
+  ),
+));
 refresh = () => {
   sync();
   return Promise.all(passes.filter((_, s) => isOpen(s)).map(pass => pass.change()));
@@ -801,7 +815,7 @@ if (config.explore && !expired) {
     const viewer = document.createElement("perspective-viewer");
     viewer.style.cssText = "display:block;width:100%;height:100%";
     view.exploreHost.append(viewer);
-    return { client, viewer, table: null };
+    return { client, viewer, table: null, shown: false };
   };
   closeExplore = () => {
     if (phase !== "loading" && phase !== "open") return;
@@ -816,22 +830,26 @@ if (config.explore && !expired) {
     chain = chain.then(async () => {
       if (mine !== seq) return; // closed again before its turn
       try {
-        const p = await (ready ??= load());
+        // A failed load leaves no viewer behind and is tried again; a loaded viewer is kept for every later open.
+        const p = await (ready ??= load().catch(error => {
+          ready = undefined;
+          throw error;
+        }));
         const { tableToIPC } = await import("apache-arrow");
         const ipc = tableToIPC(await engine.arrow(x.sql, x.params), "stream");
         p.viewer.setAttribute("theme", dark ? "Pro Dark" : "Pro");
         if (p.table) await p.table.replace(ipc);
-        else {
-          p.table = await p.client.table(ipc, { name });
+        else p.table = await p.client.table(ipc, { name });
+        if (!p.shown) {
           await p.viewer.load(p.client);
           await p.viewer.restore({ table: name });
+          p.shown = true;
         }
         await p.viewer.flush();
         await p.viewer.resize(); // flush() resolves before the grid repaints; an awaited redraw does not
         if (mine === seq) show("open");
       } catch (error) {
-        ready = undefined; // the next open tries again
-        if (mine === seq) show("closed");
+        if (mine === seq) show("closed"); // the next open tries again
         fail("Explore could not be loaded from cdn.jsdelivr.net. Check your network connection, then try again.", error);
       }
     });

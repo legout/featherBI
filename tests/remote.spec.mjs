@@ -147,4 +147,11 @@ test("a 404 on one table: a message names the table and the status; a tile over 
   await expect(tile(page, "Online revenue")).not.toHaveAttribute("aria-busy", "true");
   await expect(tile(page, "Online revenue").locator(".stat-value")).toHaveText("–");
   await expect(page.getByText(EXPIRED)).toHaveCount(0);
+  // Every refresh fails that tile again: still one alert for it, and no SQL of the tile in the page.
+  const failed = page.getByRole("alert").filter({ hasText: "Online revenue" });
+  await expect(failed).toHaveCount(1);
+  await page.evaluate(() => (location.hash = "#again"));
+  await expect(tile(page, "Online revenue")).not.toHaveAttribute("aria-busy", "true");
+  await expect(failed).toHaveCount(1);
+  await expect(page.locator("body")).not.toContainText("FROM online");
 });

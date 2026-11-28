@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { loadConfig } from "./lib/config.mjs";
 import { render } from "./lib/render.mjs";
@@ -30,8 +31,8 @@ function earlierBuild(out) {
   return present.map(file => path.join(out, file));
 }
 
-// `build --shell <file>` (spec 0005 §6.2): the file's bytes, once its first line declares contract v1. The file is read,
-// never imported or run; anything else stops the build before any output is written or uploaded.
+// The selected shell (spec 0005 §6.2), `--shell <file>` or the installed default: its bytes, once its first line declares
+// contract v1. The file is read, never imported or run; anything else stops the build before any output is written or uploaded.
 const DECLARATION = "export const manifest = { shell: 1 };";
 function readShell(file) {
   const at = path.resolve(file);
@@ -39,10 +40,10 @@ function readShell(file) {
   try {
     bytes = fs.readFileSync(at);
   } catch (e) {
-    throw new Error(`--shell ${at}: the file cannot be read (${e.code ?? e.message}); a shell is an ES module whose first line is \`${DECLARATION}\``);
+    throw new Error(`shell ${at}: the file cannot be read (${e.code ?? e.message}); a shell is an ES module whose first line is \`${DECLARATION}\``);
   }
   const first = bytes.toString("utf8").replace(/^\uFEFF/, "").split("\n")[0].replace(/\r$/, "");
-  if (first !== DECLARATION) throw new Error(`--shell ${at}: the first line must be exactly \`${DECLARATION}\` (shell contract v1, references/shell.md)`);
+  if (first !== DECLARATION) throw new Error(`shell ${at}: the first line must be exactly \`${DECLARATION}\` (shell contract v1, references/shell.md)`);
   return bytes;
 }
 
@@ -64,7 +65,7 @@ try {
   const expiresSec = duration && duration[1] * (duration[2] === "h" ? 3600 : 86400);
   // 7 days is the SigV4 maximum.
   if (!expiresSec || expiresSec < 3600 || expiresSec > 7 * 86400) throw new Error(`--expires must be <n>h or <n>d, from 1h to 7d, not ${values.expires}`);
-  const shell = values.shell === undefined ? undefined : readShell(values.shell);
+  const shell = readShell(values.shell ?? fileURLToPath(new URL("../assets/shell.js", import.meta.url)));
   const config = loadConfig(file);
   const mode = ["offline", "split"].find(flag => values[flag]) ?? "default";
   // Upstream duckdb-wasm loads its Parquet extension over HTTP inside its worker, with no way to hand it over: an offline

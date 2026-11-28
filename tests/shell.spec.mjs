@@ -97,3 +97,71 @@ for (const [name, contents] of [
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 }
+
+// Review of #143: contract paths the hand journey does not reach. Each builds the hand fixture with a variant of the plain
+// shell (its declaration line kept first) or with the default shell, and drives the page through its widgets.
+function variant(dir, edit, { configFile = config, extra = [] } = {}) {
+  const shell = path.join(dir, 'shell.js'), html = path.join(dir, 'dashboard.html');
+  fs.writeFileSync(shell, edit(fs.readFileSync(fixture, 'utf8')));
+  execFileSync(process.execPath, [cli, 'build', configFile, '--shell', shell, '--out', html, ...extra], { cwd: root, stdio: 'pipe' });
+  return pathToFileURL(html).href;
+}
+const revenueIs = (page, amount) => expect(tile(page, 'Revenue').getByText(amount, { exact: true })).toBeVisible();
+const scratch = async run => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shell-review-'));
+  try { await run(dir); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+};
+
+test('a navigation while the shell module loads wins over the hash read before it', async ({ page }) => scratch(async dir => {
+  // The module's own top-level code runs during the import: it stands in for a viewer navigating meanwhile, and it keeps
+  // the import pending until that navigation's hashchange has been dispatched.
+  const url = variant(dir, source => source.replace('\n', '\nlocation.hash = "#region=US";\nawait new Promise(resolve => addEventListener("hashchange", () => setTimeout(resolve, 50), { once: true }));\n'));
+  await page.goto(url);
+  await expect(tile(page, 'Revenue').getByText('$1,410.50', { exact: true })).toBeVisible(); // US hand total
+  await expect(page.getByRole('combobox', { name: 'region' })).toHaveValue('2'); // the plain shell's option index of US
+  expect(new URL(page.url()).hash).toBe('#region=US');
+}));
+
+test('a sparse tile handle array stops the page with the contract diagnostic on the root', async ({ page }) => scratch(async dir => {
+  const url = variant(dir, source => source.replace('    tiles, exploreHost,', '    tiles: Object.assign(new Array(tiles.length), { 0: tiles[0] }), exploreHost,'));
+  await page.goto(url);
+  await expect(page.locator('#featherbi')).toHaveText(/^featherBI: this page's shell does not meet shell contract v1 \(tile 2 \(echarts\)/);
+}));
+
+test('a nonexistent day from a date control changes nothing', async ({ page }) => scratch(async dir => {
+  await page.goto(variant(dir, source => source));
+  await revenueIs(page, '$2,260.50');
+  const from = page.getByLabel('From');
+  await from.evaluate(input => { input.type = 'text'; }); // a custom control can send any text
+  await from.fill('2025-02-30');
+  await from.dispatchEvent('change');
+  await page.getByLabel('To').fill('2025-02-28'); // a real day still applies, with From unchanged
+  await revenueIs(page, '$1,490.00'); // README: January 250.00 + 450.00, February 300.00 + 490.00
+  expect(new URL(page.url()).hash).toBe('#date=2025-01-05..2025-02-28');
+}));
+
+test('the default shell keeps an empty-string option apart from All, in the bar and in the hash', async ({ page }) => scratch(async dir => {
+  const yaml = path.join(dir, 'blank.yaml'), html = path.join(dir, 'blank.html');
+  fs.writeFileSync(yaml, `title: Blank region
+name: blank
+sources:
+  t:
+    read: "(SELECT * FROM (VALUES ('', 1), ('EU', 2)) v(region, revenue))"
+dims:
+  region: {col: region}
+explore: false
+tiles:
+  - { type: kpi, title: Revenue, sql: "SELECT SUM(revenue) AS value FROM t WHERE {{filters:t}}" }
+`);
+  execFileSync(process.execPath, [cli, 'build', yaml, '--out', html], { cwd: root, stdio: 'pipe' });
+  await page.goto(pathToFileURL(html).href);
+  await revenueIs(page, '3');
+  const region = page.getByRole('combobox', { name: 'region' });
+  await region.selectOption({ index: 1 }); // the "" option, after All
+  await revenueIs(page, '1');
+  expect(new URL(page.url()).hash).toBe('#region=');
+  await page.reload();
+  await revenueIs(page, '1');
+  expect(await region.evaluate(select => select.selectedIndex)).toBe(1);
+  await expect(page.getByRole('button', { name: 'Clear region' })).toBeVisible();
+}));

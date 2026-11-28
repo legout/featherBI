@@ -11,8 +11,8 @@ const escapeHtml = s => s.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
 // JSON inside <script>: no "<", so no value (tile SQL, titles) can close the element.
 const json = value => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-// The default shell, or the bytes of the one `build --shell` checked (featherbi.mjs, references/shell.md).
-export async function render(config, snapshots, filters, mode = "default", { remote, shell = fs.readFileSync(new URL("../../assets/shell.js", import.meta.url)) } = {}) {
+// `shell`: the bytes of the shell featherbi.mjs selected and checked (references/shell.md).
+export async function render(config, snapshots, filters, mode = "default", { remote, shell } = {}) {
   const lock = JSON.parse(read("assets/vendor.lock.json"));
   const engine = lock.engines[config.engine];
   const psp = lock.perspective;

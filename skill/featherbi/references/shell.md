@@ -106,6 +106,8 @@ The object `mount` returns. Setters return `undefined`, take effect synchronousl
 
 ## Minimal example
 
+For a dashboard with `explore: false` only: it returns `exploreHost: null`, which the page rejects when Explore is on. It also shows no filter bar, tabs or remote progress; the complete plain-DOM shell named below has them.
+
 ```js
 export const manifest = { shell: 1 };
 

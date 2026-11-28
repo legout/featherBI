@@ -83,6 +83,9 @@ const cases = [
   ["a tile error in a section", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "Detail", tiles: [kpiTile("t1", { type: "echarts", preset: "spiral" })] }), [], /section "Detail", tile "t1".*preset.*spiral/is],
   ["a SQL error in a section tile without an id", sections({ title: "A", tiles: [kpiTile("a")] }, { title: "Detail", tiles: [kpiTile("b"), { type: "kpi", sql: "SELECT SUM(nope) AS value FROM sales" }] }), [], /section "Detail", tile "tile 2".*nope/is], // numbered within its section
   ["a schema error in a section tile", sections({ title: "Detail", tiles: [kpiTile("t1", { format: { style: "money" } })] }), [], /section "Detail", tile "t1".*format.*style/is],
+  // Spec 0006 acceptance 6: an unknown `design` or tile `size`.
+  ["an unknown design", c => (c.design = "magazine"), [], /design.*classic-bi.*market-desk.*timetable-board.*visible-grid/is],
+  ["an unknown tile size", tile({ type: "kpi", sql: "SELECT 1 AS value", size: "huge" }), [], /tile "?t1"?.*size.*small.*medium.*large.*wide/is],
   ["--offline with --split", () => {}, ["--offline", "--split"], /--offline.*--split|--split.*--offline/is],
   ["--offline with engine duckdb-wasm", c => (c.engine = "duckdb-wasm"), ["--offline"], /--offline.*duckdb-wasm/is],
   ...["data", "dataset", "datasetIndex", "encode", "links", "nodes", "source"].map(k => [
@@ -119,6 +122,8 @@ test("a valid config with filters, an alias and a join builds", () => {
     execFileSync("duckdb", ["-no-agent", "-c", "COPY (SELECT 'EU' AS region, 'EU' AS region_code, 100 AS target) TO 'targets.parquet'"], { cwd: tmp });
     const config = base();
     config.locale = "de-DE";
+    config.design = "visible-grid";
+    config.tiles[0].size = "wide";
     config.tiles[0].format = { style: "currency", currency: "EUR", decimals: 6, unit: "net" };
     config.tiles.push(
       { id: "share", type: "kpi", title: "Share", format: "percent", sql: "SELECT 0.25 AS value" },

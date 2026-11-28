@@ -75,7 +75,11 @@ export function serializeHash(state, model) {
   return parts.length ? `#${parts.join("&")}` : "";
 }
 
-const isoDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
+// A real calendar day: month 13 is no date at all (NaN), February 30 rolls over into March.
+const isoDate = s => {
+  const time = /^\d{4}-\d{2}-\d{2}$/.test(s) ? Date.parse(`${s}T00:00:00Z`) : NaN;
+  return Number.isFinite(time) && new Date(time).toISOString().startsWith(s);
+};
 
 // The hash is untrusted: a dimension must be declared and its value one of the embedded options; date needs two valid ISO dates, from <= to;
 // tab needs the plain digits of one of the page's tab numbers.

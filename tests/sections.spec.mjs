@@ -52,6 +52,8 @@ test("tabs: only the open tab queries; a filter applies in the tab opened next; 
     Worker.prototype.postMessage = function (...args) {
       const [message] = args;
       const sql = typeof message?.type === "string" && Array.isArray(message.data) ? message.data.filter(part => typeof part === "string") : [];
+      // `__break`: the text of a statement that is sent as invalid SQL, so its query fails in the engine.
+      if (window.__break && sql.some(text => text.includes(window.__break))) message.data = message.data.map(part => (typeof part === "string" && part.includes(window.__break) ? "SELEC broken" : part));
       window.__sql.push(...sql);
       // A slow engine: with `__hold` set to "all" every message waits, with "tiles" every message from the first tile
       // query on; `__release()` sends them in order.
@@ -142,6 +144,18 @@ test("tabs: only the open tab queries; a filter applies in the tab opened next; 
   expect(await passes()).toBe(before + 2);
   expect(slow.url()).toMatch(/#region=EU&channel=Online$/);
   expect(slowErrors).toEqual([]);
+
+  // A query of a tab that has closed since fails: its error is not shown over the open tab. "Overview" queries for US and
+  // that query fails; before it answers, "Detail" opens and EU is selected there.
+  await slow.evaluate(() => Object.assign(window, { __hold: "tiles", __break: "SUM(revenue) AS value" }));
+  await region(slow).selectOption("US");
+  await slowTab("Detail").click();
+  await region(slow).selectOption("EU");
+  await slow.evaluate(() => window.__release());
+  await expect(kpi(slow, "Orders")).toHaveText("3"); // README: EU Online, 3 rows
+  expect(slow.url()).toMatch(/#region=EU&channel=Online&tab=2$/);
+  await slow.waitForTimeout(1000); // the failed query has answered by now
+  await expect(slow.getByRole("alert")).toHaveCount(0);
   await slow.close();
   await fresh.close();
   await page.bringToFront(); // the keyboard checks below need the first page to have the focus

@@ -777,15 +777,19 @@ try {
 // Each group has its own passes, so with tabs the rule holds per tab; only the open tab's tiles run. That is checked when
 // a pass starts, not when it was asked for: a pass queued behind a running one is dropped if its tab has closed since.
 const isOpen = s => !tabbed || s === state.tab - 1;
-const passes = groups.map((tiles, s) => latestWins(async current => isOpen(s) && Promise.all(tiles.map(([tile, handle, fill]) =>
+// A pass stays current only while its tab is open: closing the tab ends it without starting anything there, and reopening
+// starts a new pass, so a late result or error of the closed tab never paints.
+const passes = groups.map((tiles, s) => latestWins(async newest => {
+  const current = () => newest() && isOpen(s);
+  return isOpen(s) && Promise.all(tiles.map(([tile, handle, fill]) =>
       // Only the current state's outcome sets or clears a tile's error.
       fill(engine, current).then(
         () => current() && handle.update({ error: null }),
         error => current() && tileFailed(tile, handle, error),
       ),
     ),
-  ),
-));
+  );
+}));
 refresh = () => {
   sync();
   return Promise.all(passes.filter((_, s) => isOpen(s)).map(pass => pass.change()));

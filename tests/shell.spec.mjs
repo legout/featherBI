@@ -130,11 +130,16 @@ test('a sparse tile handle array stops the page with the contract diagnostic on 
 
 test('a nonexistent day from a date control changes nothing', async ({ page }) => scratch(async dir => {
   await page.goto(variant(dir, source => source));
+  const errors = [];
+  page.on('pageerror', e => errors.push(String(e)));
   await revenueIs(page, '$2,260.50');
   const from = page.getByLabel('From');
   await from.evaluate(input => { input.type = 'text'; }); // a custom control can send any text
-  await from.fill('2025-02-30');
-  await from.dispatchEvent('change');
+  for (const day of ['2025-02-30', '2025-13-01']) { // a day past its month's end; a month that does not exist
+    await from.fill(day);
+    await from.dispatchEvent('change');
+  }
+  expect(errors).toEqual([]);
   await page.getByLabel('To').fill('2025-02-28'); // a real day still applies, with From unchanged
   await revenueIs(page, '$1,490.00'); // README: January 250.00 + 450.00, February 300.00 + 490.00
   expect(new URL(page.url()).hash).toBe('#date=2025-01-05..2025-02-28');

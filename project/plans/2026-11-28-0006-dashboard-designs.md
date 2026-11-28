@@ -1,6 +1,6 @@
 # Plan 0006: selectable dashboard designs and tile sizes
 
-Status: **proposed** (2026-11-28; awaiting owner approval). Source: [spec 0006 revision 1](../specs/2026-11-28-0006-dashboard-designs.md), whole spec.
+Status: **approved** by the owner on 2026-11-28 ("ja genau so", together with spec 0006 r1 and ADR 0004). Source: [spec 0006 revision 1](../specs/2026-11-28-0006-dashboard-designs.md), whole spec.
 Architecture: [ADR 0003](../adr/0003-replaceable-page-shell.md) amended by [ADR 0004](../adr/0004-built-in-dashboard-designs.md); shell contract v1 ([references/shell.md](../../skill/featherbi/references/shell.md)).
 Contract: planning-contract v1. Installed provenance: unknown.
 Capture checkpoint: terms **design** and **tile size** go into CONTEXT.md in D1; ADR 0004 accepted; no blocking uncertainty.

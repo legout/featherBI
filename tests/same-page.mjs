@@ -21,9 +21,6 @@ function reference(base) {
   }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "featherbi-base-"));
   git("worktree", "add", "--detach", path.join(tmp, "tree"), base);
-  // The generated volume input is ignored by git; use exactly the same input on both sides.
-  const volume = path.join(root, "fixtures/volume/sales.parquet");
-  if (fs.existsSync(volume)) fs.copyFileSync(volume, path.join(tmp, "tree/fixtures/volume/sales.parquet"));
   process.on("exit", () => {
     try {
       git("worktree", "remove", "--force", path.join(tmp, "tree"));
@@ -34,7 +31,9 @@ function reference(base) {
 }
 
 function build(tree, config, out) {
-  execFileSync("node", [path.join(tree, "skill/featherbi/scripts/featherbi.mjs"), "build", path.join(tree, config), "--out", out], { stdio: "pipe" });
+  // An absolute config (e.g. a per-run volume fixture copy) is used as-is; it must not depend on the tree's fixtures.
+  const configPath = path.isAbsolute(config) ? config : path.join(tree, config);
+  execFileSync("node", [path.join(tree, "skill/featherbi/scripts/featherbi.mjs"), "build", configPath, "--out", out], { stdio: "pipe" });
   return fs.readFileSync(out, "utf8");
 }
 

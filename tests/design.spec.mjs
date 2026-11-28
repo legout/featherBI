@@ -1,5 +1,5 @@
 // Spec 0006 acceptance 1, 3 and 5 for the default design (classic-bi): the hand acceptance fixture with one `size: large`
-// chart, built with the real CLI and opened over file://. Values: fixtures/hand/README.md. Tabs (acceptance 4): sections.spec.mjs.
+// chart, one `size: wide` table and an Orders KPI placed after the first chart (README: 12 rows), built with the real CLI and opened over file://. Values: fixtures/hand/README.md. Tabs (acceptance 4): sections.spec.mjs.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -8,15 +8,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const TITLES = ["Revenue", "Revenue vs target by region", "Revenue by channel", "Region × month", "Sales rows", "Revenue by region \\(SQL\\)", "Note"]; // config order
+const TITLES = ["Revenue", "Revenue vs target by region", "Orders", "Revenue by channel", "Region × month", "Sales rows", "Revenue by region \\(SQL\\)", "Note"]; // config order
 
 let tmp;
 test.beforeAll(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "design-"));
   for (const file of ["sales.parquet", "targets.xlsx"]) fs.copyFileSync(`${root}fixtures/hand/${file}`, path.join(tmp, file));
   const yaml = fs.readFileSync(`${root}fixtures/hand/acceptance.yaml`, "utf8");
-  const large = yaml.replace("    title: Revenue vs target by region\n", "    title: Revenue vs target by region\n    size: large\n");
-  expect(large).not.toBe(yaml);
+  const edits = [
+    ["    title: Revenue vs target by region\n", "    title: Revenue vs target by region\n    size: large\n"],
+    ["    title: Sales rows\n", "    title: Sales rows\n    size: wide\n"],
+    // A KPI after a chart: on a narrow screen it stays there, on a desktop it joins the KPI row.
+    ["  - type: echarts\n    preset: bar\n    title: Revenue by channel\n", '  - type: kpi\n    title: Orders\n    sql: "SELECT COUNT(*) AS value FROM sales WHERE {{filters:sales}}"\n  - type: echarts\n    preset: bar\n    title: Revenue by channel\n'],
+  ];
+  let large = yaml;
+  for (const [was, now] of edits) {
+    expect(large.split(was).length).toBe(2);
+    large = large.replace(was, now);
+  }
   fs.writeFileSync(path.join(tmp, "dashboard.yaml"), large); // no `design`: the default
   fs.writeFileSync(path.join(tmp, "market.yaml"), `design: market-desk\n${large}`);
 });
@@ -41,10 +50,10 @@ const settled = async page => {
   for (const title of TITLES) await expect(tile(page, title)).not.toHaveAttribute("aria-busy", "true");
 };
 
-test.describe("desktop 1440×900", () => {
-  test.use({ viewport: { width: 1440, height: 900 } });
-
-  test("default design: the Revenue KPI and the filters are in the first viewport, the filters in a side panel; a large chart is larger than a medium one", async ({ page }) => {
+// 1024×768 is the narrowest viewport with the filter panel docked.
+for (const [width, height] of [[1440, 900], [1024, 768]]) {
+  test(`default design at ${width}×${height}: the KPIs and the filters are in the first viewport, the filters in a side panel; large and wide tiles are larger than a medium one`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
     const errors = watch(page);
     await page.goto(built("dashboard.yaml"));
     await settled(page);
@@ -52,17 +61,27 @@ test.describe("desktop 1440×900", () => {
     const kpi = await box(tile(page, "Revenue"));
     const large = await box(tile(page, "Revenue vs target by region"));
     const medium = await box(tile(page, "Revenue by channel"));
-    expect(kpi.y + kpi.height).toBeLessThanOrEqual(900);
+    const wide = await box(tile(page, "Sales rows"));
+    const orders = await box(tile(page, "Orders"));
+    expect(kpi.y + kpi.height).toBeLessThanOrEqual(height);
+    // The KPI row: the KPI configured after the first chart sits beside Revenue, above that chart.
+    expect(orders.y).toBe(kpi.y);
+    expect(orders.x).toBeGreaterThanOrEqual(kpi.x + kpi.width);
+    expect(large.y).toBeGreaterThanOrEqual(orders.y + orders.height);
     // Every filter control is visible without a click or a scroll, right of the tiles.
     for (const control of [page.getByRole("combobox", { name: "region" }), page.getByRole("combobox", { name: "channel" }), page.getByLabel("From"), page.getByLabel("To"), page.getByRole("button", { name: "Reset", exact: true })]) {
       await expect(control).toBeVisible();
       const at = await box(control);
-      expect(at.y + at.height).toBeLessThanOrEqual(900);
-      for (const tileBox of [kpi, large, medium]) expect(at.x).toBeGreaterThanOrEqual(tileBox.x + tileBox.width);
+      expect(at.y + at.height).toBeLessThanOrEqual(height);
+      for (const tileBox of [kpi, large, medium, wide]) expect(at.x).toBeGreaterThanOrEqual(tileBox.x + tileBox.width);
     }
-    expect(large.width * large.height).toBeGreaterThan(medium.width * medium.height * 1.2);
+    for (const bigger of [large, wide]) expect(bigger.width * bigger.height).toBeGreaterThan(medium.width * medium.height * 1.2);
     expect(errors).toEqual([]);
   });
+}
+
+test.describe("desktop 1440×900", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
 
   test("--shell wins over `design`, and the shell gets the design name and the tile sizes", async ({ page }) => {
     const errors = watch(page);

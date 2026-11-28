@@ -27,9 +27,12 @@ const sun = () => {
 const moon = () => svg("svg", { ...ICON, "stroke-linejoin": "round", "aria-hidden": "true" }, svg("path", { d: "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" }));
 const chevron = () => svg("svg", { ...ICON, "stroke-linejoin": "round", "aria-hidden": "true" }, svg("path", { d: "M6 9l6 6 6-6" }));
 // Tile size → columns of the canvas's 12-column grid, by the canvas's own width (it is narrower than the window by the
-// rail and the panel). `large` is `wide` with a taller chart or grid.
-const GRID = "grid grid-cols-12 gap-4";
-const SPAN = { small: "col-span-12 @md:col-span-6 @4xl:col-span-3", medium: "col-span-12 @3xl:col-span-6", large: "col-span-12", wide: "col-span-12" };
+// rail and the panel; at least 34rem while they are docked). `large` is `wide` with a taller chart or grid.
+// Below `lg` the two grids of a group dissolve into its column, where each tile's `order` is its place in the config;
+// from `lg` the KPIs have their own row above the other tiles.
+const GRID = "max-lg:contents lg:grid lg:grid-cols-12 lg:gap-4";
+const STACK = "flex flex-col gap-4";
+const SPAN = { small: "col-span-12 @md:col-span-6 @4xl:col-span-3", medium: "col-span-12 @lg:col-span-6", large: "col-span-12", wide: "col-span-12" };
 const RAIL = "flex flex-wrap gap-1 px-4 pt-4 sm:px-6 lg:sticky lg:top-0 lg:w-44 lg:shrink-0 lg:flex-col lg:flex-nowrap lg:self-start lg:py-6 lg:pr-0";
 const RAIL_ITEM = "btn btn-sm btn-ghost h-auto min-h-8 py-1 text-left lg:justify-start";
 
@@ -55,7 +58,7 @@ export function mount(root, page, actions) {
 
   // In the DOM as on a wide screen: rail, canvas, panel. Below `lg` the panel moves above them as a disclosure.
   const frame = root.appendChild(el("div", "flex flex-1 flex-col lg:flex-row"));
-  const main = frame.appendChild(el("main", "@container min-w-0 flex-1 space-y-4 p-4 sm:p-6"));
+  const main = frame.appendChild(el("main", `@container min-w-0 flex-1 ${STACK} p-4 sm:p-6`));
   const side = frame.appendChild(el("aside", "border-base-300 bg-base-100 max-lg:order-first max-lg:border-b lg:w-64 lg:shrink-0 lg:border-l"));
   side.setAttribute("aria-label", "Filters");
   const sideBody = side.appendChild(el("div", "flex flex-col gap-3 px-4 py-2 sm:px-6 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto lg:px-4 lg:py-6"));
@@ -111,7 +114,7 @@ export function mount(root, page, actions) {
       };
     }
     for (const [s, group] of page.groups.entries()) {
-      const panel = el("section", "space-y-4");
+      const panel = el("section", STACK);
       const label = tabbed ? el("button", "", group.title) : el("h2", "text-base font-semibold tracking-tight", group.title);
       label.id = `section-${s}-title`;
       panel.setAttribute("aria-labelledby", label.id);
@@ -152,6 +155,7 @@ export function mount(root, page, actions) {
       const i = index++;
       const kpi = tile.type === "kpi";
       const box = el("div", `${kpi ? "stat rounded-box" : "card"} bg-base-100 shadow-sm ${SPAN[tile.size] ?? SPAN.medium}`);
+      box.style.order = i + 1; // after the group's title and the page's alerts
       const height = tile.size === "large" ? "h-80 @3xl:h-[28rem]" : "h-80";
       const title = el(kpi ? "div" : `h${level}`, kpi ? "stat-title text-base-content/80" : "card-title text-sm font-medium text-base-content/80", tile.title);
       title.id = `tile-${i}-title`;

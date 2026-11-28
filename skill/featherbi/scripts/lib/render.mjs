@@ -31,6 +31,7 @@ export async function render(config, snapshots, filters, mode = "default", { rem
     page: json({
       shell: `data:text/javascript;base64,${Buffer.from(shell).toString("base64")}`,
       title: config.title,
+      design: config.design ?? "classic-bi", // spec 0006 §1: the requested design, also for a `--shell` shell
       logo: theme?.logo ?? null,
       subtitle: config.subtitle || null,
       period: config.date ? filters.period : null,

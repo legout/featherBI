@@ -625,13 +625,14 @@ const page = {
   exploreTable: config.explore?.table ?? null,
   dimensions: Object.keys(filters.dims).map(name => ({ name, options: [...filters.options[name]] })),
   layout: config.layout ?? "flat",
+  design: boot.design,
   groups: [],
 };
 {
   let from = 0;
   for (const section of config.sections ?? [{ title: null, tiles: config.tiles.length }]) {
     const tiles = config.tiles.slice(from, from + section.tiles);
-    page.groups.push({ title: section.title, tiles: tiles.map(t => ({ type: t.type, title: t.title ?? "", note: t.note || null, hasSpark: Boolean(t.spark) })) });
+    page.groups.push({ title: section.title, tiles: tiles.map(t => ({ type: t.type, title: t.title ?? "", note: t.note || null, hasSpark: Boolean(t.spark), size: t.size ?? (t.type === "kpi" ? "small" : "medium") })) });
     from += section.tiles;
   }
 }

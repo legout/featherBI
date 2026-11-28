@@ -37,7 +37,7 @@ export function loadConfig(file) {
   }
 
   need(c.theme === undefined || (typeof c.theme === "string" && c.theme), "`theme` must be a built-in theme name or the path of a theme file");
-  const config = { title: c.title, name, engine, theme: c.theme, locale: c.locale, subtitle: c.subtitle, source_label: c.source_label, sources: c.sources, dims: c.dims, date: c.date, explore: c.explore, tiles: c.tiles, layout: c.layout, sections: c.sections };
+  const config = { title: c.title, name, engine, design: c.design, theme: c.theme, locale: c.locale, subtitle: c.subtitle, source_label: c.source_label, sources: c.sources, dims: c.dims, date: c.date, explore: c.explore, tiles: c.tiles, layout: c.layout, sections: c.sections };
   // The theme is checked here, before any source is read. Not enumerable: the schema check sees `theme` as the author wrote it.
   return Object.defineProperty(config, "loadedTheme", { value: loadTheme(c.theme, path.dirname(path.resolve(file))) });
 }

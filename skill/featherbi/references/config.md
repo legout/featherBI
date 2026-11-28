@@ -29,6 +29,7 @@ tiles:
 | `sources` | Required. Name → one of `read` (a DuckDB table expression) or `attach` + `table`/`sql`. The name must be a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`) and becomes the table name in tile SQL. Remote sources: `sources.md`. |
 | `dims` | Filterable dimensions: `name: { col, cols? }`. `cols` overrides the column per table (`cols: { targets: region_code }`). A table without the column is not filtered by that dimension. `date` and `tab` are reserved (the URL hash uses them); do not name a dimension `date` or `tab`. |
 | `date` | `{ col, cols?, default }`. `default`: `last_12_months` (the 12 months ending at the latest date in the data), `all`, or `{ from: 2025-01-01, to: 2025-03-31 }`. A table without a date column is not date-filtered. With `date` the header shows a line under the title: `Data as of <last date> · Period <first date> – <last date>`, the first and last date of all dated tables in the snapshot (an open-ended `infinity` date is left out), fixed at build time and written in `locale`. |
+| `design` | Optional. The page layout: `classic-bi` (default: header, a section rail on the left when the config has `sections`, the tiles in the middle, the filters in a panel on the right; on a narrow screen the panel is a `Filters` disclosure above the tiles), `market-desk`, `timetable-board` or `visible-grid`. Any other name stops the build. Colours, font and logo stay with `theme`. `--shell <file>` wins over `design`. |
 | `theme` | Optional. The look: a built-in theme (`default`, `corporate`, `minimal`, `high-contrast`) or a theme file relative to the config file, e.g. `./brand/theme.yaml`. See `themes.md`. |
 | `locale` | Optional. A BCP 47 tag such as `de-DE`: every number and date the page formats uses it (KPI values and Δ %, chart tooltips and value-axis labels, pivot cells, table cells, the table date column, the header line). Default `en-US`. The build rejects a tag its `Intl` does not support. It changes formats only, not the page's own labels. |
 | `subtitle` | Optional. One line of plain text under the title, at most 200 characters. |
@@ -36,7 +37,7 @@ tiles:
 | `explore` | `true` (default), `false`, or `{ table: <source> }`. Opens a Perspective viewer on that table (default: the first source) with the filters active at that moment. |
 | `tiles` | The tiles, at least one; a config has either `tiles` or `sections`. Optional `id` (letters, digits, `_`, `-`) names the tile in error messages. |
 | `sections` | In place of `tiles`: a list of `{ title, tiles }`. `title` is required and unique; every section has at least one tile; tile ids are unique across all sections. Filters, chips, Reset, clicks and the URL hash work across all sections. Errors name the section and the tile: `section "<title>", tile "<id or number>": …`. |
-| `layout` | Only with `sections`. `stack` (default): each section is a titled group in config order, its KPIs in their own row at its top. `tabs`: one tab per section, the first open on load. Tiles in a closed tab do not query; opening a tab queries them for the current filters. The open tab is in the URL hash as `tab=<n>` (1-based) when it is not the first. |
+| `layout` | Only with `sections`. `stack` (default): each section is a titled group in config order, its KPIs in their own row at its top; the section rail jumps to a section. `tabs`: one tab per section in the section rail, the first open on load. Tiles in a closed tab do not query; opening a tab queries them for the current filters. The open tab is in the URL hash as `tab=<n>` (1-based) when it is not the first. |
 
 ## Filters in tile SQL
 
@@ -52,6 +53,8 @@ tiles:
 | `table` | `source`, `columns` | none: the renderer pages the source table; every column must exist in it |
 | `table` | `sql`, `click`, `exclude` | any: the columns are the result's columns, in SQL order |
 | `text` | `markdown` | none |
+
+Every tile may set `size`: `small`, `medium`, `large` or `wide`. Without it a KPI is `small` and every other tile `medium`. Size says how important a tile is; the design maps it to its grid, and `large` and `wide` take more room than `medium` on a desktop screen (in `classic-bi`: `small` a quarter of the row, `medium` half, `wide` the full row, `large` the full row and a taller chart or table). On a narrow screen tiles stack in config order. Another value stops the build and names the tile.
 
 `format` (on `kpi`, `echarts`, `pivot`) is `number` (default, at most 2 fraction digits), `currency` (US dollars), `percent` (the value is a ratio: 0.25 → 25 %), or a mapping with any of these keys:
 
@@ -116,6 +119,6 @@ node scripts/featherbi.mjs profile <file or table expression>…
 - **`--offline` is not supported with `engine: duckdb-wasm`.** Upstream duckdb-wasm fetches its Parquet extension over HTTP at first query, so an offline file could not read its own snapshot. The build rejects the combination; use the default `engine: haybarn` for `--offline`.
 - `--offline` and `--split` cannot be combined.
 - `--remote s3://<bucket>/<prefix> [--expires <n>h|<n>d]` stores the data in a bucket (unqualified): `remote.md`.
-- `--shell <file>` renders the page chrome with another shell module instead of the default (any mode): `shell.md`. Not needed for colours, fonts or a logo (`theme:`).
+- `--shell <file>` renders the page chrome with another shell module instead of the default (any mode) and wins over `design`: `shell.md`. Not needed for colours, fonts or a logo (`theme:`).
 - A `--split` folder must be new, empty, or hold only an earlier featherBI split build. Otherwise the build stops before writing anything and names the foreign files.
 - When the embedded Parquet exceeds 25 MB the build warns. Build with `--split`, or aggregate in the source SQL.

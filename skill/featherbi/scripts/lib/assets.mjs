@@ -64,6 +64,17 @@ function patch(name, source) {
   return out;
 }
 
+// Firefox compiles an inlined (data: URL) wasm lazily when it is streamed, so the first query takes 25-50 s; instantiating
+// from an ArrayBuffer compiles it eagerly (same bytes). The pinned Haybarn worker has no option for it: a build-time patch.
+export const WORKER_ANCHOR = {
+  find: "WebAssembly.instantiateStreaming(i,e)",
+  replace: "i.then(a=>a.arrayBuffer()).then(b=>WebAssembly.instantiate(b,e))",
+};
+export function patchWorker(source) {
+  if (source.split(WORKER_ANCHOR.find).length !== 2) throw new Error(`Haybarn worker: \`${WORKER_ANCHOR.find}\` was not found exactly once; the Haybarn worker changed`);
+  return source.replace(WORKER_ANCHOR.find, () => WORKER_ANCHOR.replace);
+}
+
 // -> { imports: import-map entries (CDN URL -> data: URL) for every module the page imports;
 //      worker, wasm, extensions: data: URLs of the engine files; grid, css: data: URLs; psp: { <Perspective wasm file>: data: URL } }.
 export async function offlineAssets(config, lock) {
@@ -101,7 +112,7 @@ export async function offlineAssets(config, lock) {
   for (const entry of explore ? psp.wasm : []) pspWasm[entry.url.split("/").pop()] = await inline(entry, "application/wasm");
   return {
     imports,
-    worker: await inline(engine.worker, "text/javascript"),
+    worker: dataUrl("text/javascript", patchWorker((await get(engine.worker.url, hash[engine.worker.url])).toString("utf8"))),
     wasm: await inline(engine.wasm, "application/wasm"),
     extensions,
     grid: types.includes("table") ? await inline(lock["ag-grid"], "text/javascript") : undefined,

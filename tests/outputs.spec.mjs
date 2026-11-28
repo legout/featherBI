@@ -95,8 +95,6 @@ tiles:
 `;
 
 test("--offline: with every non-file: request blocked, every tile renders and Explore opens; with Explore off, the KPI still renders", async ({ page }) => {
-  // Three full engine start-ups (inlined wasm) in Firefox take ~35-40 s each, so ~120 s total: the default budget, not a hang.
-  test.slow();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "outputs-offline-"));
   try {
     fs.copyFileSync(path.join(root, "fixtures/hand/sales.parquet"), path.join(dir, "sales.parquet"));

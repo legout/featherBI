@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "skill/featherbi/scripts/featherbi.mjs");
@@ -180,4 +180,14 @@ test("--offline keeps its vendor cache per user and inlines a cached file only w
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("--offline instantiates the engine wasm from a buffer, and a Haybarn worker that moved the patched string fails the build", async () => {
+  const { patchWorker, WORKER_ANCHOR } = await import(pathToFileURL(path.join(root, "skill/featherbi/scripts/lib/assets.mjs")).href);
+  const patched = patchWorker(`a;${WORKER_ANCHOR.find};b`);
+  assert.equal(patched, `a;${WORKER_ANCHOR.replace};b`);
+  assert.match(patched, /arrayBuffer\(\)/);
+  assert.doesNotMatch(patched, /instantiateStreaming/);
+  assert.throws(() => patchWorker("a;b"), /Haybarn.*changed/s);
+  assert.throws(() => patchWorker(`${WORKER_ANCHOR.find}${WORKER_ANCHOR.find}`), /Haybarn.*changed/s);
 });

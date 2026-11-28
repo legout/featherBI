@@ -11,7 +11,8 @@ const escapeHtml = s => s.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
 // JSON inside <script>: no "<", so no value (tile SQL, titles) can close the element.
 const json = value => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-export async function render(config, snapshots, filters, mode = "default", { remote } = {}) {
+// The default shell, or the bytes of the one `build --shell` checked (featherbi.mjs, references/shell.md).
+export async function render(config, snapshots, filters, mode = "default", { remote, shell = fs.readFileSync(new URL("../../assets/shell.js", import.meta.url)) } = {}) {
   const lock = JSON.parse(read("assets/vendor.lock.json"));
   const engine = lock.engines[config.engine];
   const psp = lock.perspective;
@@ -22,21 +23,23 @@ export async function render(config, snapshots, filters, mode = "default", { rem
   const explore = config.explore === false ? null : { table: config.explore?.table ?? Object.keys(config.sources)[0], perspective: psp, charts: read("assets/perspective-charts.patched.js") };
   const tiles = tilesOf(config);
   const theme = config.loadedTheme; // checked and loaded with the config (config.mjs); null without `theme`
-  // Header line (spec 0005 §4): the snapshot's first and last date and the author's label, as attributes the renderer
-  // writes out in the page's `locale`; `subtitle` is its own line before it. Nothing of a source's SQL or path is in either.
-  const period = config.date ? filters.period : null;
-  const line = "w-full text-base-content/80";
-  const headline = [
-    config.subtitle ? `<p class="${line} text-sm">${escapeHtml(config.subtitle)}</p>` : "",
-    period || config.source_label ? `<p id="headline" class="${line} text-xs"${period ? ` data-min="${period.min}" data-max="${period.max}"` : ""}${config.source_label ? ` data-source="${escapeHtml(config.source_label)}"` : ""}></p>` : "",
-  ].filter(Boolean);
   const parts = {
     title: escapeHtml(config.title),
-    headline: headline.map(p => `\n  ${p}`).join(""),
+    // The shell's page inputs that are not in #dashboard (spec 0005 §6.2): the shell module itself, and for the header the
+    // title, logo, subtitle, the snapshot's first and last date (spec 0005 §4; `period` is not enumerable, so it is carried
+    // here) and the source label. Nothing of a source's SQL or path is in any of them.
+    page: json({
+      shell: `data:text/javascript;base64,${Buffer.from(shell).toString("base64")}`,
+      title: config.title,
+      logo: theme?.logo ?? null,
+      subtitle: config.subtitle || null,
+      period: config.date ? filters.period : null,
+      source: config.source_label || null,
+      canToggleTheme: !(theme?.schemes.length === 1),
+    }),
     css: read("assets/app.css"),
     // After the app CSS, so the theme's tokens override the prebuilt ones.
     theme: theme ? `\n<style>${theme.css}</style>` : "",
-    logo: theme?.logo ? `<img class="fb-logo" src="${theme.logo}" alt="">` : "",
     // A theme with one scheme shows that scheme whatever the viewer's system prefers (its CSS hides the toggle).
     dark: theme?.schemes.length === 1 ? String(theme.schemes[0] === "dark") : 'matchMedia("(prefers-color-scheme: dark)").matches',
     // Offline: the page still names the CDN URLs and the import map points them at the inlined copies, which the build

@@ -21,6 +21,9 @@ function reference(base) {
   }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "featherbi-base-"));
   git("worktree", "add", "--detach", path.join(tmp, "tree"), base);
+  // The generated volume input is ignored by git; use exactly the same input on both sides.
+  const volume = path.join(root, "fixtures/volume/sales.parquet");
+  if (fs.existsSync(volume)) fs.copyFileSync(volume, path.join(tmp, "tree/fixtures/volume/sales.parquet"));
   process.on("exit", () => {
     try {
       git("worktree", "remove", "--force", path.join(tmp, "tree"));
@@ -73,19 +76,23 @@ export async function samePage(page, base, config, { withoutTiles = [], exclude 
       for (const locator of dropped) await locator.evaluateAll(nodes => nodes.forEach(node => node.remove()));
       return `${await page.locator("header").ariaSnapshot()}\n${await page.locator("main").ariaSnapshot()}`;
     };
-    // The reference is read once it stops changing (grid rows and chart labels arrive after the tiles stop being busy).
-    await page.goto(pathToFileURL(files.before).href);
-    await expect(page.locator("main [role=group]").first()).toBeVisible();
-    await expect(page.locator("main [aria-busy=true]")).toHaveCount(0);
-    let expected = await tree();
-    for (let last = null; last !== expected; ) {
-      last = expected;
-      await page.waitForTimeout(500);
-      expected = await tree();
-    }
-    await page.goto(pathToFileURL(files.after).href);
-    await check(page);
-    await expect.poll(tree).toBe(expected);
+    // Closed tabs retain busy skeletons; wait for visible cards and settled trees on both pages.
+    const settled = async (file, after = false) => {
+      await page.goto(pathToFileURL(file).href);
+      if (after) await check(page);
+      await expect(page.locator("main [role=group]:visible").first()).toBeVisible();
+      await expect(page.locator("main [aria-busy=true]:visible")).toHaveCount(0);
+      let current = await tree();
+      for (let last = null; last !== current; ) {
+        last = current;
+        await page.waitForTimeout(500);
+        current = await tree();
+      }
+      return current;
+    };
+    const expected = await settled(files.before);
+    const actual = await settled(files.after, true);
+    expect(actual).toBe(expected);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

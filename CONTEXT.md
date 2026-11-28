@@ -19,6 +19,7 @@
 | **Header line** | The line under the page title: `Data as of <last date> · Period <first date> – <last date>`, plus `· Source <label>` when the config sets `source_label`. The dates are the snapshot's, fixed at build time (spec 0005 §4). |
 | **Section** | A titled group of tiles in the dashboard config (`sections`, in place of `tiles`). Filters apply across all sections (spec 0005 §5). |
 | **Layout** | How sections are shown: `stack` (all, one under the other, the default) or `tabs` (one tab per section; a closed tab does not query). |
+| **Shell** | The browser module that renders the page chrome (header, filter bar, sections or tabs, cards, Explore dialog) through the versioned shell contract (`shell: 1`, `references/shell.md`). The default ships with the skill; `build --shell <file>` swaps it (spec 0005 §6, ADR 0003). |
 | **Explore** | The on-demand Perspective panel for free pivoting. It is not a tile and is not re-rendered by filters. |
 | **Brainstorming mode** | The skill flow for "make me a dashboard from this data": profile, domain guess, one interview round, three proposals, build the picked one (spec 0004). Skipped when the request is specific. |
 | **Domain playbook** | A per-domain reference in the skill (`references/domains/<domain>.md`) with detection signals, interview questions, figures, tile ideas and traps, read in brainstorming mode. |

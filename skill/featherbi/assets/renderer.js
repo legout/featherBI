@@ -1,5 +1,8 @@
 // featherBI renderer, inlined into every dashboard by `build` after scripts/lib/filters.mjs: engine adapter, filters, KPI, chart and text tiles.
+// The page chrome is the shell's (references/shell.md): the renderer reaches it only through the view `mount` returns.
 const config = JSON.parse(document.getElementById("dashboard").textContent);
+// The build's inputs for the shell: the shell module, title, logo, subtitle, period and source label, theme toggle.
+const boot = JSON.parse(document.getElementById("featherbi-page").textContent);
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -8,9 +11,7 @@ const el = (tag, className, text) => {
   return node;
 };
 
-// Where a KPI and a card are mounted: the template's two grids, or the grids of the section being mounted (spec 0005 §5).
-const slots = { kpis: document.getElementById("kpis"), tiles: document.getElementById("tiles") };
-// A card title's heading level: under its section's title when the sections are stacked.
+// A text tile's heading level: under its section's title when the sections are stacked.
 const LEVEL = config.layout === "stack" ? 3 : 2;
 
 // Engine adapter: the only code that knows which browser DuckDB build runs.
@@ -124,32 +125,10 @@ function run(engine, tile, sql) {
   return engine.query(x.sql, x.params);
 }
 
-const svg = (tag, attributes, child) => {
-  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
-  if (child) node.append(child);
-  return node;
-};
+const NO_DATA = "No data for the current filters.";
 
-const labelled = (box, title, index) => {
-  title.id = `tile-${index}-title`;
-  box.setAttribute("role", "group");
-  box.setAttribute("aria-labelledby", title.id);
-};
-
-// Mounts a KPI tile in its loading state and returns the function that fills it.
-function mountKpi(tile, index) {
-  const box = el("div", "stat rounded-box bg-base-100 shadow-sm");
-  const title = el("div", "stat-title text-base-content/80", tile.title);
-  const value = el("div", "stat-value skeleton w-40 text-transparent tabular-nums", "0");
-  const delta = el("div", "stat-desc text-sm text-base-content/80 tabular-nums");
-  labelled(box, title, index);
-  box.setAttribute("aria-busy", "true");
-  box.append(title, value, delta);
-  if (tile.note) box.append(el("div", "text-xs text-base-content/80", tile.note)); // plain text (spec 0005 §3)
-  const line = svg("polyline", { fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" });
-  if (tile.spark) box.append(svg("svg", { class: "mt-1 h-8 w-full text-primary", viewBox: "0 0 100 24", preserveAspectRatio: "none", "aria-hidden": "true" }, line));
-  slots.kpis.append(box);
+// Fills a KPI tile; the shell paints its card from the patch.
+function mountKpi(tile, handle) {
   const format = formatter(tile.format);
   return async (engine, current) => {
     let text = "–";
@@ -167,28 +146,9 @@ function mountKpi(tile, index) {
       const span = Math.max(...ys) - low || 1;
       points = ys.map((y, i) => `${ys.length > 1 ? (i / (ys.length - 1)) * 100 : 50},${22 - ((y - low) / span) * 20}`).join(" ");
     } finally {
-      if (current()) {
-        value.className = "stat-value tabular-nums";
-        value.textContent = text;
-        delta.textContent = change;
-        line.setAttribute("points", points);
-        box.removeAttribute("aria-busy");
-      }
+      if (current()) handle.update({ kpi: { value: text, delta: change, points }, busy: false });
     }
   };
-}
-
-// A card in the tile grid: title plus a body the tile type fills.
-function mountCard(tile, index, bodyClass) {
-  const box = el("div", "card bg-base-100 shadow-sm");
-  const inner = el("div", "card-body gap-3 p-4");
-  const title = el(`h${LEVEL}`, "card-title text-sm font-medium text-base-content/80", tile.title);
-  const body = el("div", bodyClass);
-  labelled(box, title, index);
-  inner.append(title, body);
-  box.append(inner);
-  slots.tiles.append(box);
-  return { box, body, title };
 }
 
 // Chart colours come from the active DaisyUI theme. ECharts cannot blend oklch(), so a canvas resolves every colour to RGB.
@@ -331,16 +291,11 @@ let echarts; // the chart library, loaded once when the dashboard has a chart ti
 const charts = [];
 
 // Mounts a chart tile in its loading state and returns the function that draws it from its rows.
-function mountChart(tile, index) {
-  const { box, body } = mountCard(tile, index, "skeleton relative h-80");
+function mountChart(tile, handle) {
   const preset = config.presets[tile.preset];
-  const empty = el("p", "absolute inset-0 grid place-items-center text-sm text-base-content/80", "No data for the current filters.");
-  empty.hidden = true;
-  box.setAttribute("aria-busy", "true");
   let chart;
   const start = () => {
-    const node = el("div", "size-full");
-    body.append(node, empty);
+    const node = handle.host;
     chart = echarts.init(node, chartTheme());
     charts.push(chart);
     new ResizeObserver(() => chart.resize()).observe(node);
@@ -361,33 +316,26 @@ function mountChart(tile, index) {
       const rows = await run(engine, tile, tile.sql);
       if (!current()) return; // an older state's result is never painted
       if (!chart) start();
-      empty.hidden = rows.length > 0;
+      handle.update({ empty: rows.length ? null : NO_DATA });
       if (rows.length) chart.setOption(chartOption(tile, preset, rows), true);
       else chart.clear();
     } finally {
-      if (current()) {
-        body.classList.remove("skeleton");
-        box.removeAttribute("aria-busy");
-      }
+      if (current()) handle.update({ busy: false });
     }
   };
 }
 
 // Pivot totals arrive from SQL as r_total/c_total markers; the renderer only lays them out.
-function mountPivot(tile, index) {
-  const { box, body } = mountCard(tile, index, "w-full text-sm");
-  body.style.overflowX = "auto";
-  box.setAttribute("aria-busy", "true");
+function mountPivot(tile, handle) {
+  const body = handle.host;
   return async (engine, current) => {
     try {
       if (!engine) return;
       const rows = await run(engine, tile, tile.sql);
       if (!current()) return;
       body.replaceChildren();
-      if (!rows.length) {
-        body.append(el("p", "text-base-content/80", "No data for the current filters."));
-        return;
-      }
+      handle.update({ empty: rows.length ? null : NO_DATA });
+      if (!rows.length) return;
       const format = formatter(tile.format);
       const columns = [];
       const seenColumns = new Set();
@@ -443,9 +391,7 @@ function mountPivot(tile, index) {
       }
       body.append(table);
     } finally {
-      if (current()) {
-        box.removeAttribute("aria-busy");
-      }
+      if (current()) handle.update({ busy: false });
     }
   };
 }
@@ -454,7 +400,6 @@ let agGrid;
 const gridBodies = [];
 
 function gridTheme(body) {
-  const dark = document.getElementById("theme").checked;
   body.classList.toggle("ag-theme-quartz", !dark);
   body.classList.toggle("ag-theme-quartz-dark", dark);
 }
@@ -472,12 +417,11 @@ function loadGrid({ url, integrity }) {
 }
 
 // AG Grid owns scrolling and sorting; every block is a filtered SQL page with __row as its stable tie-breaker.
-function mountTable(tile, index) {
-  if (tile.sql) return mountSqlTable(tile, index);
-  const { box, body, title } = mountCard(tile, index, "h-80 w-full");
+function mountTable(tile, handle) {
+  if (tile.sql) return mountSqlTable(tile, handle);
+  const body = handle.host.appendChild(el("div", "size-full"));
   gridBodies.push(body);
   gridTheme(body);
-  box.setAttribute("aria-busy", "true");
   let api;
   let latest = { dates: [], numbers: {} }; // the newest page: its column types format the cells
   const source = (engine, current, count) => ({
@@ -496,10 +440,11 @@ function mountTable(tile, index) {
         ]);
         if (!current()) return params.failCallback();
         latest = rows;
+        handle.update({ error: null });
         params.successCallback(rows, count);
       } catch (error) {
         params.failCallback();
-        if (current()) fail(`Tile “${tile.title}” could not be computed: ${error.message}`, error);
+        if (current()) tileFailed(tile, handle, error);
       }
     },
   });
@@ -510,7 +455,7 @@ function mountTable(tile, index) {
       const [row] = await run(engine, tile, countSql);
       if (!current()) return;
       const count = Number(row.n);
-      title.textContent = `${tile.title} · ${count} rows (filtered)`;
+      handle.update({ title: `${tile.title} · ${count} rows (filtered)` });
       const dateColumn = filters.date && (filters.date.cols?.[tile.source] ?? filters.date.col);
       const options = {
         theme: "legacy",
@@ -530,17 +475,16 @@ function mountTable(tile, index) {
       if (api) api.setGridOption("datasource", options.datasource);
       else api = agGrid.createGrid(body, options);
     } finally {
-      if (current()) box.removeAttribute("aria-busy");
+      if (current()) handle.update({ busy: false });
     }
   };
 }
 
 // A `sql` table (spec 0005 §1): the result's columns in SQL order, at most 1 000 rows, sorted by the grid in the browser.
-function mountSqlTable(tile, index) {
-  const { box, body, title } = mountCard(tile, index, "h-80 w-full");
+function mountSqlTable(tile, handle) {
+  const body = handle.host.appendChild(el("div", "size-full"));
   gridBodies.push(body);
   gridTheme(body);
-  box.setAttribute("aria-busy", "true");
   let api;
   return async (engine, current) => {
     try {
@@ -549,7 +493,7 @@ function mountSqlTable(tile, index) {
       // pi-lens-ignore: no-sql-in-code-js
       const rows = await engine.query(`SELECT * FROM (${x.sql}) LIMIT 1001`, x.params, true);
       if (!current()) return;
-      title.textContent = `${tile.title} · ${rows.length > 1000 ? "first 1 000" : rows.length} rows`;
+      handle.update({ title: `${tile.title} · ${rows.length > 1000 ? "first 1 000" : rows.length} rows` });
       const rowData = rows.slice(0, 1000);
       if (api) return api.setGridOption("rowData", rowData);
       // A row sets the dimension to its value in the first column; the same value again clears it.
@@ -582,7 +526,7 @@ function mountSqlTable(tile, index) {
         }),
       });
     } finally {
-      if (current()) box.removeAttribute("aria-busy");
+      if (current()) handle.update({ busy: false });
     }
   };
 }
@@ -599,8 +543,8 @@ function inline(parent, text) {
   }
   parent.append(text.slice(at));
 }
-function mountText(tile, index) {
-  const { body } = mountCard(tile, index, "max-w-prose space-y-2 text-sm leading-relaxed");
+function mountText(tile, handle) {
+  const body = handle.host;
   const flat = s => s.trim().replace(/\s*\n\s*/g, " ");
   for (const block of String(tile.markdown ?? "").trim().split(/\n\s*\n/)) {
     const heading = block.match(/^(#{1,3}) +(.*)$/s);
@@ -613,30 +557,25 @@ function mountText(tile, index) {
   return async () => {};
 }
 
+// A page failure is the shell's alert; a tile failure is that tile's error, which the default shell shows in the same place.
 function fail(message, error) {
   console.error(error);
-  document.querySelector("main").prepend(Object.assign(el("div", "alert alert-error", message), { role: "alert" }));
+  view.alert("error", message);
+}
+// The engine's own message can quote the tile's SQL, so it goes to the console only.
+function tileFailed(tile, handle, error) {
+  console.error(error);
+  handle.update({ error: `Tile “${tile.title}” could not be computed. Details are in the browser console.` });
 }
 
 // Remote snapshot (spec 0002): every table is downloaded whole, in parallel, under one progress bar.
 // -> { <table>: Uint8Array } without the tables that failed (each reported by name), or null when a 403 says the links have expired.
-async function download(remote) {
-  const mb = bytes => (bytes / 2 ** 20).toFixed(1);
+async function download(remote, until) {
   const total = Object.values(remote.tables).reduce((sum, t) => sum + t.bytes, 0);
   let done = 0;
   let expired = false;
-  const box = el("div", "space-y-1");
-  const label = el("p", "text-sm text-base-content/80 tabular-nums");
-  const bar = el("progress", "progress progress-primary w-full");
-  bar.max = total;
-  bar.setAttribute("aria-label", "Loading data");
-  const show = () => {
-    label.textContent = `Loading data ${mb(done)} / ${mb(total)} MB`;
-    bar.value = done;
-  };
+  const show = () => view.remote(until, { loaded: done, total });
   show();
-  box.append(label, bar);
-  document.querySelector("main").prepend(box);
   const tables = {};
   await Promise.all(Object.entries(remote.tables).map(async ([table, { url }]) => {
     let status = "network or CORS error";
@@ -657,7 +596,7 @@ async function download(remote) {
       if (!expired) fail(`Table “${table}” could not be loaded (${status}). Tiles that use it show an error.`, error);
     }
   }));
-  box.remove();
+  view.remote(until, null);
   return expired ? null : tables;
 }
 
@@ -665,148 +604,131 @@ async function download(remote) {
 const filters = config.filters;
 // `tab` is the open tab of a page with tabs, 1-based (spec 0005 §5).
 const state = { dims: {}, ...filters.range, tab: 1 };
-Object.assign(state, parseHash(location.hash, filters)); // untrusted: only the valid parts apply
 // A change of the state goes to the URL at once (no history entry per change); until the engine is up that is all `refresh` does.
 const sync = () => history.replaceState(null, "", serializeHash(state, filters) || location.pathname + location.search);
 let refresh = sync;
-let drawFilters = () => {}; // the filter bar is drawn once the engine has had its turn
+let barReady = false; // the filter bar is drawn once the engine has had its turn
+const drawFilters = () => barReady && view.filters({ dims: { ...state.dims }, from: state.from ?? null, to: state.to ?? null });
 
-function mountFilters(refresh) {
-  const bar = document.getElementById("filters");
-  const draw = () => {
-    bar.replaceChildren();
-    const field = (label, control) => {
-      const wrap = el("label", "flex flex-col gap-1 text-xs");
-      wrap.append(el("span", "text-base-content/80", label), control);
-      bar.append(wrap);
-    };
-    for (const name of Object.keys(filters.dims)) {
-      const select = el("select", "select select-sm");
-      select.append(new Option("All", ""));
-      for (const v of filters.options[name]) select.append(new Option(v, v));
-      select.value = state.dims[name] ?? "";
-      select.onchange = () => set(name, select.value === "" ? undefined : filters.options[name].find(v => String(v) === select.value));
-      field(name, select);
-    }
-    if (filters.date) {
-      for (const key of ["from", "to"]) {
-        const input = el("input", "input input-sm");
-        input.type = "date";
-        input.value = state[key] ?? "";
-        input.onchange = () => set(null, input.value || null, key);
-        field(key === "from" ? "From" : "To", input);
-      }
-    }
-    const chips = el("div", "flex flex-wrap items-center gap-2");
-    chips.setAttribute("aria-label", "Active filters");
-    for (const [name, value] of Object.entries(state.dims)) {
-      const chip = el("span", "badge badge-neutral gap-1", `${name}: ${value}`);
-      const x = el("button", "cursor-pointer", "×");
-      x.setAttribute("aria-label", `Clear ${name}`);
-      x.onclick = () => set(name, undefined);
-      chip.append(x);
-      chips.append(chip);
-    }
-    const reset = el("button", "btn btn-sm btn-ghost", "Reset");
-    reset.onclick = () => {
-      state.dims = {};
-      Object.assign(state, filters.range);
-      draw();
-      refresh();
-    };
-    bar.append(chips, reset);
-  };
-  // A new value replaces the dimension's value; undefined clears it.
-  const set = (name, value, dateKey) => {
-    if (name === null) state[dateKey] = value;
-    else if (value === undefined) delete state.dims[name];
-    else state.dims[name] = value;
-    draw();
-    refresh();
-  };
-  draw();
-  return draw;
-}
-
-// Header line (spec 0005 §4): the build wrote the snapshot's first and last date and the source label into the slot.
-const headline = document.getElementById("headline");
-if (headline) {
-  const { min, max, source } = headline.dataset;
-  const day = iso => DAY.format(new Date(iso));
-  headline.textContent = [...(max ? [`Data as of ${day(max)}`, `Period ${day(min)} – ${day(max)}`] : []), ...(source ? [`Source ${source}`] : [])].join(" · ");
-}
-// Tiles first, so the layout stands while the engine loads.
-const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, table: mountTable, text: mountText };
-const mount = (tiles, from = 0) => tiles.map((tile, i) => [tile, MOUNT[tile.type]?.(tile, from + i) ?? (async () => {})]);
-// Sections (spec 0005 §5): each is a titled group with its own KPI row and tile grid, stacked or one tab each. The
-// tiles of a group query together; without sections the page is one group in the template's two grids.
+// The shell's inputs (references/shell.md): plain text and values, never SQL, source paths or library objects.
 const tabbed = config.layout === "tabs";
-const groups = [];
-const showTab = () => {
-  for (const [s, { panel, tab }] of groups.entries()) {
-    const open = !tabbed || s === state.tab - 1;
-    panel.hidden = !open;
-    if (!tab) continue;
-    tab.setAttribute("aria-selected", open);
-    tab.tabIndex = open ? 0 : -1; // roving focus: the tab list is one stop in the page's Tab order
-    tab.className = `btn btn-sm btn-ghost${open ? " bg-base-100 shadow-sm" : " text-base-content/80"}`;
-  }
+const day = iso => DAY.format(new Date(iso));
+// Header line (spec 0005 §4): the snapshot's first and last date, which the build carried, and the source label.
+const headerLine = [...(boot.period ? [`Data as of ${day(boot.period.max)}`, `Period ${day(boot.period.min)} – ${day(boot.period.max)}`] : []), ...(boot.source != null ? [`Source ${boot.source}`] : [])].join(" · ") || null;
+const page = {
+  title: boot.title,
+  logo: boot.logo,
+  subtitle: boot.subtitle,
+  headerLine,
+  canToggleTheme: boot.canToggleTheme,
+  hasDate: Boolean(filters.date),
+  exploreTable: config.explore?.table ?? null,
+  dimensions: Object.keys(filters.dims).map(name => ({ name, options: [...filters.options[name]] })),
+  layout: config.layout ?? "flat",
+  groups: [],
 };
-// Opens tab `n` and queries its tiles for the current state; a closed tab does not query.
-const openTab = n => {
-  state.tab = n;
-  showTab();
-  groups[n - 1].tab.focus();
-  refresh();
-};
-if (config.sections) {
-  const classes = { kpis: slots.kpis.className, tiles: slots.tiles.className };
-  slots.kpis.remove();
-  slots.tiles.remove();
-  const tablist = el("div", "flex flex-wrap gap-1");
-  tablist.setAttribute("role", "tablist");
-  tablist.setAttribute("aria-label", "Sections");
-  // Arrow keys move to the neighbouring tab (around the ends), Home and End to the first and last; the tab opens with the focus.
-  tablist.onkeydown = event => {
-    const to = { ArrowLeft: state.tab - 1 || groups.length, ArrowRight: (state.tab % groups.length) + 1, Home: 1, End: groups.length }[event.key];
-    if (!to) return;
-    event.preventDefault();
-    openTab(to);
-  };
-  if (tabbed) document.querySelector("main").append(tablist);
+{
   let from = 0;
-  for (const [s, section] of config.sections.entries()) {
+  for (const section of config.sections ?? [{ title: null, tiles: config.tiles.length }]) {
     const tiles = config.tiles.slice(from, from + section.tiles);
-    const panel = el("section", "space-y-4");
-    const label = tabbed ? el("button", "", section.title) : el("h2", "text-base font-semibold tracking-tight", section.title);
-    label.id = `section-${s}-title`;
-    panel.setAttribute("aria-labelledby", label.id);
-    if (tabbed) {
-      panel.id = `section-${s}`;
-      panel.setAttribute("role", "tabpanel");
-      label.type = "button";
-      label.setAttribute("role", "tab");
-      label.setAttribute("aria-controls", panel.id);
-      label.onclick = () => openTab(s + 1);
-      tablist.append(label);
-    } else {
-      if (s) panel.style.marginTop = "2rem"; // more room above a section title than under it
-      panel.append(label);
-    }
-    // A section's KPIs sit in their own row at its top, as on a page without sections.
-    for (const kind of ["kpis", "tiles"]) if (tiles.some(tile => (tile.type === "kpi") === (kind === "kpis"))) slots[kind] = panel.appendChild(el("div", classes[kind]));
-    document.querySelector("main").append(panel);
-    groups.push({ panel, tab: tabbed ? label : null, tiles: mount(tiles, from) });
+    page.groups.push({ title: section.title, tiles: tiles.map(t => ({ type: t.type, title: t.title ?? "", note: t.note || null, hasSpark: Boolean(t.spark) })) });
     from += section.tiles;
   }
-  showTab();
-} else groups.push({ panel: slots.tiles, tiles: mount(config.tiles) });
+}
+
+// The colour scheme: set on the document before first paint (the template), switched only by the viewer, never saved.
+let dark = document.documentElement.dataset.theme === "night";
+function setTheme(value) {
+  dark = value;
+  document.documentElement.dataset.theme = dark ? "night" : "winter";
+  view.theme(dark);
+  const theme = chartTheme();
+  for (const chart of charts) chart.setTheme(theme);
+  for (const body of gridBodies) gridTheme(body);
+}
+let openExplore = () => {};
+let closeExplore = () => {};
+// User gestures from the shell. Each is checked: only declared dimensions and their options, dates, in-range tabs.
+const actions = Object.freeze({
+  dim(name, value) {
+    if (!Object.hasOwn(filters.dims, name)) return;
+    if (value === null) delete state.dims[name];
+    else if (filters.options[name].includes(value)) state.dims[name] = value;
+    else return;
+    drawFilters();
+    refresh();
+  },
+  date(key, value) {
+    if (!filters.date || (key !== "from" && key !== "to") || (value !== null && !(typeof value === "string" && isoDate(value)))) return;
+    state[key] = value;
+    drawFilters();
+    refresh();
+  },
+  // The global defaults; the open tab stays.
+  reset() {
+    state.dims = {};
+    Object.assign(state, filters.range);
+    drawFilters();
+    refresh();
+  },
+  // Opens tab `n` and queries its tiles for the current state; a closed tab does not query.
+  tab(n) {
+    if (!tabbed || !Number.isInteger(n) || n < 1 || n > page.groups.length) return;
+    state.tab = n;
+    view.tab(n, true);
+    refresh();
+  },
+  theme(value) {
+    if (boot.canToggleTheme && typeof value === "boolean") setTheme(value);
+  },
+  openExplore: () => openExplore(),
+  closeExplore: () => closeExplore(),
+});
+
+// Mount once, before any SQL. A shell that cannot be imported or breaks the contract stops the page with a diagnostic.
+const frame = document.getElementById("featherbi");
+let view;
+try {
+  const shell = await import(boot.shell);
+  if (shell.manifest?.shell !== 1) throw new Error("it does not export manifest = { shell: 1 }");
+  if (typeof shell.mount !== "function") throw new Error("it does not export a mount function");
+  // The hash as it is now, after the import: a navigation while the shell loaded counts.
+  Object.assign(state, parseHash(location.hash, filters)); // untrusted: only the valid parts apply
+  view = shell.mount(frame, page, actions);
+  const missing = ["filters", "tab", "theme", "explore", "remote", "alert"].filter(name => typeof view?.[name] !== "function");
+  if (missing.length) throw new Error(`mount() returned no ${missing.join(", ")} function`);
+  if (!Array.isArray(view.tiles) || view.tiles.length !== config.tiles.length) throw new Error(`mount() returned ${Array.isArray(view.tiles) ? view.tiles.length : "no"} tile handles for ${config.tiles.length} tiles`);
+  // Every index, so a hole in the array is caught here, not at the first patch.
+  for (const [i, tile] of config.tiles.entries()) {
+    const handle = view.tiles[i];
+    const host = tile.type === "kpi" ? handle?.host === null : handle?.host instanceof HTMLElement;
+    if (typeof handle?.update !== "function" || !host) throw new Error(`tile ${i + 1} (${tile.type}) needs a handle with an update function and ${tile.type === "kpi" ? "host: null" : "a host element"}`);
+  }
+  if (page.exploreTable == null ? view.exploreHost !== null : !(view.exploreHost instanceof HTMLElement)) throw new Error(`mount() must return exploreHost as ${page.exploreTable == null ? "null (Explore is off)" : "an element (Explore is on)"}`);
+} catch (error) {
+  frame.replaceChildren(`featherBI: this page's shell does not meet shell contract v1 (${error.message}).`);
+  throw error;
+}
+view.theme(dark);
+view.explore("hidden");
+if (tabbed) view.tab(state.tab, false);
+// Tiles first, so the layout stands while the engine loads; a text tile is never busy.
+const MOUNT = { kpi: mountKpi, echarts: mountChart, pivot: mountPivot, table: mountTable, text: mountText };
+let at = 0;
+const groups = page.groups.map(group =>
+  group.tiles.map(() => {
+    const tile = config.tiles[at];
+    const handle = view.tiles[at++];
+    if (tile.type !== "text") handle.update({ busy: true });
+    return [tile, handle, MOUNT[tile.type]?.(tile, handle) ?? (async () => {})];
+  }),
+);
 // From here on, so a fragment navigation while the engine starts applies too.
 addEventListener("hashchange", () => {
   state.dims = {};
   Object.assign(state, filters.range, { tab: 1 }, parseHash(location.hash, filters));
   drawFilters();
-  showTab();
+  if (tabbed) view.tab(state.tab, false);
   refresh();
 });
 const library = config.tiles.some(t => t.type === "echarts") ? import(config.charts.url) : null; // integrity: the page's import map
@@ -817,9 +739,8 @@ gridLibrary?.catch(() => {});
 const EXPIRED = "This dashboard's data link has expired. Ask the author to rebuild it.";
 const remote = config.remote;
 let expired = remote && Date.now() >= Date.parse(remote.expiresAt);
-const until = remote && !expired ? el("p", "px-3 text-right text-xs text-base-content/80", `Data available until ${new Date(remote.expiresAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`) : null;
-if (until) document.querySelector("header h1").after(until);
-const downloaded = until && download(remote);
+const until = remote && !expired ? `Data available until ${new Date(remote.expiresAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : null;
+const downloaded = until && download(remote, until);
 let engine;
 try {
   if (!expired) engine = await startEngine(config.engine);
@@ -831,8 +752,8 @@ if (remote && !remoteTables) {
   // Expired: the layout and the filter bar stay, and without an engine no tile runs a query.
   expired = true;
   engine = undefined;
-  until?.remove();
-  document.querySelector("main").prepend(Object.assign(el("div", "alert alert-warning", EXPIRED), { role: "alert" }));
+  view.remote(null, null);
+  view.alert("warning", EXPIRED);
 }
 // Each snapshot is a data: URL (embedded), a Parquet file next to the page (--split) or a downloaded remote table.
 const tables = { ...remoteTables };
@@ -852,38 +773,39 @@ try {
 } catch (error) {
   fail("The table library could not be loaded from cdn.jsdelivr.net. Check your network connection, then reload this page.", error);
 }
-document.getElementById("theme").addEventListener("change", () => {
-  const theme = chartTheme();
-  for (const chart of charts) chart.setTheme(theme);
-  for (const body of gridBodies) gridTheme(body);
-});
 // Latest state wins: every change is a new pass; passes paint only while they are the newest, and changes during a pass coalesce.
 // Each group has its own passes, so with tabs the rule holds per tab; only the open tab's tiles run. That is checked when
 // a pass starts, not when it was asked for: a pass queued behind a running one is dropped if its tab has closed since.
 const isOpen = s => !tabbed || s === state.tab - 1;
-const passes = groups.map(({ tiles }, s) => latestWins(async current => isOpen(s) && Promise.all(tiles.map(([tile, fill]) => fill(engine, current).catch(error => fail(`Tile “${tile.title}” could not be computed: ${error.message}`, error))))));
+// A pass stays current only while its tab is open: closing the tab ends it without starting anything there, and reopening
+// starts a new pass, so a late result or error of the closed tab never paints.
+const passes = groups.map((tiles, s) => latestWins(async newest => {
+  const current = () => newest() && isOpen(s);
+  return isOpen(s) && Promise.all(tiles.map(([tile, handle, fill]) =>
+      // Only the current state's outcome sets or clears a tile's error.
+      fill(engine, current).then(
+        () => current() && handle.update({ error: null }),
+        error => current() && tileFailed(tile, handle, error),
+      ),
+    ),
+  );
+}));
 refresh = () => {
   sync();
   return Promise.all(passes.filter((_, s) => isOpen(s)).map(pass => pass.change()));
 };
-drawFilters = mountFilters(refresh);
+barReady = true;
+drawFilters();
 await refresh();
 
-// Explore (spec 0001 §Explore): a navbar button opens Perspective on one table. Perspective loads on the first open only;
-// each open loads the table with the filters active at that moment, and the filter path never touches it.
+// Explore (spec 0001 §Explore): the shell's launcher opens Perspective on one table in the shell's host. Perspective loads
+// on the first open only; each open loads the table with the filters active at that moment, and the filter path never touches it.
 if (config.explore && !expired) {
   const { table: name, perspective: psp, charts, assets } = config.explore;
-  const button = el("button", "btn btn-sm btn-ghost", "Explore");
-  const dialog = el("dialog", "rounded-box bg-base-100 shadow-sm");
-  dialog.setAttribute("aria-label", `Explore ${name}`);
-  dialog.style.cssText = "width:95vw;height:90vh;max-width:none;max-height:none;margin:auto;padding:0"; // preflight drops the dialog's centring
-  const close = el("button", "btn btn-sm btn-ghost", "Close");
-  close.onclick = () => dialog.close();
-  const head = el("div", "flex items-center gap-3 px-4");
-  head.append(el("h2", "flex-1 text-sm font-semibold", `Explore: ${name}`), close);
-  dialog.append(head);
-  document.body.append(dialog);
-  document.querySelector("header h1").after(button);
+  let phase;
+  const show = next => view.explore((phase = next));
+  let seq = 0; // the newest open; an older one never shows its rows
+  let chain = Promise.resolve(); // opens run one after another, so a viewer and its table are created once
   let ready; // the loaded viewer and its Perspective table, created on the first open
   const load = async () => {
     // shortcut: a default build leaves the Perspective client and viewer fetching their wasm from the CDN without SRI (tools/patch-perspective.mjs patches the charts plugin only); --offline inlines it and patches those fetches to a name.
@@ -895,36 +817,46 @@ if (config.explore && !expired) {
     await Promise.all([import(psp.datagrid.url), import(`data:text/javascript;charset=utf-8,${encodeURIComponent(charts)}`)]);
     const client = await (await import(psp.client.url)).default.worker();
     const viewer = document.createElement("perspective-viewer");
-    viewer.style.cssText = "height:calc(100% - 3rem)";
-    dialog.append(viewer);
-    return { client, viewer, table: null };
+    viewer.style.cssText = "display:block;width:100%;height:100%";
+    view.exploreHost.append(viewer);
+    return { client, viewer, table: null, shown: false };
   };
-  button.onclick = async () => {
-    button.disabled = true;
-    try {
-      dialog.showModal();
-      ready ??= load();
-      const p = await ready;
-      p.viewer.style.visibility = "hidden"; // the previous open's rows stay hidden until this open's view is drawn; laid out, so the grid redraws
-      const x = expand(`SELECT * FROM ${ident(name)} WHERE {{filters:${name}}}`, state, filters.dims, filters.date, filters.tableColumns);
-      const { tableToIPC } = await import("apache-arrow");
-      const ipc = tableToIPC(await engine.arrow(x.sql, x.params), "stream");
-      p.viewer.setAttribute("theme", document.getElementById("theme").checked ? "Pro Dark" : "Pro");
-      if (p.table) await p.table.replace(ipc);
-      else {
-        p.table = await p.client.table(ipc, { name });
-        await p.viewer.load(p.client);
-        await p.viewer.restore({ table: name });
+  closeExplore = () => {
+    if (phase !== "loading" && phase !== "open") return;
+    seq++;
+    show("closed");
+  };
+  openExplore = () => {
+    if (phase !== "closed") return; // already open or loading: not a second load
+    const mine = ++seq;
+    const x = expand(`SELECT * FROM ${ident(name)} WHERE {{filters:${name}}}`, state, filters.dims, filters.date, filters.tableColumns);
+    show("loading");
+    chain = chain.then(async () => {
+      if (mine !== seq) return; // closed again before its turn
+      try {
+        // A failed load leaves no viewer behind and is tried again; a loaded viewer is kept for every later open.
+        const p = await (ready ??= load().catch(error => {
+          ready = undefined;
+          throw error;
+        }));
+        const { tableToIPC } = await import("apache-arrow");
+        const ipc = tableToIPC(await engine.arrow(x.sql, x.params), "stream");
+        p.viewer.setAttribute("theme", dark ? "Pro Dark" : "Pro");
+        if (p.table) await p.table.replace(ipc);
+        else p.table = await p.client.table(ipc, { name });
+        if (!p.shown) {
+          await p.viewer.load(p.client);
+          await p.viewer.restore({ table: name });
+          p.shown = true;
+        }
+        await p.viewer.flush();
+        await p.viewer.resize(); // flush() resolves before the grid repaints; an awaited redraw does not
+        if (mine === seq) show("open");
+      } catch (error) {
+        if (mine === seq) show("closed"); // the next open tries again
+        fail("Explore could not be loaded from cdn.jsdelivr.net. Check your network connection, then try again.", error);
       }
-      await p.viewer.flush();
-      await p.viewer.resize(); // flush() resolves before the grid repaints; an awaited redraw does not
-      p.viewer.style.visibility = "visible";
-    } catch (error) {
-      ready = undefined;
-      dialog.close();
-      fail("Explore could not be loaded from cdn.jsdelivr.net. Check your network connection, then try again.", error);
-    } finally {
-      button.disabled = false;
-    }
+    });
   };
+  show("closed");
 }

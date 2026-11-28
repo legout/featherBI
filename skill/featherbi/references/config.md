@@ -116,5 +116,6 @@ node scripts/featherbi.mjs profile <file or table expression>…
 - **`--offline` is not supported with `engine: duckdb-wasm`.** Upstream duckdb-wasm fetches its Parquet extension over HTTP at first query, so an offline file could not read its own snapshot. The build rejects the combination; use the default `engine: haybarn` for `--offline`.
 - `--offline` and `--split` cannot be combined.
 - `--remote s3://<bucket>/<prefix> [--expires <n>h|<n>d]` stores the data in a bucket (unqualified): `remote.md`.
+- `--shell <file>` renders the page chrome with another shell module instead of the default (any mode): `shell.md`. Not needed for colours, fonts or a logo (`theme:`).
 - A `--split` folder must be new, empty, or hold only an earlier featherBI split build. Otherwise the build stops before writing anything and names the foreign files.
 - When the embedded Parquet exceeds 25 MB the build warns. Build with `--split`, or aggregate in the source SQL.

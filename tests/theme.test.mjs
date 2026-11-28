@@ -30,20 +30,19 @@ const LIGHT = 'light: { base-100: "#ffffff", base-content: "#1a1a1a" }\n';
 // Spec 0003 acceptance 1 (defined in spec 0005 acceptance 1). The reference was captured from a build of main at 461142a,
 // before the theme change, never from the new code: SHA-256 of the complete #dashboard JSON and of the CSS, and Chromium's
 // accessibility tree under header and main after load. A later change that alters one of them on purpose captures its
-// own reference. The JSON embeds the snapshot Parquet, whose bytes belong to the DuckDB version that wrote them: the
-// reference is DuckDB 2.0.1's (the version CI pins). Under another DuckDB only `dataWithoutParquet` can be compared.
+// own reference. Plan 0006 task D1 made classic-bi the default design (spec 0006 §1): the CSS and the tree changed on
+// purpose and are no longer pinned here (tests/design.spec.mjs checks the new layout); the JSON still is. The JSON embeds
+// the snapshot Parquet, whose bytes belong to the DuckDB version that wrote them: the reference is DuckDB 2.0.1's (the
+// version CI pins). Under another DuckDB only `dataWithoutParquet` can be compared.
 const MAIN = {
   data: "ae7b82e22690ebf1dd4f7aa7df0e1b4854a30c3ab69ebc4989e3e5a033c6e8bf",
   dataWithoutParquet: "d33fc4cad59a20da8ce37f46a05305b21fe0ace59940522db9fe22691a071a9a",
-  css: "6f79513eadb3d6972f963213d96505efaea6d7445c3a5e4321bca30a2c0f8af7",
-  header: '- banner:\n  - heading "Hand fixture" [level=1]\n  - button "Explore"\n  - checkbox "Dark theme"',
-  main: '- main:\n  - region "Filters":\n    - text: region\n    - combobox "region":\n      - option "All" [selected]\n      - option "EU"\n      - option "US"\n    - text: channel\n    - combobox "channel":\n      - option "All" [selected]\n      - option "Online"\n      - option "Retail"\n    - text: From\n    - textbox "From": 2024-04-01\n    - text: To\n    - textbox "To": 2025-03-25\n    - button "Reset"\n  - region "Key figures":\n    - group "Revenue": Revenue $2,260.50\n  - region "Charts and notes"',
 };
 
 // Spec 0003 r3 (owner decision on #108): the default's light primary-content was 3.62:1 on primary; white is 4.72:1.
 const CONTRAST_FIX = { main: "--color-primary-content:oklch(91.372% .051 257.57)", now: "--color-primary-content:oklch(100% 0 0)" };
 
-test("without `theme` the hand fixture renders the same page as main before themes, apart from the corrected colour", async t => {
+test("without `theme` the hand fixture embeds the same data as main before themes, with the corrected colour in its CSS", async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-default-"));
   const browser = await chromium.launch();
   try {
@@ -60,17 +59,15 @@ test("without `theme` the hand fixture renders the same page as main before them
     }
     const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)];
     assert.equal(styles.length, 1, "one <style>");
-    // Revision 3 changed one colour value of the default (CONTRAST_FIX). With main's value put back, the CSS is main's.
+    // Revision 3 changed one colour value of the default (CONTRAST_FIX).
     assert.equal(styles[0][1].split(CONTRAST_FIX.now).length, 2, "the corrected colour is in the CSS once");
-    assert.equal(sha256(styles[0][1].replace(CONTRAST_FIX.now, CONTRAST_FIX.main)), MAIN.css, "CSS apart from the corrected colour");
 
     const page = await browser.newPage();
     await page.goto(pathToFileURL(out).href);
     await page.getByText("$2,260.50", { exact: true }).waitFor();
     // Spec 0005 §4 (owner decision 2026-11-27 on #123): a config with `date` shows the header line, here the first and
-    // last order date of the hand fixture (README). It is the one addition to main's header.
-    assert.equal(await page.locator("header").ariaSnapshot(), `${MAIN.header}\n  - paragraph: Data as of 03/25/2025 · Period 01/05/2025 – 03/25/2025`);
-    assert.equal(await page.locator("main").ariaSnapshot(), MAIN.main);
+    // last order date of the hand fixture (README).
+    assert.equal(await page.locator("header p").textContent(), "Data as of 03/25/2025 · Period 01/05/2025 – 03/25/2025");
   } finally {
     await browser.close();
     fs.rmSync(dir, { recursive: true, force: true });

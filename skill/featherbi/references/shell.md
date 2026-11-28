@@ -1,6 +1,6 @@
 # Shell contract v1
 
-The **shell** is the browser module that renders a dashboard's page chrome: header, filter bar, sections or tabs, tile cards, KPI cards, remote progress, alerts and the Explore dialog. The renderer keeps everything else. `build --shell <file>` replaces the default shell (`assets/shell.js`, DaisyUI markup) for one build. This file is the public interface of contract version 1 (spec 0005 §6 r3, ADR 0003).
+The **shell** is the browser module that renders a dashboard's page chrome: header, filters, sections or tabs, tile cards, KPI cards, remote progress, alerts and the Explore dialog. The renderer keeps everything else. `build --shell <file>` replaces the default shell (`assets/shell.js`, DaisyUI markup, the built-in designs of `design:`) for one build. This file is the public interface of contract version 1 (spec 0005 §6 r3, ADR 0003).
 
 Most dashboards never need this. Change colours, fonts and the logo with `theme:` (`references/themes.md`); write a shell only when the page needs another component library.
 
@@ -21,9 +21,9 @@ Most dashboards never need this. Change colours, fonts and the logo with `theme:
 
   Its other required named export is `export function mount(root, page, actions) { … }`. No default export, global registry, Node entry point or sidecar file.
 - The build checks that first line only. It does not import or run the file. A missing or unreadable file, a first line that is not the declaration, or another version stops the build with a nonzero exit that names the path and the expected declaration. No output is written or replaced, nothing is uploaded.
-- No flag: the installed `assets/shell.js`. `build … --shell <file>`: that file (relative to the cwd, or absolute) **instead of** the default. There is no `dashboard.yaml` key; one config builds with any shell.
+- No flag: the installed `assets/shell.js`. `build … --shell <file>`: that file (relative to the cwd, or absolute) **instead of** the default. No `dashboard.yaml` key names a shell file, so one config builds with any shell. The config's `design` (spec 0006, ADR 0004) picks a layout of the default shell only: `--shell` wins over it, and the other shell gets the name as `page.design`.
 - Every mode (single file, `--offline`, `--split`, `--remote`) embeds the shell's bytes as a base64 `data:text/javascript` module. The page imports it before the engine starts; the original file is not needed when the page is opened.
-- A contract change gets a new version number and a CHANGELOG entry. The build rejects a version it does not support.
+- An incompatible contract change gets a new version number and a CHANGELOG entry. `page.design` and the tile `size` were added to version 1 (spec 0006): a shell written before them still works. The build rejects a version it does not support.
 
 ## SP1 constraints (Web Components and `file://`)
 
@@ -52,7 +52,8 @@ Read-only plain values. Strings are **text**, never HTML. `null` means absent. E
 | `exploreTable` | string \| null | The table Explore opens; null when Explore is off. |
 | `dimensions` | `[{name, options}]` | In config order. `options` are the original non-null option values (strings, numbers or booleans), not their DOM string forms. |
 | `layout` | `'flat'` \| `'stack'` \| `'tabs'` | `flat` without sections. |
-| `groups` | `[{title, tiles}]` | In config order. `flat` has one group with `title: null`. Each tile is `{type, title, note, hasSpark}`: `type` is `kpi`, `echarts`, `pivot`, `table` or `text`; `title` a string; `note` a string or null (KPI note); `hasSpark` true when a KPI has a sparkline. |
+| `design` | string | The config's `design`, `classic-bi` without one: `classic-bi`, `market-desk`, `timetable-board` or `visible-grid`. A shell may use or ignore it. |
+| `groups` | `[{title, tiles}]` | In config order. `flat` has one group with `title: null`. Each tile is `{type, title, note, hasSpark, size}`: `type` is `kpi`, `echarts`, `pivot`, `table` or `text`; `title` a string; `note` a string or null (KPI note); `hasSpark` true when a KPI has a sparkline; `size` is `small`, `medium`, `large` or `wide` (the config's `size`; without one `small` for a KPI, `medium` otherwise), the tile's priority, which a shell may use or ignore. |
 
 No source paths, SQL, signed URLs, engine or library objects reach a shell.
 

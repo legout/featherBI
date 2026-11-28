@@ -6,6 +6,7 @@
     "title": { "type": "string", "minLength": 1 },
     "name": { "type": "string" },
     "engine": { "enum": ["haybarn", "duckdb-wasm"] },
+    "design": { "enum": ["classic-bi", "market-desk", "timetable-board", "visible-grid"] },
     "theme": { "type": "string", "minLength": 1 },
     "locale": { "type": "string", "minLength": 1 },
     "subtitle": { "type": "string", "maxLength": 200 },
@@ -52,6 +53,7 @@
           "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
           "type": { "type": "string" },
           "title": { "type": "string" },
+          "size": { "enum": ["small", "medium", "large", "wide"] },
           "note": { "type": "string", "maxLength": 200 },
           "sql": { "type": "string" },
           "format": {

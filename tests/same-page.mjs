@@ -41,8 +41,9 @@ function build(tree, config, out) {
 //   withoutTiles: titles of tiles cut out of the embedded data text and removed from the page;
 //   exclude: page => locators removed from both pages before the accessibility trees are compared;
 //   check: page => assertions on the new page, run before anything is removed from it;
-//   colours: [before, after] CSS declarations, each put into the reference CSS in place of its old value (it must be there once).
-export async function samePage(page, base, config, { withoutTiles = [], exclude = () => [], check = async () => {}, colours = [] } = {}) {
+//   colours: [before, after] CSS declarations, each put into the reference CSS in place of its old value (it must be there once);
+//   dataOnly: the CSS and the accessibility tree differ on purpose, only the embedded data is compared.
+export async function samePage(page, base, config, { withoutTiles = [], exclude = () => [], check = async () => {}, colours = [], dataOnly = false } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "featherbi-same-"));
   try {
     const files = { before: path.join(tmp, "before.html"), after: path.join(tmp, "after.html") };
@@ -68,6 +69,7 @@ export async function samePage(page, base, config, { withoutTiles = [], exclude 
       expectedCss = expectedCss.map(text => text.replace(was, now));
     }
     expect(data(after) === data(before), "the #dashboard data is byte-identical").toBe(true);
+    if (dataOnly) return;
     expect(css(after), "the CSS is byte-identical").toEqual(expectedCss);
 
     const dropped = [...withoutTiles.map(title => page.getByRole("group", { name: title })), ...exclude(page)];

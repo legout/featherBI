@@ -1,6 +1,9 @@
 export const manifest = { shell: 1 };
 // featherBI default shell (contract v1, references/shell.md): the page chrome in DaisyUI markup. The renderer reaches it
 // only through mount(); everything it paints arrives as plain values, every user gesture leaves as an action.
+// Layout: the classic-bi design (spec 0006): header, section rail on the left when the config has sections, the tile
+// canvas, and the filter panel docked on the right; below `lg` the rail lies on top and the panel is a disclosure.
+// shortcut: every `page.design` name renders classic-bi, until plan 0006 task D2 adds the other three layouts.
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -22,8 +25,19 @@ const sun = () => {
   return icon;
 };
 const moon = () => svg("svg", { ...ICON, "stroke-linejoin": "round", "aria-hidden": "true" }, svg("path", { d: "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" }));
+const chevron = () => svg("svg", { ...ICON, "stroke-linejoin": "round", "aria-hidden": "true" }, svg("path", { d: "M6 9l6 6 6-6" }));
+// Tile size → columns of the canvas's 12-column grid, by the canvas's own width (it is narrower than the window by the
+// rail and the panel; at least 34rem while they are docked). `large` is `wide` with a taller chart or grid.
+// Below `lg` the two grids of a group dissolve into its column, where each tile's `order` is its place in the config;
+// from `lg` the KPIs have their own row above the other tiles.
+const GRID = "max-lg:contents lg:grid lg:grid-cols-12 lg:gap-4";
+const STACK = "flex flex-col gap-4";
+const SPAN = { small: "col-span-12 @md:col-span-6 @4xl:col-span-3", medium: "col-span-12 @lg:col-span-6", large: "col-span-12", wide: "col-span-12" };
+const RAIL = "flex flex-wrap gap-1 px-4 pt-4 sm:px-6 lg:sticky lg:top-0 lg:w-44 lg:shrink-0 lg:flex-col lg:flex-nowrap lg:self-start lg:py-6 lg:pr-0";
+const RAIL_ITEM = "btn btn-sm btn-ghost h-auto min-h-8 py-1 text-left lg:justify-start";
 
 export function mount(root, page, actions) {
+  root.className = "flex min-h-screen flex-col"; // the docked panel reaches the bottom of a short page
   // Header: logo, title, Explore, "Data available until", theme toggle, subtitle and header line.
   const header = root.appendChild(el("header", "navbar flex-wrap bg-base-100 px-4 shadow-sm sm:px-6"));
   if (page.logo) header.append(Object.assign(el("img", "fb-logo"), { src: page.logo, alt: "" }));
@@ -42,10 +56,26 @@ export function mount(root, page, actions) {
   if (page.subtitle != null) header.append(el("p", "w-full text-base-content/80 text-sm", page.subtitle));
   if (page.headerLine != null) header.append(el("p", "w-full text-base-content/80 text-xs", page.headerLine));
 
-  const main = root.appendChild(el("main", "mx-auto max-w-[1600px] space-y-4 p-4 sm:p-6"));
-  const bar = main.appendChild(el("section", "flex flex-wrap items-end gap-3"));
+  // In the DOM as on a wide screen: rail, canvas, panel. Below `lg` the panel moves above them as a disclosure.
+  const frame = root.appendChild(el("div", "flex flex-1 flex-col lg:flex-row"));
+  const main = frame.appendChild(el("main", `@container min-w-0 flex-1 ${STACK} p-4 sm:p-6`));
+  const side = frame.appendChild(el("aside", "border-base-300 bg-base-100 max-lg:order-first max-lg:border-b lg:w-64 lg:shrink-0 lg:border-l"));
+  side.setAttribute("aria-label", "Filters");
+  const sideBody = side.appendChild(el("div", "flex flex-col gap-3 px-4 py-2 sm:px-6 lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto lg:px-4 lg:py-6"));
+  const disclosure = sideBody.appendChild(el("button", "btn btn-sm btn-ghost w-full justify-between lg:hidden"));
+  const disclosureLabel = disclosure.appendChild(el("span", "", "Filters"));
+  const arrow = disclosure.appendChild(chevron());
+  sideBody.append(el("h2", "text-sm font-semibold max-lg:hidden", "Filters"));
+  const bar = sideBody.appendChild(el("div", "grid grid-cols-2 gap-3 max-lg:hidden max-lg:pb-2 lg:grid-cols-1"));
   bar.id = "filters";
-  bar.setAttribute("aria-label", "Filters");
+  disclosure.type = "button";
+  disclosure.setAttribute("aria-controls", bar.id);
+  disclosure.setAttribute("aria-expanded", "false");
+  disclosure.onclick = () => {
+    const open = bar.classList.toggle("max-lg:hidden") === false;
+    disclosure.setAttribute("aria-expanded", open);
+    arrow.classList.toggle("rotate-180", open);
+  };
   const notice = (kind, message) => {
     const box = el("div", kind === "warning" ? "alert alert-warning" : "alert alert-error", message);
     box.setAttribute("role", "alert");
@@ -59,30 +89,32 @@ export function mount(root, page, actions) {
   const tabs = [];
   const panels = [];
   let openTab = 1;
-  const KPIS = "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4";
-  const TILES = "grid grid-cols-1 gap-4 lg:grid-cols-2";
   const slots = [];
   if (page.layout === "flat") {
-    const kpis = main.appendChild(el("section", KPIS));
-    const tiles = main.appendChild(el("section", TILES));
+    const kpis = main.appendChild(el("section", GRID));
+    const tiles = main.appendChild(el("section", GRID));
     [kpis.id, tiles.id] = ["kpis", "tiles"];
     kpis.setAttribute("aria-label", "Key figures");
     tiles.setAttribute("aria-label", "Charts and notes");
     slots.push({ kpis, tiles });
   } else {
-    const tablist = el("div", "flex flex-wrap gap-1");
-    tablist.setAttribute("role", "tablist");
-    tablist.setAttribute("aria-label", "Sections");
-    // Arrow keys move to the neighbouring tab (around the ends), Home and End to the first and last.
-    tablist.onkeydown = event => {
-      const to = { ArrowLeft: openTab - 1 || tabs.length, ArrowRight: (openTab % tabs.length) + 1, Home: 1, End: tabs.length }[event.key];
-      if (!to) return;
-      event.preventDefault();
-      actions.tab(to);
-    };
-    if (tabbed) main.append(tablist);
+    // The section rail: the tab list (tabs), or buttons that jump to a section (stack).
+    const rail = el(tabbed ? "div" : "nav", RAIL);
+    rail.setAttribute("aria-label", "Sections");
+    main.before(rail);
+    if (tabbed) {
+      rail.setAttribute("role", "tablist");
+      // Arrow keys move to the neighbouring tab (around the ends; the rail is a column or a row), Home and End to the first and last.
+      rail.onkeydown = event => {
+        const [back, on] = [openTab - 1 || tabs.length, (openTab % tabs.length) + 1];
+        const to = { ArrowLeft: back, ArrowUp: back, ArrowRight: on, ArrowDown: on, Home: 1, End: tabs.length }[event.key];
+        if (!to) return;
+        event.preventDefault();
+        actions.tab(to);
+      };
+    }
     for (const [s, group] of page.groups.entries()) {
-      const panel = el("section", "space-y-4");
+      const panel = el("section", STACK);
       const label = tabbed ? el("button", "", group.title) : el("h2", "text-base font-semibold tracking-tight", group.title);
       label.id = `section-${s}-title`;
       panel.setAttribute("aria-labelledby", label.id);
@@ -93,15 +125,23 @@ export function mount(root, page, actions) {
         label.setAttribute("role", "tab");
         label.setAttribute("aria-controls", panel.id);
         label.onclick = () => actions.tab(s + 1);
-        tablist.append(label);
+        rail.append(label);
         tabs.push(label);
       } else {
         if (s) panel.style.marginTop = "2rem"; // more room above a section title than under it
         panel.append(label);
+        label.tabIndex = -1;
+        const jump = rail.appendChild(el("button", RAIL_ITEM, group.title));
+        jump.type = "button";
+        // Not a link: the URL hash is the filter state.
+        jump.onclick = () => {
+          label.focus({ preventScroll: true });
+          panel.scrollIntoView();
+        };
       }
       // A section's KPIs sit in their own row at its top, as on a page without sections.
       const has = kpi => group.tiles.some(tile => (tile.type === "kpi") === kpi);
-      slots.push({ kpis: has(true) ? panel.appendChild(el("div", KPIS)) : null, tiles: has(false) ? panel.appendChild(el("div", TILES)) : null });
+      slots.push({ kpis: has(true) ? panel.appendChild(el("div", GRID)) : null, tiles: has(false) ? panel.appendChild(el("div", GRID)) : null });
       main.append(panel);
       panels.push(panel);
     }
@@ -114,7 +154,9 @@ export function mount(root, page, actions) {
     for (const tile of group.tiles) {
       const i = index++;
       const kpi = tile.type === "kpi";
-      const box = el("div", kpi ? "stat rounded-box bg-base-100 shadow-sm" : "card bg-base-100 shadow-sm");
+      const box = el("div", `${kpi ? "stat rounded-box" : "card"} bg-base-100 shadow-sm ${SPAN[tile.size] ?? SPAN.medium}`);
+      box.style.order = i + 1; // after the group's title and the page's alerts
+      const height = tile.size === "large" ? "h-80 @3xl:h-[28rem]" : "h-80";
       const title = el(kpi ? "div" : `h${level}`, kpi ? "stat-title text-base-content/80" : "card-title text-sm font-medium text-base-content/80", tile.title);
       title.id = `tile-${i}-title`;
       box.setAttribute("role", "group");
@@ -153,7 +195,7 @@ export function mount(root, page, actions) {
         continue;
       }
       const inner = el("div", "card-body gap-3 p-4");
-      const body = el("div", { echarts: "skeleton relative h-80", pivot: "w-full text-sm", table: "h-80 w-full" }[tile.type] ?? "max-w-prose space-y-2 text-sm leading-relaxed");
+      const body = el("div", { echarts: `skeleton relative ${height}`, pivot: "w-full text-sm", table: `${height} w-full` }[tile.type] ?? "max-w-prose space-y-2 text-sm leading-relaxed");
       // The host is the renderer's: a chart and a pivot table get their own node, a grid and a text tile the body itself.
       let host = body;
       let empty = null;
@@ -213,13 +255,15 @@ export function mount(root, page, actions) {
     exploreHost,
     filters({ dims, from, to }) {
       bar.replaceChildren();
+      const active = Object.keys(dims).length;
+      disclosureLabel.textContent = active ? `Filters (${active})` : "Filters"; // the closed panel still says that filters apply
       const field = (label, control) => {
-        const wrap = el("label", "flex flex-col gap-1 text-xs");
+        const wrap = el("label", "flex min-w-0 flex-col gap-1 text-xs");
         wrap.append(el("span", "text-base-content/80", label), control);
         bar.append(wrap);
       };
       for (const { name, options } of page.dimensions) {
-        const select = el("select", "select select-sm");
+        const select = el("select", "select select-sm w-full");
         select.append(new Option("All", ""));
         for (const v of options) select.append(new Option(v, v));
         // By position, not by DOM string: an option may be "" or print like another value.
@@ -229,14 +273,14 @@ export function mount(root, page, actions) {
       }
       if (page.hasDate) {
         for (const [key, value] of [["from", from], ["to", to]]) {
-          const input = el("input", "input input-sm");
+          const input = el("input", "input input-sm w-full");
           input.type = "date";
           input.value = value ?? "";
           input.onchange = () => actions.date(key, input.value || null);
           field(key === "from" ? "From" : "To", input);
         }
       }
-      const chips = el("div", "flex flex-wrap items-center gap-2");
+      const chips = el("div", "col-span-full flex flex-wrap items-center gap-2 empty:hidden");
       chips.setAttribute("aria-label", "Active filters");
       for (const [name, value] of Object.entries(dims)) {
         const chip = el("span", "badge badge-neutral gap-1", `${name}: ${value}`);
@@ -246,7 +290,7 @@ export function mount(root, page, actions) {
         chip.append(x);
         chips.append(chip);
       }
-      const reset = el("button", "btn btn-sm btn-ghost", "Reset");
+      const reset = el("button", "btn btn-sm col-span-full", "Reset");
       reset.onclick = () => actions.reset();
       bar.append(chips, reset);
     },
@@ -258,7 +302,7 @@ export function mount(root, page, actions) {
         panels[s].hidden = !open;
         tab.setAttribute("aria-selected", open);
         tab.tabIndex = open ? 0 : -1; // roving focus: the tab list is one stop in the page's Tab order
-        tab.className = `btn btn-sm btn-ghost${open ? " bg-base-100 shadow-sm" : " text-base-content/80"}`;
+        tab.className = `${RAIL_ITEM}${open ? " bg-base-100 shadow-sm" : " text-base-content/80"}`;
       }
       if (focus === true) tabs[n - 1].focus();
     },

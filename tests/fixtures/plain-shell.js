@@ -10,6 +10,7 @@ export function mount(root, page, actions) {
   const header = el('header', root);
   el('h1', header, page.title);
   el('div', header, 'Plain shell');
+  el('div', header, `Design: ${page.design}`);
   if (page.logo) { const img = el('img', header); img.src = page.logo; img.alt = ''; }
   if (page.subtitle) el('div', header, page.subtitle);
   if (page.headerLine) el('div', header, page.headerLine);
@@ -57,7 +58,7 @@ export function mount(root, page, actions) {
     if (page.layout === 'tabs') { panel.id = `plain-panel-${index}`; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id); }
     else if (group.title) el('h2', panel, group.title);
     group.tiles.forEach(tile => {
-      const card = el('div', panel); card.setAttribute('role', 'group'); card.setAttribute('aria-label', tile.title);
+      const card = el('div', panel); card.setAttribute('role', 'group'); card.setAttribute('aria-label', tile.title); card.dataset.size = tile.size;
       const title = el('h2', card, tile.title);
       const value = tile.type === 'kpi' ? el('div', card) : null;
       const delta = value ? el('div', card) : null;
